@@ -10,14 +10,24 @@
  PB
  TB
  TB
+ day(s)
+ dia(s)
+ hour(s)
+ hora(s)
  kB
  kB
+ min
+ min
+ sec
+ seg
 !=	files are different\n
 !=	ficheiros diferentes\n
 %x directories
 %x pastas
 %x files,
 %x ficheiros,
+%x is not a valid FreeFileSync batch file!
+%x não é um batch válido do FreeFileSync!
 %x of %y rows in view
 %x de %y ficheiros
 %x of 1 row in view
@@ -32,6 +42,8 @@
 &Aplicar
 &Cancel
 &Cancelar
+&Check for new version
+&Procurar actualizações
 &Compare
 &Comparar
 &Create batch job
@@ -94,6 +106,8 @@
 -Sincronização de ficheiros Open-Source-
 .
 ,
+/sec
+/seg
 1 directory
 1 pastas
 1 file,
@@ -108,8 +122,8 @@
 2. Usar '*' e '?' como caracteres de procura.
 3. Exclude files directly on main grid via context menu.
 3. Excluir ficheiros directamente da grelha através do menu de contexto.
-4. Keep the number of entries small for best performance.
-4. Manter um número baixo de entradas para melhor performance.
+4. Keep the number of (different) entries small for best performance.
+4. Manter o número de entradas (diferentes) pequeno para melhor performance.
 <<	left file is newer\n
 <<	ficheiro à esquerda mais recente\n
 <Directory>
@@ -124,8 +138,8 @@
 ==	ficheiros iguais\n\n
 >>	right file is newer\n
 >>	ficheiro à direita mais recente\n
-Abort
-Abortar
+A newer version of FreeFileSync is available:
+Mais recente versão do FreeFileSync disponível:
 Abort requested: Waiting for current operation to finish...
 Abortar pedido: À espera do fim da operação...
 Aborted
@@ -212,10 +226,10 @@ Copy new or updated files to right folder.
 Copiar ficheiros novos ou actualizados para a direita
 Copy to clipboard\tCTRL+C
 Copiar para a Área de transferência\tCTRL+C
-Copying file %x overwriting %y
-Copiar ficheiro %x substituindo %y
 Copying file %x to %y
 Copiar ficheiro %x para %y
+Copying file %x to %y overwriting target
+Copiar ficheiro %x para %y substituindo
 Could not set working directory:
 Não pode definir pasta de trabalho:
 Create a batch job
@@ -256,10 +270,12 @@ Deleting folder %x
 Apagar pasta %x
 Directories are dependent! Be careful when setting up synchronization rules:
 Directórios são dependentes! Cuidado ao definir as regras de sincronização:
+Directory
+Directório
 Directory does not exist:
 A pasta não existe:
-Do not show graphical status and error messages but write to a logfile instead
-Escrever para um ficheiro log em vez de mostrar status ou mensagens de erro
+Do not display visual status information but write to a logfile instead
+Não apresentar informação de estado, mas escrever num ficheiro log
 Do not show this warning again
 Não voltar a mostrar este aviso
 Do nothing
@@ -268,12 +284,18 @@ Do you really want to delete the following objects(s)?
 Quer mesmo eliminar o(s) seguinte(s) item(s) ?
 Do you really want to move the following objects(s) to the Recycle Bin?
 Quer mesmo mover o(s) seguinte(s) objecto(s) para a Reciclagem?
+Do you want FreeFileSync to automatically check for updates every week?
+Deseja que o FreeFileSync procure automaticamente actualizações todas as semanas?
 Donate with PayPal
 Doar usando PayPal
+Download now?
+Fazer download agora?
 Drag && drop
 Pegar && largar
-Email:
-Email:
+Email
+Email
+Enable filter to exclude files from synchronization
+Ligar filtro para excluir ficheiros da sincronização
 Error
 Erro
 Error changing modification time:
@@ -302,6 +324,8 @@ Error reading file:
 Erro de leitura de ficheiro:
 Error resolving symbolic link:
 Erro na resolução do link simbólico:
+Error retrieving full path:
+Erro no retorno do caminho:
 Error traversing directory:
 Erro ao percorrer a pasta:
 Error writing file attributes:
@@ -326,12 +350,14 @@ Feedback and suggestions are welcome at:
 Comentários e sugestões são benvindos em:
 File Manager integration:
 Integração c/ Gestor de Ficheiros:
-File Time Tolerance:
-Tolerância de tempo do ficheiro:
+File Time tolerance (seconds):
+Tempo de tolerância do ficheiro (segundos):
 File already exists. Overwrite?
 O ficheiro já existe. Deseja substituir?
 File content
 Conteúdo do ficheiro
+File does not exist:
+O ficheiro não existe:
 File list exported!
 Lista dos ficheiros exportada!
 File size and date
@@ -362,6 +388,8 @@ Files/folders that exist on left side only
 Ficheiros/pastas existentes somente à esquerda
 Files/folders that exist on right side only
 Ficheiros/pastas existentes somente à direita
+Filter
+Filtro
 Filter active: Press again to deactivate
 Filtro activo: Clique aqui para desactivar
 Filter files
@@ -382,6 +410,8 @@ FreeFileSync batch file
 FreeFileSync Ficheiro batch
 FreeFileSync configuration
 FreeFileSync configuração
+FreeFileSync is up to date!
+FreeFileSync está actualizado!
 Full name
 Nome completo
 Generating file list...
@@ -412,10 +442,10 @@ Hides error messages during synchronization:\nThey are collected and shown as a 
 Ocultar mensagens de erro durante a sincronização:\nSerão coleccionadas e mostradas numa lista no fim do processo
 Hints:
 Dicas:
-Homepage:
-Homepage:
+Homepage
+Site
 If you like FFS
-SE gosta de FFS
+Se gosta do FreeFileSync
 Ignore errors
 Ignorar erros
 Ignore subsequent errors
@@ -438,8 +468,8 @@ Initialization of Recycle Bin failed!
 Início da Reciclagem falhou!
 It was not possible to initialize the Recycle Bin!\n\nIt's likely that you are not using Windows.\nIf you want this feature included, please contact the author. :)
 Não é possível aceder à Reciclagem!\n\nÉ possível que não esteja a utilizar Windows.\nSe desejar esta opção incluída, é favor contactar o autor. :)
-Left folder:
-Pasta esquerda:
+Left:
+Esquerda:
 Legend
 Legenda
 Load configuration from file
@@ -448,16 +478,22 @@ Load configuration history (press DEL to delete items)
 Carregar histórico de configuração (pressione DEL para apagar itens)
 Log-messages:
 Log de mensagens:
+Logging
+A escrever em log
 Mirror ->>
 Espelhar ->>
 Mirror backup of left folder: Right folder will be overwritten and exactly match left folder after synchronization.
 Espelhar pasta da esquerda: A pasta da direita vai ser sobreposta e uma cópia exacta da pasta esquerda após sincronização.
+More than 50% of the total number of files will be copied or deleted!
+Mais de 50% dos ficheiros vai ser copiado ou apagado!
 Move column down
 Mover coluna para baixo
 Move column up
 Mover coluna para cima
 Not all items were synchronized! Have a look at the list.
 Nem todos os itens foram sincronizados! Por favor, verifique a lista.
+Not enough free disk space available in:
+Não há espaço livre suficiente em:
 Nothing to synchronize according to configuration!
 Nada a sincronizar de acordo com a configuração!
 Number of files and directories that will be created
@@ -478,8 +514,12 @@ Operation aborted!
 Operação abortada!
 Operation:
 Operação:
+Overview
+Vista
 Pause
 Pausa
+Paused
+Em pausa
 Please fill all empty directory fields.
 Por favor, preencha todos os campos vazios.
 Press button to activate filter
@@ -502,8 +542,8 @@ Resets all warning messages
 Reinicia mensagens de aviso
 Result
 Resultado
-Right folder:
-Pasta da direita:
+Right:
+Direita:
 S&ave configuration
 G&uardar a configuração
 Save aborted!
@@ -516,8 +556,10 @@ Scanning:
 A pesquisar:
 Select a folder
 Seleccione uma pasta
+Select logfile directory:
+Seleccione directório para ficheiro log:
 Select variant:
-Sleccione uma variante:
+Seleccione uma variante:
 Show files that are different
 Mostrar ficheiros diferentes
 Show files that are equal
@@ -534,8 +576,8 @@ Show popup
 Mostrar popups
 Show popup on errors or warnings
 Mostrar popup c/ erros ou avisos
-Significant difference detected: More than 50% of files will be overwritten/deleted!
-Diferença significativa detectada: Mais de 50% dos ficheiros serão substituídos/apagados!
+Significant difference detected:
+Diferença significativa detectada:
 Silent mode
 Modo silencioso
 Size
@@ -544,6 +586,8 @@ Sorting file list...
 Ordenar lista de ficheiros...
 Source code written completely in C++ utilizing:
 Código fonte todo escrito em C++ utilizando:
+Speed:
+Velocidade:
 Start
 Iniciar
 Start synchronization
@@ -576,24 +620,26 @@ Target file already existing!
 Ficheiro destino já existe!
 The file does not contain a valid configuration:
 O ficheiro não contém uma configuração válida:
-File does not exist:
-O ficheiro não existe:
 This commandline will be executed each time you doubleclick on a filename. %name serves as a placeholder for the selected file.
 Esta linha de comandos será executada cada vez que fizer duplo click num ficheiro. %name serve para reservar o lugar do ficheiro seleccionado.
-This commandline will be executed each time you doubleclick on a filename. %x serves as a placeholder for the selected file.
-Esta linha de comandos será executada cada vez que fizer duplo click num ficheiro. %x serve para reservar o lugar do ficheiro seleccionado.
 This variant evaluates two equally named files as being equal when they have the same file size AND the same last write date and time.
 Esta variante avalia dois ficheiros de nome igual como iguais quando têm o mesmo tamanho e a mesma data e hora de modificação.
 Time
 Hora
 Time elapsed:
 Tempo passado:
+Time remaining:
+Tempo restante:
 Total amount of data that will be transferred
 Volume de dados a ser transferido
+Total required free disk space:
+Espaço livre necessário:
 Total time:
 Tempo total:
 Two way <->
 2 sentidos <->
+Unable to connect to sourceforge.net!
+Não é possível ligar a sourceforge.net!
 Unable to create logfile!
 Não é possível criar ficheiro log!
 Unable to initialize Recycle Bin!
