@@ -11,59 +11,59 @@
  TB
  TB
  day(s)
- dia(s)
+
  hour(s)
- hora(s)
+
  kB
  kB
  min
- min
+
  sec
- seg
+
 !=	files are different\n
-!=	arquivos são diferentes\n
+!=	los ficheros son diferentes\n
 %x directories
-%x diretórios
+%x directorios
 %x files,
-%x arquivos,
+%x ficheros,
 %x is not a valid FreeFileSync batch file!
-%x não é um arquivo batch válido do FreeFileSync!
+
 %x of %y rows in view
-%x de %y arquivos
+%x de %y ficheros
 %x of 1 row in view
-%x de 1 linha
+%x de 1 línea
 &Abort
 &Abortar
 &About...
 &Sobre...
 &Advanced
-&Avançado
+&Avanzado
 &Apply
 &Aplicar
 &Cancel
 &Cancelar
 &Check for new version
-&Procurar novas versões
+&Buscar versión nueva
 &Create batch job
-&Criar um arquivo batch
+&Crear un fichero batch
 &Default
-&Config. Padrão
+&Config. por defecto
 &Export file list
-&Exportar lista de arquivos
+&Exportar lista de ficheros
 &File
-&Arquivo
+&Fichero
 &Global settings
-&Configurações
+&Opciones globales
 &Help
-&Ajuda
+&Ayuda
 &Ignore
 &Ignorar
 &Language
 &Idioma
 &Load
-&Carregar
+&Cargar
 &Load configuration
-&Carregar configuração 
+&Cargar configuración
 &No
 
 &OK
@@ -71,15 +71,15 @@
 &Pause
 &Pausa
 &Quit
-&Sair
+&Salir
 &Retry
-&Tentar de Novo
+&Reintentar
 &Save
-&Salvar
+&Guardar
 &Yes
 
 ,
-.
+, 
 -	do not copy\n
 
 - conflict
@@ -87,33 +87,33 @@
 - conflict (same date, different size)
 
 - different
-- diferente
+- ficheros diferentes
 - equal
-- igual
+- ficheros iguales
 - exists left only
-- existe apenas à esquerda
+- existe sólo en la izquierda
 - exists right only
-- existe apenas à direita
+- existe sólo en la derecha
 - left
-- esquerda
+- izquierda
 - left newer
-- mais recente à esquerda
+- el más nuevo en la izquierda
 - right
-- direita
+- derecha
 - right newer
-- mais recente à direita
+- el más nuevo en la derecha
 ->	copy to right side\n
 
 -Open-Source file synchronization-
--Sincronização de Arquivos Open-Source-
+-Sincronización de ficheros Open-Source-
 .
 ,
 /sec
-/seg
+
 1 directory
-1 diretório
+1 directorio
 1 file,
-1 arquivo,
+1 fichero,
 1. &Compare
 1. &Comparar
 1. Enter relative file or directory names separated by ';' or a new line.
@@ -121,323 +121,339 @@
 2. &Synchronize...
 2. &Sincronizar...
 2. Use wildcard characters '*' and '?'.
-2. Usar '*' e '?' como caracteres de procura.
+2. Usar '*' y '?' como caracteres comodín.
 3. Exclude files directly on main grid via context menu.
-3. Excluir arquivos diretamente do grid principal através do menu de contexto.
+3. Excluir directamente ficheros sobre la rejilla a través del menu de contexto.
 <-	copy to left side\n
 
 <<	left file is newer\n
-<<	arquivo à esquerda é mais recente\n
+<<	el fichero de la izquierda es el más nuevo\n
 <Directory>
-<Diretório>
+<Directorio>
 <Last session>
-<Última Sessão>
+<Última sesión>
 <multiple selection>
-<seleção múltipla>
+<Selección múltiple>
 <|	file on left side only\n
-<|	arquivo apenas à esquerda\n
+<|	sólamente el fichero del lado izquierdo\n
 ==	files are equal\n
 
 >>	right file is newer\n
->>	arquivo à direita é mais recente\n
+>>	el fichero de la derecha es el más nuevo\n
 A newer version of FreeFileSync is available:
-Uma nova versão do FreeFileSync foi encontrada:
+
 Abort requested: Waiting for current operation to finish...
-Cancelar pedido: Esperando fim da operação...
+Abortar pedido: Esperar a que la actual operación finalice...
 Aborted
-Cancelado
+Abortado
 About
 Sobre
 Action
-Ação
+Acción
 Add folder pair
-Adicionar par de pastas
+Añadir un par de carpetas
 All items have been synchronized!
-Todos os itens foram sincronizados!
+¡Todos los elementos han sido sincronizados!
 An exception occured!
-Ocorreu uma exceção!
+¡Ha ocurrido una excepción!
 As a result the files are separated into the following categories:
-Como resultado, os arquivos são separados nas seguintes categorias:
+Como resultado, los ficheros son separados en las siguientes categorías:
 As the name suggests, two files which share the same name are marked as equal if and only if they have the same content. This option is useful for consistency checks rather than backup operations. Therefore the file times are not taken into account at all.\n\nWith this option enabled the decision tree is smaller:
-Como o nome sugere, dois arquivos com o mesmo nome são assinalados como iguais se e somente se o seu conteúdo for idêntico. Esta opção é útil para controles de consistência mais do que para efeitos de backup. Portanto, a data dos arquivos não é levada em consideração.\n\nCom esta opção, a árvore de decisão é menor:
+Como el nombre sugiere, dos ficheros que comparten el mismo nombre son marcados como iguales sólo si tienen el mismo contenido. Esta opción es útil para los chequeos de consistencia más que en operaciones de "backup". Por tanto, las fechas de los ficheros no se tienen en cuenta de ningún modo.\n\nCon esta opción habilitada el árbol de decisiones es más pequeño:
 Assemble a batch file for automated synchronization. To start in batch mode simply pass the name of the file to the FreeFileSync executable: FreeFileSync.exe <batchfile>. This can also be scheduled in your operating system's task planner.
-Criar um arquivo batch para sincronização automatizada. Para iniciar o modo batch, passar o nome do arquivo para o executável do FreeFileSync: FreeFileSync.exe <arquivo batch>. Também pode ser programado no Agendador de Tarefas do sistema operacional.
+Crear un fichero "batch" para una sincronización automática. Para empezar en modo "batch" simplemente pasar el nombre del fichero al ejecutable FreeFileSyinc en la ventana de comandos (CMD): FreeFileSync.exe <nombre de fichero batch>. También puede ser planificada en el Administrador de Tareas programadas.
 Batch execution
-Execução do batch
+Ejecución del "batch"
 Batch file created successfully!
-Arquivo batch criado com sucesso!
+¡El fichero "batch" ha sido creado correctamente!
 Batch job
-Arquivo Batch
+Tarea Batch
 Big thanks for localizing FreeFileSync goes out to:
-Pela tradução do FreeFileSync, um agradecimento a:
+Agradecimientos por la traducción de FreeFileSync a:
 Browse
 
 Build:
-Criado:
+Construído:
 Cancel
 Cancelar
+Change direction
+
 Check all
-Verificar tudo
+Verificar todo
 Choose to hide filtered files/directories from list
-Ocultar arquivos/diretórios filtrados da lista
+Ocultar en la lista ficheros/directorios filtrados
 Comma separated list
-Lista de itens separada por vírgula
+Lista de "items" separados por coma
 Compare
 
 Compare both sides
-Comparar os dois lados
+Comparar ambos lados
 Compare by \"File content\"
-Comparar por \"Conteúdo dos arquivos\"
+Comparar por \"Contenido de fichero\"
 Compare by \"File size and date\"
-Comparar por \"Data e tamanho dos arquivos\"
+Comparar por \"Tamaño y fecha de fichero\"
 Compare by...
 Comparar por...
 Comparing content
-Comparando conteúdo
+Comparación de contenido
 Comparing content of files %x
-Comparando conteúdo do arquivo %x
+Comparación del contenido de %x ficheros
 Comparing content...
 
 Comparison Result
 
 Completed
-Finalizado
+Terminado
 Configuration
-Configuração
+Configuración
 Configuration loaded!
-Configuração carregada!
+¡Configuración cargada!
 Configuration overview:
-Parâmetros de configuração:
+Parámetros de configuración:
 Configuration saved!
-Configuração salva!
+¡Configuración guardada!
 Configure filter
-Configurar filtros
+Configurar filtro
 Configure filter...
 Configurar filtros...
 Configure your own synchronization rules.
-Configure as suas próprias regras de sincronização.
+Configure sus propias reglas de sincronización.
 Confirm
 Confirmar
+Conflict detected:
+
 Continue
 Continuar
 Conversion error:
-Erro de conversão:
+Erro de conversión:
 Copy from left to right
-Copiar da esquerda para a direita
+Copiar de izquierda a derecha
 Copy from left to right overwriting
-Copiar da esquerda para a direita com sobreposição
+Copiar de izquierda a derecha con sobreescritura
 Copy from right to left
-Copiar da direita para a esquerda
+Copiar de derecha a izquierda
 Copy from right to left overwriting
-Copiar da direita para a esquerda com sobreposição
+Copiar de derecha a izquierda con sobreescritura
 Copy new or updated files to right folder.
-Copiar arquivos novos ou atualizados para a pasta da direita
+Copiar ficheros nuevos o actualizados a la carpeta de la derecha.
 Copy to clipboard\tCTRL+C
-Copiar para a Área de transferência\tCTRL+C
+Copiar al Portapapeles\tCTRL+C
 Copying file %x to %y
-Copiando arquivo %x para %y
+Copiar fichero %x a %y
 Copying file %x to %y overwriting target
-Copiando arquivo %x para %y substituindo destino
+
+Could not determine volume name for file:
+
 Could not set working directory:
-Não se pode definir pasta de trabalho:
+No se pudo definir el directorio de trabajo:
 Create a batch job
-Criar arquivo batch
+Crear una tarea "batch"
 Creating folder %x
-Criando pasta %x
+Creando la carpeta %x
 Current operation:
-Operação atual:
+Operación actual:
 Custom
 Personalizado
 Customize columns
-Personalizar colunas
+Personalizar columnas
 DECISION TREE
-ÁRVORE DE DECISÃO
+ÁRBOL DE DECISIÓN
 Data remaining:
-Dados faltantes:
+Datos que faltan:
 Date
-Data
+Fecha
 Delete files/folders existing on left side only
-Apagar arquivos/pastas existentes apenas no lado esquerdo
+Eliminar sólo ficheros/carpetas existentes en el lado izquierdo
 Delete files/folders existing on right side only
-Apagar arquivos/pastas existentes apenas no lado direito
+Eliminar sólo ficheros/carpetas existentes en el lado derecho
 Delete files\tDEL
-Apagar arquivos\tDEL
+Eliminar ficheros\tDEL
 Delete on both sides
-Apagar em ambos os lados
+Eliminar en ambos lados lados
 Delete on both sides even if the file is selected on one side only
-Apagar em ambos os lados mesmo se o arquivo está selecionado só em um lado
+Eliminar en ambos lados incluso si el fichero es seleccionado en un solo lado
 Deleting file %x
-Apagando arquivo %x
+Borrar fichero %x
 Deleting folder %x
-Apagando pasta %x
+Borrar carpeta %x
 Directories are dependent! Be careful when setting up synchronization rules:
-Diretórios são dependentes! Cuidado ao definir as regras de sincronização:
+¡Los directorios son dependientes! Cuidado al establecer las reglas de sincronización:
 Directory
-Diretório
+
 Directory does not exist:
-Diretório não existe:
+El directorio no existe:
 Do not display visual status information but write to a logfile instead
-Ao invés de mostrar informação do estado visualmente, escrever para um arquivo log
-Do not show this warning again
-Não mostrar novamente este aviso
+
+Do not show this dialog again
+
 Do nothing
-Não fazer nada
+No hacer nada
 Do you really want to delete the following objects(s)?
-Quer mesmo apagar o(s) seguinte(s) item(s) ?
+¿Está seguro de querer borrar el/los siguiente(s) objeto(s)?
 Do you really want to move the following objects(s) to the Recycle Bin?
-Quer mesmo mover o(s) seguinte(s) item(s) para a Lixeira?
+¿Está seguro de querer mover el/los siguiente(s) objeto(s) a la Papelera?
 Do you want FreeFileSync to automatically check for updates every week?
-Deseja que o FreeFileSync procure automaticamente novas versões toda semana?
+
 Don't ask me again
 
 Donate with PayPal
-Doar usando PayPal
+Donar usando PayPal
 Download now?
-Baixar agora?
+¿Descargar ahora?
 Drag && drop
-Arrastar && Soltar
+Arrastrar
 Email
 Email
 Enable filter to exclude files from synchronization
-Habilitar filtro para excluir arquivos da sincronização
+
 Error
-Erro
+Error
 Error changing modification time:
-Erro ao mudar a hora de modificação:
+Error al modificar hora:
 Error copying file:
-Erro ao copiar arquivo:
+Erro al copiar fichero:
+Error copying locked file %x!
+
 Error creating directory:
-Erro ao criar diretório:
+Error al crear directorio:
 Error deleting directory:
-Erro ao apagar diretório:
+Error al borrar directorio:
 Error deleting file:
-Erro ao apagar arquivo:
+Error al eliminar fichero:
 Error handling
-Controlador de erros
+Controlador de errores
 Error loading library function:
-Erro ao carregar a biblioteca de funções:
+Error al descargar función de biblioteca:
 Error moving to Recycle Bin:
-Erro ao mover para a Lixeira:
+Error al mover a la Papelera:
 Error opening file:
-Erro ao abrir arquivo:
+Error al abrir fichero:
 Error parsing configuration file:
-Erro de leitura do arquivo de configuração:
+Error en el análisis sintáctico del fichero de configuración:
 Error reading file attributes:
-Erro ao ler atributos do arquivo:
+Error al leer atributos del fichero:
 Error reading file:
-Erro ao ler arquivo:
+Error al leer el fichero:
 Error resolving symbolic link:
-Erro na resolução de link simbólico:
+Error al resolver enlace simbólico:
 Error retrieving full path:
-Erro ao obter caminho completo:
+
+Error starting Volume Shadow Copy Service!
+
 Error traversing directory:
-Erro ao percorrer diretório:
+Error al trasladar directorio:
 Error writing file attributes:
-Erro ao escrever atributos do arquivo:
+Error al escribir atributos del fichero:
 Error writing file:
-Erro ao escrever arquivo:
+Error al escribir fichero:
 Error: Source directory does not exist anymore:
-Erro: Diretório de origem não existe mais:
+Error: El directorio origen no existe ya:
 Example
-Exemplo
+Ejemplo
 Exclude
 Excluir
 Exclude temporarily
-Excluir temporariamente
+Excluir temporalmente
 Exclude via filter:
 Excluir por filtro:
 Exit immediately and set returncode < 0
-Sair imediatamente e setar\nreturncode < 0
+Salir inmediatamente y enviar el código < 0
 Exit with RC < 0
-Sair com RC < 0
+Salir com RC < 0
 Feedback and suggestions are welcome at:
-Comentários e sugestões são bem-vindos em:
+Los comentarios y sugerencias será bienvenidos en:
+File %x has an invalid date!
+
 File Manager integration:
-Integração com Gerenciador de Arquivos:
+Integración con el Explorador:
 File Time tolerance (seconds):
-Tolerância de Tempo do Arquivo (segundos):
+
 File already exists. Overwrite?
-O arquivo já existe. Deseja substituir?
+El fichero ya existe. ¿Sustituir?
 File content
-Conteúdo do arquivo
+Contenido del fichero
 File does not exist:
-O arquivo não existe:
+El fichero no existe:
 File list exported!
-Lista de arquivos exportada!
+Lista de ficheros exportada!
 File size and date
-Data e tamanho do arquivo
+Fecha y tamaño del fichero
 File times that differ by up to the specified number of seconds are still handled as having same time.
-Arquivos com diferença de horário até o número especificado de segundos são tratados como tendo o mesmo horário.
+Las horas de los ficheros que difieren hasta el número de segundos especificados, son consideradas iguales.
 Filename
-Nome do arquivo
+Nombre del fichero
+Files %x have a file time difference of less than 1 hour! It's not safe to decide which one is newer due to Daylight Saving Time issues.
+
+Files %x have the same date but a different size!
+
 Files are found equal if\n     - file content\nis the same.
-Os arquivos são considerados iguais se\n     - o conteúdo do arquivo\né o mesmo.
+Los ficheros serán considerados iguales si\n     - el contenido del fichero\nes el mismo.
 Files are found equal if\n     - filesize\n     - last write time and date\nare the same.
-Os arquivos são considerados iguais se\n     - o tamanho\n     - e a data e hora da última modificação\nsão iguais.
+Los ficheros serán considerados iguales si\n     - la hora y fecha de la última escritura\nson iguales.
 Files remaining:
-Arquivos restantes:
+Ficheros restantes:
 Files that exist on both sides and have different content
-Arquivos que existem nos dois lados e têm conteúdo diferente
+Ficheros que existen en ambos lados y tienen contenidos diferentes
 Files that exist on both sides, left one is newer
-Arquivos que existem nos dois lados, sendo à esquerda mais recentes
+Ficheros que existen en ambos lados, el de la izquierda es más reciente
 Files that exist on both sides, right one is newer
-Arquivos que existem nos dois lados, sendo à direita mais recentes
+Ficheros que existen en ambos lados, el de la derecha es más reciente
 Files/folders remaining:
-Arquivos/pastas restantes:
+Ficheros/carpetas restantes:
 Files/folders scanned:
-Arquivos/pastas analisados:
+Ficheros/carpetas analizados:
 Files/folders that exist on left side only
-Arquivos/pastas que existem somente à esquerda
+Ficheros/carpetas que existen sólo en el lado izquierdo
 Files/folders that exist on right side only
-Arquivos/pastas que existem somente à direita
+Ficheros/carpetas que existen sólo en el lado derecho
 Filter
-Filtro
+
 Filter active: Press again to deactivate
-Filtro ativo: Clique novamente para desativar
+Filtro activo: Clique aquí para desactivar
 Filter files
-Filtrar arquivos
+Filtrar ficheros
 Filter view
-Filtrar vista
+Vista de filtros
 Folder Comparison and Synchronization
-Comparação e Sincronização de Pastas
+Carpeta de Comparación y Sincronización
 Folder pair
-Par de pastas
+Par de carpetas
 FreeFileSync - Folder Comparison and Synchronization
-FreeFileSync - Comparação e Sincronização de Pastas
+FreeFileSync - Comparación y Sincronización de carpetas
 FreeFileSync Batch Job
-FreeFileSync Arquivo batch
+FreeFileSync Tarea "Batch"
 FreeFileSync at Sourceforge
-FreeFileSync na Sourceforge
+FreeFileSync en Sourceforge
 FreeFileSync batch file
-FreeFileSync Arquivo batch
+FreeFileSync fichero batch
 FreeFileSync configuration
-FreeFileSync configuração
+FreeFileSync configuración
 FreeFileSync is up to date!
-FreeFileSync está atualizado!
+FreeFileSync está actualizado
 Full path
 
 Generating file list...
-Gerando lista de arquivos...
+Generando lista de ficheros...
 Global settings
-Configurações
+Opciones globales
 Help
-Ajuda
+Ayuda
 Hide all error and warning messages
-Ocultar todas as mensagens de erro ou aviso
+Ocultar todos los mensajes de error y aviso
 Hide conflicts
 
 Hide files that are different
-Ocultar arquivos que são diferentes
+Ocultar ficheros diferentes
 Hide files that are equal
-Ocultar arquivos que são iguais
+Ocultar ficheros iguales
 Hide files that are newer on left
-Ocultar arquivos que são mais recentes à esquerda
+Ocultar ficheros más recientes en la izquierda
 Hide files that are newer on right
-Ocultar arquivos que são mais recentes à direita
+Ocultar ficheros más recientes en la derecha
 Hide files that exist on left side only
-Ocultar arquivos que existem somente à esquerda
+Ocultar los ficheros que existen sólo en el lado izquierdo
 Hide files that exist on right side only
-Ocultar arquivos que existem somente à direita
+Ocultar los ficheros que existen sólo en el lado derecho
 Hide files that will be copied to the left side
 
 Hide files that will be copied to the right side
@@ -445,149 +461,151 @@ Hide files that will be copied to the right side
 Hide files that won't be copied
 
 Hide filtered items
-Ocultar itens filtrados
+Ocultar items filtrados
 Hide further error messages during the current process
-Ocultar próximas mensagens de erro durante este processo
+Ocultar próximos mensajes de error durante este processo
 Hides error messages during synchronization:\nThey are collected and shown as a list at the end of the process
-Ocultar mensagens de erro durante a sincronização:\nElas serão armazenadas e mostradas em uma lista ao final do processo
+Ocultar mensajes de error durante la sincronización:\nSerán recopilados y mostrados como una lista al final del proceso
 Hints:
-Dicas:
+Consejos:
 Homepage
 Homepage
 If you like FFS
-Se gosta do FFS
+Si te gusta FFS
 Ignore 1-hour file time difference
 
 Ignore errors
-Ignorar erros
+Ignorar errores
 Ignore subsequent errors
-Ignorar erros subsequentes
+Ignorar errores siguientes
 Ignore this error, retry or abort synchronization?
-Ignorar este erro, tentar novamente ou abortar a sincronização?
+¿Ignorar este error, reintentar o abortar sincronización?
 Ignore this error, retry or abort?
-Ignorar este erro, tentar novamente ou abortar?
+¿Ignorar este error, reintentar o abortar?
 Include
 Incluir
 Include temporarily
-Incluir temporariamente
+Incluir temporalmente
 Include: *.doc;*.zip;*.exe\nExclude: \\temp\\*
 
 Info
 Info
 Information
-Informação
+Información
 Initialization of Recycle Bin failed!
-Inicialização da Lixeira falhou!
+¡El inicio de la Papelera falló!
 It was not possible to initialize the Recycle Bin!\n\nIt's likely that you are not using Windows.\nIf you want this feature included, please contact the author. :)
-Não foi possível acessar a Lixeira!\n\nÉ possível que não esteja utilizando Windows.\nSe desejar esta opção incluída, favor contatar o autor. :)
+¡No fue posible iniciar la Papelera!\n\nEs probable que no esté usando Windows.\nSi quiere que este hecho sea considerado, por favor, contactate con el autor :)
 Left:
-Esquerda:
+
 Load configuration from file
-Carregar configuração do arquivo
+Cargar configuración desde fichero
 Load configuration history (press DEL to delete items)
-Carregar histórico de configuração (pressione DEL para apagar itens)
+Cargar histórico de configuración (presionar DEL para borrar elementos)
 Log-messages:
-Log de mensagens:
+Log de mensajes:
 Logging
-Gravando log
+
 Mirror ->>
-Espelhar ->>
+Espejo ->>
 Mirror backup of left folder: Right folder will be overwritten and exactly match left folder after synchronization.
-Espelhar pasta da esquerda: A pasta da direita vai ser sobreposta e será feita uma cópia exata da pasta da esquerda após a sincronização.
+Backup espejo de la carpeta de la izquierda: La carpeta de la derecha será sustituída y coincidirá exactamente con la carpeta de la izquierda después de la sincronización.
 More than 50% of the total number of files will be copied or deleted!
-Mais de 50% do número total de arquivos será copiado ou apagado!
+
 Move column down
-Mover coluna para baixo
+Mover columna abajo
 Move column up
-Mover coluna para cima
+Mover columna arriba
+Moving %x to Recycle Bin
+
 Not all items have been synchronized! Have a look at the list.
 
 Not enough free disk space available in:
-Espaço em disco insuficiente em:
+
 Nothing to synchronize according to configuration!
-Nada para sincronizar de acordo com a configuração!
+¡No hay nada que sincronizar de acuerdo con la configuración!
 Number of files and directories that will be created
-Número de arquivos e diretórios que serão criados
+Número de elementos que serán creados
 Number of files and directories that will be deleted
-Número de arquivos e diretórios que serão apagados
+Número de elementos que serán borrados
 Number of files that will be overwritten
-Número de arquivos que serão substituídos
+Número de ficheros que serán sustituídos
 OK
 OK
 Only files/directories that pass filtering will be selected for synchronization. The filter will be applied to the name relative(!) to the synchronization directories.
 
 Open with File Manager\tD-Click
-Abrir com Gerenciador de Arquivos\tD-Click
+Abrir con el Explorador\tD-Click
 Operation aborted!
-Operação cancelada!
+Operación abortada!
 Operation:
-Operação:
+Operación:
 Overview
-Parâmetros
+
 Pause
 Pausa
 Paused
-Pausado
+
+Please copy the appropriate \"Shadow.dll\" (located in \"Shadow.zip\" archive) into the FreeFileSync installation directory to enable this feature.
+
 Please fill all empty directory fields.
-Por favor, preencha todos os campos de diretórios vazios.
+Por favor, rellene todos los campos del directorio vacíos.
 Press button to activate filter
-Pressione para ativar o filtro
-Preview
-Pré-visualização
+Presione el botón para activar el filtro
 Published under the GNU General Public License:
-Publicado sobre a GNU General Public License:
+Publicado bajo "GNU General Public License":
 Question
 
 Quit
-Sair
+Salir
 Relative path
-Caminho relativo
+Camino relativo
 Remove folder pair
-Remover par de pastas
+Eliminar par de carpetas
 Reset
 Reiniciar
 Reset all warning messages
 
 Reset all warning messages?
-Reiniciar todas as mensagens de aviso?
+¿Reiniciar todos los mensajes de aviso?
 Result
 Resultado
 Right:
-Direita:
+
 S&ave configuration
-S&alvar configuração
+G&uardar configuración
 S&witch view
 
 Save changes to current configuration?
 
 Save current configuration to file
-Salvar configuração atual para arquivo
+Guardar la configuración actual en un fichero
 Scanning...
-Pesquisando...
+Analizando...
 Scanning:
-Pesquisando:
+Analizar:
 Select a folder
-Selecione uma pasta
+Seleccione una carpeta
 Select logfile directory:
-Escolha um diretório para salvar o arquivo log:
+
 Select variant:
-Selecione uma variante:
+Sleccione una variante:
 Show conflicts
 
 Show file icons
 
 Show files that are different
-Mostrar arquivos que são diferentes
+Mostrar los ficheros diferentes
 Show files that are equal
-Mostrar arquivos que são iguais
+Mostrar los ficheros iguales
 Show files that are newer on left
-Mostrar arquivos que são mais recentes à esquerda
+Mostrar ficheros recientes a la izquierda
 Show files that are newer on right
-Mostrar arquivos que são mais recentes à direita
+Mostrar ficheros recientes a la derecha
 Show files that exist on left side only
-Mostrar arquivos que existem somente à esquerda
+Mostrar ficheros existentes en la izquierda sólamente
 Show files that exist on right side only
-Mostrar arquivos que existem somente à direita
+Mostrar ficheros existentes en la derecha sólamente
 Show files that will be copied to the left side
 
 Show files that will be copied to the right side
@@ -595,108 +613,114 @@ Show files that will be copied to the right side
 Show files that won't be copied
 
 Show popup
-Mostrar popup
+Mostrar "popups"
 Show popup on errors or warnings
-Mostrar popup com erros ou avisos
+Mostrar "popup" de errores o avisos
 Significant difference detected:
-Diferença significativa detectada:
+
 Silent mode
 Modo silencioso
 Size
-Tamanho
+Tamaño
 Sorting file list...
-Ordenando lista de arquivos...
+Ordenar lista de ficheros...
 Source code written completely in C++ utilizing:
-Código fonte todo escrito em C++ utilizando:
+Código fuente escrito en C++ utilizando:
 Speed:
-Velocidade:
+
 Start
 Iniciar
 Start synchronization
-Iniciar sincronização
+Iniciar a sincronización
+Statistics
+
 Stop
 Parar
 Swap sides
-Inverter lados
+
 Synchronization Preview
 
 Synchronization aborted!
-Sincronização cancelada!
+Sincronización abortada!
 Synchronization completed successfully!
-Sincronização finalizada com sucesso!
+¡Sincronización completada con éxito!
 Synchronization completed with errors!
-Sincronização finalizada com erros!
-Synchronization filter
-Filtro de sincronização
+¡Sincronización completada con errores!
 Synchronization settings
-Parâmetros de sincronização
+Parámetros de sincronización
 Synchronization status
-Estado da sincronização
+Estado de la sincronización
 Synchronize all .doc, .zip and .exe files except everything in subfolder \"temp\".
 
 Synchronize both sides simultaneously: Copy new or updated files in both directions.
-Sincronizar ambos os lados simultaneamente: Copiar os arquivos novos ou mais recentes em ambas as direções.
+Sincronizar ambos lados simultáneamente: Copiar ficheros nuevos o actualizados en ambas direcciones.
+Synchronize...
+
 Synchronizing...
 Sincronizando...
 System out of memory!
-Sistema sem memória!
+Sistema sin memoria!
 Target file already existing!
-Arquivo de destino já existe!
+¡El fichero objetivo existe ya!
 The file does not contain a valid configuration:
-O arquivo não contém uma configuração válida:
+El fichero no contiene una configuración válida:
 This commandline will be executed each time you doubleclick on a filename. %name serves as a placeholder for the selected file.
-Esta linha de comandos será executada cada vez que fizer duplo click em um arquivo. %name serve para reservar o lugar do arquivo selecionado.
+Esta línea de comandos será ejecutada cada vez que haga doble click sobre un nombre de fichero. %name es el espacio reservado del fichero seleccionado.
 This variant evaluates two equally named files as being equal when they have the same file size AND the same last write date and time.
-Esta variante avalia dois arquivos de nomes equivalentes como sendo iguais quando têm o mesmo tamanho E a mesma data e hora de modificação.
+Esta variante evalúa dos ficheros con el mismo nombre como iguales cuando tienen el mismo tamaño Y la misma fecha de modificación.
 Time
 Hora
 Time elapsed:
-Tempo passado:
+Tiempo transcurrido:
 Time remaining:
-Tempo restante:
+
 Total amount of data that will be transferred
-Volume de dados que será transferido
+Cantidad total de datos que serán transferidos
 Total required free disk space:
-Espaço livre total requerido:
+
 Total time:
-Tempo total:
+Tiempo total:
 Treat file times that differ by exactly +/- 1 hour as equal, less than 1 hour as conflict in order to handle Daylight Saving Time changes.
 
 Two way <->
-Dois sentidos <->
+Doble sentido <->
 Unable to connect to sourceforge.net!
-Não foi possível conectar a sourceforge.net!
+Permitir conectar con sourceforge.net
 Unable to create logfile!
-Não foi possível criar arquivo log!
+Permitir crear logfile
 Unable to initialize Recycle Bin!
-Não foi possível inicializar a Lixeira!
+Permitir iniciar la Papelera
 Uncheck all
-Deselecionar todos
+Deseleccionar todos
 Unresolved conflicts existing! \n\nYou can ignore conflicts and continue synchronization.
 
 Update ->
-Atualizar ->
+Actualizar ->
 Use Recycle Bin
-Utilizar Lixeira
+Utilizar la Papelera
 Use Recycle Bin when deleting or overwriting files during synchronization
-Utilizar a Lixeira ao apagar ou substituir arquivos durante a sincronização
+Utilizar la papelera en el borrado o sustitución de ficheros durante la sincronización.
+Variant
+
+Volume name %x not part of filename %y!
+
 Warning
-Atenção
+Atención
 Warning: Synchronization failed for %x item(s):
-Atenção: A sincronização falhou para %x item(s):
+Atención: La sincronización falló para %x item(s):
 Warnings:
 Avisos:
 When the comparison is started with this option set the following decision tree is processed:
-Quando a comparação é iniciada com esta opção, a seguinte árvore de decisão é processada:
+Cuando la comparación se inicia con este conjunto de opciones, se procesa el siguiente árbol de decisiones:
 You may try to synchronize remaining items again (WITHOUT having to re-compare)!
-Pode tentar sincronizar os elementos restantes outra vez (SEM ter que comparar novamente)!
+Puede intentar sincronizar los elementos restantes otra vez (SIN tener que volver a comparar)
 different
-diferente
+ficheros diferentes
 file exists on both sides
-arquivo existe em ambos os lados
+el fichero existe en ambos lados
 flash	conflict\n
 
 on one side only
-existente apenas em um lado
+fichero sólo en un lado
 |>	file on right side only\n
-|>	arquivo apenas do lado direito\n
+|>	fichero en lado derecho sólo\n
