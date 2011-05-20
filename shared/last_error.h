@@ -4,21 +4,21 @@
 // * Copyright (C) 2008-2011 ZenJu (zhnmju123 AT gmx.de)                    *
 // **************************************************************************
 //
-#ifndef ISNULLFILTER_H_INCLUDED
-#define ISNULLFILTER_H_INCLUDED
+#ifndef SYSTEMFUNCTIONS_H_INCLUDED
+#define SYSTEMFUNCTIONS_H_INCLUDED
 
-#include "../structures.h"
-#include "../library/filter.h"
+#include <wx/string.h>
 
-namespace ffs3
+
+namespace zen
 {
-
-inline
-bool isNullFilter(const FilterConfig& filterCfg)
-{
-    return NameFilter(filterCfg.includeFilter, filterCfg.excludeFilter).isNull();
+//evaluate GetLastError()/errno and assemble specific error message
+#ifdef FFS_WIN
+wxString getLastErrorFormatted(unsigned long lastError = 0);
+#elif defined FFS_LINUX
+wxString getLastErrorFormatted(int lastError = 0);
+#endif
 }
 
-}
 
-#endif // ISNULLFILTER_H_INCLUDED
+#endif // SYSTEMFUNCTIONS_H_INCLUDED
