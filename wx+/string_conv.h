@@ -13,10 +13,6 @@
 
 namespace zen
 {
-inline wxString operator+(const wxString& lhs, const char*   rhs) { return wxString(lhs) += utf8CvrtTo<wxString>(rhs); }
-inline wxString operator+(const wxString& lhs, const Zstring& rhs) { return wxString(lhs) += utf8CvrtTo<wxString>(rhs); }
-
-
 //conversion between Zstring and wxString
 inline wxString toWx(const Zstring&  str) { return utf8CvrtTo<wxString>(str); }
 inline Zstring   toZ(const wxString& str) { return utf8CvrtTo<Zstring>(str); }
