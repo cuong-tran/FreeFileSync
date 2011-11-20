@@ -22,39 +22,6 @@
 <source>RealtimeSync - Automated Synchronization</source>
 <target>RealtimeSync - Avtomatizirana sinhronizacija</target>
 
-<source>Browse</source>
-<target>Brskaj</target>
-
-<source>Windows Error Code %x:</source>
-<target>Windows koda napake %x:</target>
-
-<source>Linux Error Code %x:</source>
-<target>Linux koda napake %x:</target>
-
-<source>Invalid command line: %x</source>
-<target>Napačna ukazna vrstica: %x</target>
-
-<source>Error resolving symbolic link:</source>
-<target>Napaka pri razreševanju simbolične povezave:</target>
-
-<source>Show pop-up</source>
-<target>Prikaži pojavno okno</target>
-
-<source>Show pop-up on errors or warnings</source>
-<target>Prikaži pojavne napaka ali opozorila</target>
-
-<source>Ignore errors</source>
-<target>Ignoriraj napake</target>
-
-<source>Hide all error and warning messages</source>
-<target>Skrij vsa obvestila o napakah in opozorilih</target>
-
-<source>Exit instantly</source>
-<target>Zapusti v trenutku</target>
-
-<source>Abort synchronization immediately</source>
-<target>Takoj prekini sinhronizacijo</target>
-
 <source>Select alternate comparison settings</source>
 <target>Izberite alternativne nastavitve primerjanja</target>
 
@@ -115,6 +82,45 @@
 <source>Select time span</source>
 <target>Izberite časovni okvir</target>
 
+<source>Show pop-up</source>
+<target>Prikaži pojavno okno</target>
+
+<source>Show pop-up on errors or warnings</source>
+<target>Prikaži pojavne napaka ali opozorila</target>
+
+<source>Ignore errors</source>
+<target>Ignoriraj napake</target>
+
+<source>Hide all error and warning messages</source>
+<target>Skrij vsa obvestila o napakah in opozorilih</target>
+
+<source>Exit instantly</source>
+<target>Zapusti v trenutku</target>
+
+<source>Abort synchronization immediately</source>
+<target>Takoj prekini sinhronizacijo</target>
+
+<source>Browse</source>
+<target>Brskaj</target>
+
+<source>Error reading from synchronization database:</source>
+<target>Napaka pri branju iz sinhronizacijske podatkovne baze:</target>
+
+<source>Error writing to synchronization database:</source>
+<target>Napaka pri pisanju v sinhronizacijsko podatkovno bazo:</target>
+
+<source>Invalid command line: %x</source>
+<target>Napačna ukazna vrstica: %x</target>
+
+<source>Windows Error Code %x:</source>
+<target>Windows koda napake %x:</target>
+
+<source>Linux Error Code %x:</source>
+<target>Linux koda napake %x:</target>
+
+<source>Error resolving symbolic link:</source>
+<target>Napaka pri razreševanju simbolične povezave:</target>
+
 <source>%x MB</source>
 <target>%x MB</target>
 
@@ -165,17 +171,14 @@
 <source>Comparison Result</source>
 <target>Rezultati primerjave</target>
 
-<source>Incompatible synchronization database format:</source>
-<target>Nekompatibilen format sinhronizacijske podatkovne baze:</target>
-
 <source>Initial synchronization:</source>
 <target>Začetna sinhronizacija:</target>
 
 <source>One of the FreeFileSync database files is not yet existing:</source>
 <target>Ena od FreeFileSync datotek podatkovne baze še en obstaja:</target>
 
-<source>Error reading from synchronization database:</source>
-<target>Napaka pri branju iz sinhronizacijske podatkovne baze:</target>
+<source>Incompatible synchronization database format:</source>
+<target>Nekompatibilen format sinhronizacijske podatkovne baze:</target>
 
 <source>Database files do not share a common synchronization session:</source>
 <target>Datoteke podatkovne baze si ne delijo skupne sinhronizacijske seje:</target>
@@ -203,11 +206,17 @@
 <pluralform>%x sek</pluralform>
 </target>
 
+<source>Drag && drop</source>
+<target>Povleci && spusti</target>
+
 <source>Info</source>
 <target>Info</target>
 
 <source>Fatal Error</source>
 <target>Usodna napaka</target>
+
+<source>Error reading file:</source>
+<target>Napaka pri branju datoteke:</target>
 
 <source>Scanning:</source>
 <target>Pregledujem:</target>
@@ -229,14 +238,35 @@
 <source>Invalid FreeFileSync config file!</source>
 <target>Neveljavna FreeFileSync nastavitvena datoteka!</target>
 
-<source>File does not exist:</source>
-<target>Datoteka ne obstaja:</target>
-
 <source>Error parsing configuration file:</source>
 <target>Napaka pri preverjanju konfiguracijske datoteke:</target>
 
+<source>Error moving to Recycle Bin:</source>
+<target>Napaka pri premikanju v Koš:</target>
+
+<source>Could not load a required DLL:</source>
+<target>Ne morem naložiti zahtevano DLL:</target>
+
+<source>Error accessing Volume Shadow Copy Service!</source>
+<target>Napaka pri dostopu do servisa senčnih kopij!</target>
+
+<source>Making shadow copies on WOW64 is not supported. Please use FreeFileSync 64-bit version.</source>
+<target>Ustvarjanje senčnih kopij na WOW63 ni podprto. Prosimo uporabite 64-bitno FreeFileSync različico.</target>
+
+<source>Could not determine volume name for file:</source>
+<target>Ne morem določiti imena volumna za datoteko:</target>
+
+<source>Volume name %x not part of filename %y!</source>
+<target>Ime volumna %x ni del imena datoteke %y!</target>
+
 <source>/sec</source>
 <target>/sek</target>
+
+<source>File does not exist:</source>
+<target>Datoteka ne obstaja:</target>
+
+<source>Could not read values for the following XML nodes:</source>
+<target>Ne morem brati vrednosti za naslednja XML vozlišča:</target>
 
 <source>S&ave configuration...</source>
 <target>Shr&ani konfiguracijo...</target>
@@ -330,147 +360,6 @@ Ukazna vrstica se izvrši vsakič ko:
 <source>A directory input field is empty.</source>
 <target>Vpisno polje za imenik je prazno.</target>
 
-<source>Drag && drop</source>
-<target>Povleci && spusti</target>
-
-<source>Could not initialize directory monitoring:</source>
-<target>Ne morem začeti nadzorovanja imenikov:</target>
-
-<source>Error when monitoring directories.</source>
-<target>Napaka pri nadzorovanju imenikov.</target>
-
-<source>Conversion error:</source>
-<target>Napaka pri pretvorbi:</target>
-
-<source>Error deleting file:</source>
-<target>Napaka pri brisanju datoteke:</target>
-
-<source>Error moving file:</source>
-<target>Napaka pri premikanju datoteke:</target>
-
-<source>Target file already existing!</source>
-<target>Ciljna datoteka že obstaja!</target>
-
-<source>Error moving directory:</source>
-<target>Napaka pri premikanju imenika:</target>
-
-<source>Target directory already existing!</source>
-<target>Ciljni imenik že obstaja!</target>
-
-<source>Error deleting directory:</source>
-<target>Napaka pri brisanju imenika:</target>
-
-<source>Error changing modification time:</source>
-<target>Napaka pri spreminjanju časa modifikacije:</target>
-
-<source>Error loading library function:</source>
-<target>Napaka pri nalaganju funkcije iz knjižnice:</target>
-
-<source>Error reading security context:</source>
-<target>Napaka pri branju varnostne skladnosti:</target>
-
-<source>Error writing security context:</source>
-<target>Napaka pri pisanju varnostne skladnosti:</target>
-
-<source>Error copying file permissions:</source>
-<target>Napaka pri kopiranju datotečnih dovoljenj:</target>
-
-<source>Error creating directory:</source>
-<target>Napaka pri ustvarjanju imenika:</target>
-
-<source>Error copying symbolic link:</source>
-<target>Napaka pri kopiranju simboličnih povezav:</target>
-
-<source>Error copying file:</source>
-<target>Napaka pri kopiranju datoteke:</target>
-
-<source>Error opening file:</source>
-<target>Napaka pri odpiranju datoteke:</target>
-
-<source>Error writing file:</source>
-<target>Napaka pri pisanju datoteke:</target>
-
-<source>Error reading file:</source>
-<target>Napaka pri branju datoteke:</target>
-
-<source>Operation aborted!</source>
-<target>Operacija prekinjena!</target>
-
-<source>Endless loop when traversing directory:</source>
-<target>Neskončna zanka pri prehodu imenika:</target>
-
-<source>Error traversing directory:</source>
-<target>Napaka pri prehajanju imenika:</target>
-
-<source>Error setting privilege:</source>
-<target>Napaka pri nastavljanju privilegija:</target>
-
-<source>Error moving to Recycle Bin:</source>
-<target>Napaka pri premikanju v Koš:</target>
-
-<source>Could not load a required DLL:</source>
-<target>Ne morem naložiti zahtevano DLL:</target>
-
-<source>Error writing to synchronization database:</source>
-<target>Napaka pri pisanju v sinhronizacijsko podatkovno bazo:</target>
-
-<source>Error accessing Volume Shadow Copy Service!</source>
-<target>Napaka pri dostopu do servisa senčnih kopij!</target>
-
-<source>Making shadow copies on WOW64 is not supported. Please use FreeFileSync 64-bit version.</source>
-<target>Ustvarjanje senčnih kopij na WOW63 ni podprto. Prosimo uporabite 64-bitno FreeFileSync različico.</target>
-
-<source>Could not determine volume name for file:</source>
-<target>Ne morem določiti imena volumna za datoteko:</target>
-
-<source>Volume name %x not part of filename %y!</source>
-<target>Ime volumna %x ni del imena datoteke %y!</target>
-
-<source>%x TB</source>
-<target>%x TB</target>
-
-<source>%x PB</source>
-<target>%x PB</target>
-
-<source>%x%</source>
-<target>%x%</target>
-
-<source>
-<pluralform>1 min</pluralform>
-<pluralform>%x min</pluralform>
-</source>
-<target>
-<pluralform>1 min</pluralform>
-<pluralform>%x min</pluralform>
-<pluralform>%x min</pluralform>
-<pluralform>%x min</pluralform>
-</target>
-
-<source>
-<pluralform>1 hour</pluralform>
-<pluralform>%x hours</pluralform>
-</source>
-<target>
-<pluralform>1 ura</pluralform>
-<pluralform>%x uri</pluralform>
-<pluralform>%x ure</pluralform>
-<pluralform>%x ur</pluralform>
-</target>
-
-<source>
-<pluralform>1 day</pluralform>
-<pluralform>%x days</pluralform>
-</source>
-<target>
-<pluralform>1 dan</pluralform>
-<pluralform>%x dni</pluralform>
-<pluralform>%x dni</pluralform>
-<pluralform>%x dni</pluralform>
-</target>
-
-<source>Could not read values for the following XML nodes:</source>
-<target>Ne morem brati vrednosti za naslednja XML vozlišča:</target>
-
 <source>Logging</source>
 <target>Beleženje</target>
 
@@ -488,9 +377,6 @@ Ukazna vrstica se izvrši vsakič ko:
 
 <source>Batch execution</source>
 <target>Paketno izvajanje</target>
-
-<source>Log-messages:</source>
-<target>Sporočila beleženja:</target>
 
 <source>Stop</source>
 <target>Ustavi</target>
@@ -618,6 +504,24 @@ Ukazna vrstica se izvrši vsakič ko:
 <source>Total amount of data that will be transferred</source>
 <target>Količina podatkov, ki bo prenešena</target>
 
+<source>Operation:</source>
+<target>Operacija:</target>
+
+<source>Items found:</source>
+<target>Najdenih elementov:</target>
+
+<source>Items remaining:</source>
+<target>Preostalih elementov:</target>
+
+<source>Speed:</source>
+<target>Hitrost:</target>
+
+<source>Time remaining:</source>
+<target>Preostali čas:</target>
+
+<source>Time elapsed:</source>
+<target>Pretečen čas:</target>
+
 <source>Batch job</source>
 <target>Paketno opravilo</target>
 
@@ -666,32 +570,14 @@ Ukazna vrstica se izvrši vsakič ko:
 <source>&Cancel</source>
 <target>&Prekliči</target>
 
-<source>Operation:</source>
-<target>Operacija:</target>
-
-<source>Items found:</source>
-<target>Najdenih elementov:</target>
-
-<source>Items remaining:</source>
-<target>Preostalih elementov:</target>
-
-<source>Speed:</source>
-<target>Hitrost:</target>
-
-<source>Time remaining:</source>
-<target>Preostali čas:</target>
-
-<source>Time elapsed:</source>
-<target>Pretečen čas:</target>
-
 <source>Select variant:</source>
 <target>Izberite varianto:</target>
 
 <source><Automatic></source>
 <target><Samodejno></target>
 
-<source>Identify and propagate changes on both sides using a database. Deletions and conflicts are detected automatically.</source>
-<target>Prepoznaj in širi spremembe na obeh straneh z uporabo podatkovne baze. Izbrisi in spori so zaznani samodejno.</target>
+<source>Identify and propagate changes on both sides using a database. Deletions, renaming and conflicts are detected automatically.</source>
+<target>Identificiraj in promoviraj spremembe na obeh straneh z uporabo podatkovne baze. Izbrisi, preimenovanja in spori so samodejno zaznani.</target>
 
 <source>Mirror ->></source>
 <target>Zrcalno ->></target>
@@ -913,27 +799,19 @@ Izključi: \stuff\temp\*
 <target>Transakcijsko kopiranje datotek</target>
 
 <source>Write to a temporary file (*.ffs_tmp) first then rename it. This guarantees a consistent state even in case of fatal error.</source>
-<target></target>
+<target>Najprej zapisuj v začasno datoteko (*.ffs_tmp) in nato preimenuj. To zagotavlja dosledno stanje celo v primeru usodne napake.</target>
 
 <source>Copy locked files</source>
 <target>Kopiraj zaklenjene datoteke</target>
 
-<source>
-Copy shared or locked files using Volume Shadow Copy Service (Requires Administrator rights)
-</source>
-<target>
-Kopiraj deljene ali zaklenjene datoteke z uporabo servisa Shadow Copy (Zahteva pravice skrbnika)
-</target>
+<source>Copy shared or locked files using Volume Shadow Copy Service (Requires Administrator rights)</source>
+<target>Kopiraj deljene ali zaklenjene datoteke z uporabo servisa Shadow Copy (Zahteva pravice skrbnika)</target>
 
 <source>Copy file access permissions</source>
 <target>Kopiraj dovoljenja dostopov datoteke</target>
 
-<source>
-Transfer file and directory permissions (Requires Administrator rights)
-</source>
-<target>
-Prenesi dovoljenja datotek in imenikov (Zahteva pravice skrbnika)
-</target>
+<source>Transfer file and directory permissions (Requires Administrator rights)</source>
+<target>Prenesi dovoljenja datotek in imenikov (Zahteva pravice skrbnika)</target>
 
 <source>Hidden dialogs:</source>
 <target>Skriti pogovori:</target>
@@ -964,6 +842,9 @@ Prenesi dovoljenja datotek in imenikov (Zahteva pravice skrbnika)
 
 <source>&Find next</source>
 <target>&Najdi naslednje</target>
+
+<source>Operation aborted!</source>
+<target>Operacija prekinjena!</target>
 
 <source>Main bar</source>
 <target>Glavna vrstica</target>
@@ -1005,16 +886,16 @@ Prenesi dovoljenja datotek in imenikov (Zahteva pravice skrbnika)
 <target>Samo-prilagodi stolpce</target>
 
 <source>Icon size:</source>
-<target></target>
+<target>Velikost ikone:</target>
 
 <source>Small</source>
-<target></target>
+<target>Majhna</target>
 
 <source>Medium</source>
-<target></target>
+<target>Srednja</target>
 
 <source>Large</source>
-<target></target>
+<target>Velika</target>
 
 <source>Include all rows</source>
 <target>Vključi se vrstice</target>
@@ -1142,6 +1023,9 @@ Prenesi dovoljenja datotek in imenikov (Zahteva pravice skrbnika)
 <source>File list exported!</source>
 <target>Seznam datotek je bil izvožen!</target>
 
+<source>Error writing file:</source>
+<target>Napaka pri pisanju datoteke:</target>
+
 <source>Batch file created successfully!</source>
 <target>Paketna datoteka je bila uspešno ustvarjena!</target>
 
@@ -1249,9 +1133,6 @@ Prenesi dovoljenja datotek in imenikov (Zahteva pravice skrbnika)
 <source>Filter: Single pair</source>
 <target>Filtriraj: En sam par</target>
 
-<source>Ignore</source>
-<target>Ignoriraj</target>
-
 <source>Direct</source>
 <target>Neposredno</target>
 
@@ -1319,6 +1200,111 @@ Prenesi dovoljenja datotek in imenikov (Zahteva pravice skrbnika)
 <source>Move files into a time-stamped subdirectory</source>
 <target>Premakni datoteke v časovno-označen podimenik</target>
 
+<source>%x TB</source>
+<target>%x TB</target>
+
+<source>%x PB</source>
+<target>%x PB</target>
+
+<source>%x%</source>
+<target>%x%</target>
+
+<source>
+<pluralform>1 min</pluralform>
+<pluralform>%x min</pluralform>
+</source>
+<target>
+<pluralform>1 min</pluralform>
+<pluralform>%x min</pluralform>
+<pluralform>%x min</pluralform>
+<pluralform>%x min</pluralform>
+</target>
+
+<source>
+<pluralform>1 hour</pluralform>
+<pluralform>%x hours</pluralform>
+</source>
+<target>
+<pluralform>1 ura</pluralform>
+<pluralform>%x uri</pluralform>
+<pluralform>%x ure</pluralform>
+<pluralform>%x ur</pluralform>
+</target>
+
+<source>
+<pluralform>1 day</pluralform>
+<pluralform>%x days</pluralform>
+</source>
+<target>
+<pluralform>1 dan</pluralform>
+<pluralform>%x dni</pluralform>
+<pluralform>%x dni</pluralform>
+<pluralform>%x dni</pluralform>
+</target>
+
+<source>Could not initialize directory monitoring:</source>
+<target>Ne morem začeti nadzorovanja imenikov:</target>
+
+<source>Error when monitoring directories.</source>
+<target>Napaka pri nadzorovanju imenikov.</target>
+
+<source>Conversion error:</source>
+<target>Napaka pri pretvorbi:</target>
+
+<source>Error deleting file:</source>
+<target>Napaka pri brisanju datoteke:</target>
+
+<source>Error moving file:</source>
+<target>Napaka pri premikanju datoteke:</target>
+
+<source>Target file already existing!</source>
+<target>Ciljna datoteka že obstaja!</target>
+
+<source>Error moving directory:</source>
+<target>Napaka pri premikanju imenika:</target>
+
+<source>Target directory already existing!</source>
+<target>Ciljni imenik že obstaja!</target>
+
+<source>Error deleting directory:</source>
+<target>Napaka pri brisanju imenika:</target>
+
+<source>Error changing modification time:</source>
+<target>Napaka pri spreminjanju časa modifikacije:</target>
+
+<source>Error loading library function:</source>
+<target>Napaka pri nalaganju funkcije iz knjižnice:</target>
+
+<source>Error reading security context:</source>
+<target>Napaka pri branju varnostne skladnosti:</target>
+
+<source>Error writing security context:</source>
+<target>Napaka pri pisanju varnostne skladnosti:</target>
+
+<source>Error copying file permissions:</source>
+<target>Napaka pri kopiranju datotečnih dovoljenj:</target>
+
+<source>Error creating directory:</source>
+<target>Napaka pri ustvarjanju imenika:</target>
+
+<source>Error copying symbolic link:</source>
+<target>Napaka pri kopiranju simboličnih povezav:</target>
+
+<source>Error copying file:</source>
+<target>Napaka pri kopiranju datoteke:</target>
+
+<source>Error opening file:</source>
+<target>Napaka pri odpiranju datoteke:</target>
+
+<source>Error traversing directory:</source>
+<target>Napaka pri prehajanju imenika:</target>
+
+<source>Endless loop when traversing directory:</source>
+<target>Neskončna zanka pri prehodu imenika:</target>
+
+<source>Error setting privilege:</source>
+<target>Napaka pri nastavljanju privilegija:</target>
+
 <source>Both sides have changed since last synchronization!</source>
 <target>Obe strani sta se spremenili od zadnje sinhronizacije!</target>
 
@@ -1349,9 +1335,6 @@ Prenesi dovoljenja datotek in imenikov (Zahteva pravice skrbnika)
 <source>Directories are dependent! Be careful when setting up synchronization rules:</source>
 <target>Imeniki so v odvisnosti! Bodite pozorni, ko nastavljate sinhronizacijska pravila:</target>
 
-<source>Comparing content of files %x</source>
-<target>Primerjam vsebino datotek %x</target>
-
 <source>Memory allocation failed!</source>
 <target>Neuspešno dodeljevanje pomnilnika!</target>
 
@@ -1367,14 +1350,14 @@ Prenesi dovoljenja datotek in imenikov (Zahteva pravice skrbnika)
 <source>Symlinks %x have the same date but a different target!</source>
 <target>Simbolične povezave %x imajo isti datum, vendar različni cilj!</target>
 
+<source>Comparing content of files %x</source>
+<target>Primerjam vsebino datotek %x</target>
+
 <source>Comparing files by content failed.</source>
 <target>Primerjava datotek po vsebini ni uspela.</target>
 
 <source>Generating file list...</source>
 <target>Ustvarjam seznam datotek...</target>
-
-<source>Multiple...</source>
-<target>Večkratno...</target>
 
 <source>Both sides are equal</source>
 <target>Obe strani sta enaki</target>
@@ -1394,6 +1377,12 @@ Prenesi dovoljenja datotek in imenikov (Zahteva pravice skrbnika)
 <source>Delete right file/folder</source>
 <target>Izbriši desno datoteko/mapo</target>
 
+<source>Move file on left</source>
+<target>Premakni datoteko na levo</target>
+
+<source>Move file on right</source>
+<target>Premakni datoteko na desno</target>
+
 <source>Overwrite left file/folder with right one</source>
 <target>Prepiši levo datoteko/mapo s tisto na desni</target>
 
@@ -1408,6 +1397,9 @@ Prenesi dovoljenja datotek in imenikov (Zahteva pravice skrbnika)
 
 <source>Copy file attributes only to right</source>
 <target>Kopiraj atribute datoteke samo na desno</target>
+
+<source>Multiple...</source>
+<target>Večkratno...</target>
 
 <source>Deleting file %x</source>
 <target>Brisanje datoteke %x</target>
