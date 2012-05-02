@@ -19,6 +19,9 @@
 <source>Browse directory</source>
 <target>Sök upp katalog</target>
 
+<source>Abort requested: Waiting for current operation to finish...</source>
+<target>Avbryter: Väntar på att aktuell process skall slutföras...</target>
+
 <source>RealtimeSync - Automated Synchronization</source>
 <target>RealtimeSync - Automatiserad synkronisering</target>
 
@@ -115,8 +118,8 @@
 <source>Linux Error Code %x:</source>
 <target>Linux Felkod %x:</target>
 
-<source>Error resolving symbolic link:</source>
-<target>Kan inte tyda symbolisk länk:</target>
+<source>Cannot resolve symbolic link %x.</source>
+<target>Den symboliska länken %x kan inte matchas.</target>
 
 <source>%x MB</source>
 <target>%x MB</target>
@@ -136,35 +139,41 @@
 <pluralform>%x Byte</pluralform>
 </target>
 
-<source>Error reading from synchronization database:</source>
-<target>Kan inte läsa från databasen:</target>
+<source>Cannot read file %x.</source>
+<target>Filen %x kan inte läsas in</target>
 
-<source>Error writing to synchronization database:</source>
-<target>Kan inte skriva till databas:</target>
+<source>Cannot write file %x.</source>
+<target>Filen %x kan inte skrivas</target>
 
-<source>Incompatible synchronization database format:</source>
-<target>Inkompatibelt databasformat:</target>
+<source>Database file %x is incompatible.</source>
+<target>Databasfilen %x är inkompatibel</target>
 
 <source>Initial synchronization:</source>
 <target>Initial synkronisering:</target>
 
-<source>One of the FreeFileSync database files is not yet existing:</source>
-<target>En av FreeFileSyncs databasfiler saknas:</target>
+<source>Database file %x does not yet exist.</source>
+<target>Databasfilen %x finns ännu inte</target>
 
-<source>Database files do not share a common synchronization session:</source>
-<target>Databasfiler delar inte en gemensam synkroniseringssession:</target>
+<source>Out of memory!</source>
+<target>Minnesbrist!</target>
+
+<source>Database files do not share a common session.</source>
+<target>Databasfilerna har ingen gemensam session</target>
 
 <source>An exception occurred!</source>
 <target>Ett undantag inträffade!</target>
 
-<source>Error reading file attributes:</source>
-<target>Kan inte läsa filattribut:</target>
+<source>Cannot read file attributes of %x.</source>
+<target>Kan inte läsa filattribut för %x</target>
+
+<source>Cannot get process information.</source>
+<target>Processinformation kan inte inhämtas</target>
 
 <source>Waiting while directory is locked (%x)...</source>
 <target>Väntar medan katalogen låses (%x)...</target>
 
-<source>Error setting directory lock:</source>
-<target>Kan inte låsa katalogen:</target>
+<source>Cannot set directory lock %x.</source>
+<target>Kan inte låsa katalogen %x.</target>
 
 <source>
 <pluralform>1 sec</pluralform>
@@ -175,8 +184,8 @@
 <pluralform>%x sek</pluralform>
 </target>
 
-<source>Error reading file:</source>
-<target>Kan inte läsa filen:</target>
+<source>Error parsing file %x, row %y, column %z.</source>
+<target>Tolkningsfel på filen %x, rad %y, kolumn %z.</target>
 
 <source>Scanning:</source>
 <target>Skannar:</target>
@@ -193,38 +202,32 @@
 <pluralform>[%x trådar]</pluralform>
 </target>
 
-<source>Invalid FreeFileSync config file!</source>
-<target>Felaktig FreeFileSync konfigurationsfil!</target>
+<source>/sec</source>
+<target>/s</target>
 
-<source>Error parsing configuration file:</source>
-<target>Kan inte läsa in konfigurationsfil:</target>
+<source>File %x does not contain a valid configuration.</source>
+<target>Filen %x innehåller ingen giltig konfiguration.</target>
 
-<source>Configuration loaded partially only:</source>
-<target>Konfigurationsfilen endast delvis inläst</target>
+<source>Configuration file %x loaded partially only.</source>
+<target>Konfigurationsfilen %x lästes bara delvis in.</target>
 
-<source>Unable to move %x to the Recycle Bin!</source>
-<target>Kan inte flytta %x till Papperskorgen</target>
+<source>Cannot access Volume Shadow Copy Service.</source>
+<target>Kan inte komma åt tjänsten Volume Shadow Copy.</target>
+
+<source>Please use FreeFileSync 64-bit version to create shadow copies on this system.</source>
+<target>Använd FreeFileSync 64-bitarsversion för att skapa skuggkopior på detta system.</target>
 
 <source>Cannot load file %x.</source>
 <target>Kan inte läsa in %x</target>
 
-<source>Error accessing Volume Shadow Copy Service!</source>
-<target>Kunde inte starta tjänsten Volume Shadow Copy (VSS)</target>
-
-<source>Making shadow copies on WOW64 is not supported. Please use FreeFileSync 64-bit version.</source>
-<target>Skuggkopior av wow64 stöds ej. Använd FreeFileSync x64 istället!</target>
-
-<source>Cannot determine volume name for file:</source>
-<target>Kan inte bestämma volymnamn för filen:</target>
+<source>Path %x does not contain a volume name.</source>
+<target>Sökvägen %x innehåller inget volymnamn.</target>
 
 <source>Volume name %x not part of file name %y!</source>
 <target>Volymnamn %x saknas i filnamn %y!</target>
 
-<source>/sec</source>
-<target>/s</target>
-
-<source>File does not exist:</source>
-<target>Filen finns inte:</target>
+<source>Cannot find file %x.</source>
+<target>Filen %x kan inte hittas</target>
 
 <source>Cannot read the following XML elements:</source>
 <target>Kan inte läsa följande XML-element:</target>
@@ -303,9 +306,6 @@ Kommandot verkställes när:
 <source>RealtimeSync configuration</source>
 <target>RealtimeSync konfiguration</target>
 
-<source>File already exists. Overwrite?</source>
-<target>Filen finns redan. Vill du skriva över:</target>
-
 <source>&Restore</source>
 <target>&Återställ</target>
 
@@ -348,20 +348,20 @@ Kommandot verkställes när:
 <source>FreeFileSync configuration</source>
 <target>FreeFileSync konfiguration</target>
 
-<source>FreeFileSync Batch Job</source>
-<target>FreeFileSync Batch-jobb</target>
-
-<source>Unable to create log file!</source>
-<target>Kan inte skapa loggfil!</target>
-
 <source>Batch execution</source>
 <target>Batch-körning</target>
 
-<source>Stop</source>
-<target>Stopp</target>
+<source>Items processed:</source>
+<target>Processade poster</target>
+
+<source>Items remaining:</source>
+<target>Återstående poster:</target>
 
 <source>Total time:</source>
 <target>Total tid:</target>
+
+<source>Stop</source>
+<target>Stopp</target>
 
 <source>Synchronization aborted!</source>
 <target>Synkronisering avbruten!</target>
@@ -369,14 +369,17 @@ Kommandot verkställes när:
 <source>Synchronization completed with errors!</source>
 <target>Synkronisering slutförd med fel!</target>
 
+<source>Nothing to synchronize!</source>
+<target>Det finns inget att synkronisera!</target>
+
 <source>Synchronization completed successfully!</source>
 <target>Synkronisering slutförd!</target>
 
-<source>Press "Switch" to open FreeFileSync GUI mode.</source>
-<target>Tryck på "Växla" för att öppna FreeFileSyncs grafiska läge</target>
+<source>Press "Switch" to resolve issues in FreeFileSync main dialog.</source>
+<target>Tryck "Växla" för att lösa problem i FreeFileSyncs huvudfönster</target>
 
-<source>Switching to FreeFileSync GUI mode...</source>
-<target>Växlar till FreeFileSyncs grafiska läge</target>
+<source>Switching to FreeFileSync main dialog...</source>
+<target>Växlar till FreeFileSyncs huvudfönster...</target>
 
 <source>Unable to connect to sourceforge.net!</source>
 <target>Kan inte ansluta sourceforge.net!</target>
@@ -534,9 +537,6 @@ Kommandot verkställes när:
 <source>Items found:</source>
 <target>Funna poster:</target>
 
-<source>Items remaining:</source>
-<target>Återstående poster:</target>
-
 <source>Speed:</source>
 <target>Hastighet:</target>
 
@@ -564,9 +564,6 @@ Kommandot verkställes när:
 <source>Right</source>
 <target>Höger</target>
 
-<source>Sync setttings</source>
-<target>Synkroniseringsinställningar</target>
-
 <source>Status feedback</source>
 <target>Status</target>
 
@@ -591,8 +588,8 @@ Kommandot verkställes när:
 <source>&Load</source>
 <target>&Läs in</target>
 
-<source>&Cancel</source>
-<target>&Avbryt</target>
+<source>Cancel</source>
+<target>Avbryt</target>
 
 <source>Select variant:</source>
 <target>Välj variant:</target>
@@ -642,8 +639,8 @@ Kommandot verkställes när:
 <source>Conflict/file cannot be categorized</source>
 <target>Konflikt/Fil kan inte kategoriseras</target>
 
-<source>&OK</source>
-<target>&OK</target>
+<source>OK</source>
+<target>OK</target>
 
 <source>Compare by...</source>
 <target>Jämför...</target>
@@ -677,9 +674,6 @@ Filerna betecknas som lika om,
 
 <source>Synchronizing...</source>
 <target>Synkroniserar...</target>
-
-<source>Items processed:</source>
-<target>Processade poster</target>
 
 <source>&Pause</source>
 <target>&Paus</target>
@@ -1020,9 +1014,6 @@ Undanta: \stuff\temp\*
 <source>File list exported!</source>
 <target>Fillista exporterad!</target>
 
-<source>Error writing file:</source>
-<target>Kan inte skriva fil:</target>
-
 <source>
 <pluralform>Object deleted successfully!</pluralform>
 <pluralform>%x objects deleted successfully!</pluralform>
@@ -1068,20 +1059,20 @@ Undanta: \stuff\temp\*
 <source>Paused</source>
 <target>Pausad</target>
 
+<source>Initializing...</source>
+<target>Initierar...</target>
+
 <source>Aborted</source>
 <target>Användaren avbröt</target>
 
 <source>Completed</source>
 <target>Slutförd</target>
 
-<source>Abort requested: Waiting for current operation to finish...</source>
-<target>Avbryter: Väntar på att aktuell process skall slutföras...</target>
+<source>Continue</source>
+<target>Fortsätt</target>
 
 <source>Pause</source>
 <target>Paus</target>
-
-<source>Continue</source>
-<target>Fortsätt</target>
 
 <source>Cannot find %x</source>
 <target>Kan inte hitta %x</target>
@@ -1221,68 +1212,65 @@ Undanta: \stuff\temp\*
 <pluralform>%x dagar</pluralform>
 </target>
 
-<source>Could not initialize directory monitoring:</source>
-<target>Kan inte initiera katalogskanner:</target>
-
-<source>Error when monitoring directories.</source>
-<target>Fel vid övervakning av kataloger.</target>
+<source>Cannot monitor directory %x.</source>
+<target>Katalogen %x kan inte övervakas.</target>
 
 <source>Conversion error:</source>
 <target>Konversionsfel:</target>
 
-<source>Error deleting file:</source>
-<target>Kan inte ta bort fil:</target>
+<source>Cannot delete file %x.</source>
+<target>Filen %x kan inte tas bort.</target>
 
-<source>Error moving file:</source>
-<target>Kan inte flytta fil:</target>
+<source>The file is locked by another process:</source>
+<target>Filen är låst av en annan process:</target>
 
-<source>Target file already existing!</source>
-<target>Filen finns redan!</target>
+<source>Cannot move file %x to %y.</source>
+<target>Kan inte flytta filen %x till %y.</target>
 
-<source>Error moving directory:</source>
-<target>Kan inte flytta katalog:</target>
+<source>Cannot delete directory %x.</source>
+<target>Kan inte ta bort katalogen %x.</target>
 
-<source>Target directory already existing!</source>
-<target>Målkatalogen finns redan!</target>
+<source>Cannot write modification time of %x.</source>
+<target>Kan inte ändra tidsangivelsen för %x.</target>
 
-<source>Error deleting directory:</source>
-<target>Kan inte ta bort katalog:</target>
+<source>Cannot find system function %x.</source>
+<target>Kan inte hitta systemfunktion %x</target>
 
-<source>Error changing modification time:</source>
-<target>Kan inte modifiera tidsstämpel:</target>
+<source>Cannot read security context of %x.</source>
+<target>Kan inte läsa säkerhetskontext för %x.</target>
 
-<source>Error loading library function:</source>
-<target>Kan inte starta biblioteksfunktion:</target>
+<source>Cannot write security context of %x.</source>
+<target>Kan inte skriva säkerhetskontext för %x.</target>
 
-<source>Error reading security context:</source>
-<target>Kan inte läsa säkerhetskontext:</target>
+<source>Cannot read permissions of %x.</source>
+<target>Kan inte läsa behörigheter för %x.</target>
 
-<source>Error writing security context:</source>
-<target>Kan inte skriva säkerhetskontext:</target>
+<source>Cannot write permissions of %x.</source>
+<target>Kan inte skriva behörigheter för %x.</target>
 
-<source>Error copying file permissions:</source>
-<target>Kan inte kopiera filsystembehörighet:</target>
+<source>Cannot create directory %x.</source>
+<target>Kan inte skapa katalogen %x.</target>
 
-<source>Error creating directory:</source>
-<target>Kan inte skapa katalog:</target>
+<source>Cannot copy symbolic link %x to %y.</source>
+<target>Kan inte kopiera den symboliska länken %x till %y.</target>
 
-<source>Error copying symbolic link:</source>
-<target>Kan inte kopiera symbolisk länk:</target>
+<source>Cannot write file attributes of %x.</source>
+<target>Kan inte skriva filattribut för %x.</target>
 
-<source>Error copying file:</source>
-<target>Kan inte kopiera fil:</target>
+<source>Cannot copy file %x to %y.</source>
+<target>Kan inte kopiera filen %x till %y.</target>
 
-<source>Error opening file:</source>
-<target>Kan inte öppna fil:</target>
+<source>Cannot read directory %x.</source>
+<target>Kan inte läsa in katalogen %x.</target>
 
-<source>Error traversing directory:</source>
-<target>Accessfel på katalog:</target>
+<source>Endless loop.</source>
+<target>Oändlig loop.</target>
 
-<source>Endless loop when traversing directory:</source>
-<target>Oändlig loop vid accessförsök på katalog:</target>
+<source>Cannot set privilege %x.</source>
+<target>Kan inte att ange behörigheten %x.</target>
 
-<source>Error setting privilege:</source>
-<target>Kan inte ange privilegie:</target>
+<source>Unable to move %x to the Recycle Bin!</source>
+<target>Kan inte flytta %x till Papperskorgen</target>
 
 <source>Both sides have changed since last synchronization!</source>
 <target>Båda sidor har ändrats sedan senaste synkroniseringen!</target>
@@ -1308,8 +1296,8 @@ Undanta: \stuff\temp\*
 <source>You can ignore this error to consider the directory as empty.</source>
 <target>Du kan bortse från det här felet och utgå ifrån att katalogen är tom</target>
 
-<source>Directory does not exist:</source>
-<target>Katalogen finns inte:</target>
+<source>Cannot find directory %x.</source>
+<target>Kan inte hitta katalogen  %x.</target>
 
 <source>Directories are dependent! Be careful when setting up synchronization rules:</source>
 <target>Kataloger är beroende! Var försiktig när du sätter upp synkroniseringsregler:</target>
@@ -1317,20 +1305,17 @@ Undanta: \stuff\temp\*
 <source>Preparing synchronization...</source>
 <target>Förbereder synkronisering...</target>
 
-<source>Out of memory!</source>
-<target>Minnesbrist!</target>
+<source>Conflict detected:</source>
+<target>Konflikt upptäckt:</target>
 
 <source>File %x has an invalid date!</source>
 <target>Filen %x har ett ogiltigt datum!</target>
 
-<source>Conflict detected:</source>
-<target>Konflikt upptäckt:</target>
-
 <source>Files %x have the same date but a different size!</source>
 <target>Filerna %x har samma datum men olika storlek!</target>
 
-<source>Symlinks %x have the same date but a different target!</source>
-<target>Symbolisk länk %x har samma datum, men annat mål!</target>
+<source>Symbolic links %x have the same date but a different target.</source>
+<target>De symboliska länkarna %x har samma datumstämpel men olika mål.</target>
 
 <source>Comparing content of files %x</source>
 <target>Jämför filinnehåll för %x</target>
@@ -1413,11 +1398,11 @@ Undanta: \stuff\temp\*
 <source>Creating file %x</source>
 <target>Skapar fil %x</target>
 
-<source>Creating folder %x</source>
-<target>Skapar katalog %x</target>
-
 <source>Creating symbolic link %x</source>
 <target>Skapar den symboliska länken %x</target>
+
+<source>Creating folder %x</source>
+<target>Skapar katalog %x</target>
 
 <source>Overwriting file %x</source>
 <target>Skriver över filen %x</target>
@@ -1437,8 +1422,8 @@ Undanta: \stuff\temp\*
 <source>Directory for file versioning was not supplied!</source>
 <target>Katalog för versionshantering har inte specificerats</target>
 
-<source>Source directory does not exist anymore:</source>
-<target>Källkatalogen finns inte längre:</target>
+<source>Source directory %x not found.</source>
+<target>Källkatalogen %x hittas inte</target>
 
 <source>Unresolved conflicts existing!</source>
 <target>Obehandlad konflikt upptäckt!</target>
@@ -1472,12 +1457,6 @@ Undanta: \stuff\temp\*
 
 <source>Generating database...</source>
 <target>Skapar databas...</target>
-
-<source>Nothing to synchronize!</source>
-<target>Det finns inget att synkronisera!</target>
-
-<source>Unable to copy locked file %x!</source>
-<target>Kan inte kopiera den låsta filen %x!</target>
 
 <source>Data verification error: Source and target file have different content!</source>
 <target>Verifikationsfel: Källfil och målfil har olika innehåll!</target>
