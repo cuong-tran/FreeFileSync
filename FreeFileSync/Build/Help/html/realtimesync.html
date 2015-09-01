@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<link rel="stylesheet" type="text/css" href="base.css" >
+	<title>RealtimeSync - Automated Synchronization</title>
+</head>
+
+<body>
+	<h1 style="text-align: center">
+		<img src="../images/RTS-logo.png" alt="RealtimeSync"><br>
+		<i><span style="font-weight: normal">Automated Synchronization</span></i>
+	</h1>
+
+	<p>
+		The primary purpose of RealtimeSync is to execute a command line each time it <b>detects changes</b> in one of the monitored directories
+		or when a <b>directory becomes available</b> (e. g. insert of a USB-stick). Usually this command line will trigger a FreeFileSync batch job.
+	</p>
+	<br>
+	
+	<h2>Example: <span style="font-weight:normal">Real time synchronization - in combination with FreeFileSync</span></h2>
+	<p>
+		Start RealtimeSync.exe located in FreeFileSync's installation directory and 
+		enter all folders you want to monitor. Instead of doing this manually you can import a ffs_batch
+		file via <b>Menu &rarr; File &rarr; Open</b>. This not only extracts all directories relevant for synchronization
+		but also sets up the command line to execute the ffs_batch file each time changes are detected.
+		Now press <b>Start</b> to begin monitoring.
+	</p>
+	<div style="margin-left: 1.3cm">
+		<img src="../images/RealtimeSync.png" alt="RealtimeSync main window">
+	</div>
+	<br>
+
+	<div class="box-outer"><div class="bluebox"><div class="box-inner">
+		<b>Note</b>
+		<ul style="margin: 0">
+			<li>The command should <b>not</b> <b>block</b> progress. If you call a FreeFileSync batch job, make 
+				sure it does not show any popup windows. See notes in <a href="command-line.html">Command Line Usage</a>.
+				<br>&nbsp;
+				
+			<li>RealtimeSync will skip showing the main dialog and begin monitoring immediately if 
+				you pass a ffs_real configuration file <b>or</b> a FreeFileSync ffs_batch file as first 
+				command line argument to RealtimeSync.exe. This helps you integrate RealtimeSync into your operating system's auto start:<br>				
+				<div class="command-line">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;C:\Program Files\FreeFileSync\RealtimeSync.exe&quot; &quot;D:\Backup Projects.ffs_real&quot;</div>
+				<div class="command-line">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;C:\Program Files\FreeFileSync\RealtimeSync.exe&quot; &quot;D:\Backup Projects.ffs_batch&quot;</div>
+				<br>
+	
+			<li>RealtimeSync is not tied to starting FreeFileSync. It can also be used in other scenarios, like sending an email whenever a certain directory is modified.
+		</ul>
+	</div></div></div>
+	<br>
+	<br>
+
+	<h2>Example: <span style="font-weight:normal">Automatic synchronization when a USB stick is inserted</span></h2>
+	<p>
+		Save a ffs_batch configuration in the USB stick's root directory, 
+		e.g. <span class="file-path">H:\</span> and let FreeFileSync run it when the stick is mounted.
+		But instead of hard coding the USB drive letter <span class="file-path">H:\</span> (which may change occasionally), 
+		refer to the USB stick via its <a href="variable-drive-letters.html">volume name</a> instead.<br>
+		<br>
+		Configure RealtimeSync as follows:<br>
+	</p>
+	<div style="display:inline-block; margin-left: 1.3cm; text-align: center;">
+		<img src="../images/monitor-usb-insert.png" alt="Monitor USB stick insert"><br>
+		
+		<i>"Backup" is the volume name of the USB stick in our example.</i>
+	</div>
+
+	<p>
+		Whenever directory <span class="file-path">H:\Data</span> becomes available, RealtimeSync executes the command line which starts the batch job located
+		on the stick. RealtimeSync will also trigger each time files are modified in <span class="file-path">H:\Data</span>.
+	</p>
+
+	<div class="box-outer"><div class="bluebox"><div class="box-inner">
+		<b>Note</b><br>	
+		The full path of the last changed file and the action that triggered the
+		change notification (create, update or delete) are written
+		to the environment variables <b><span class="command-line">%change_path%</span></b> and <b><span class="command-line">%change_action%</span></b>.
+	</div></div></div>	
+	<br>
+	<br>
+
+	<h2>Example: <span style="font-weight:normal">Log names of changed files and directories (Windows)</span></h2>
+	<p>
+		<div class="box-outer"><div class="greybox"><div class="box-inner">
+			Show which file or directory has triggered a change. Enter command line:<br>			
+			<div class="command-line">
+				&nbsp;&nbsp;&nbsp;&nbsp;cmd /c echo %change_action% &quot;%change_path%&quot; &amp; pause
+			</div>
+			<br>
+			
+			Write a list of all changes to a log file:<br>			
+			<div class="command-line">
+				&nbsp;&nbsp;&nbsp;&nbsp;cmd /c echo %change_action% &quot;%change_path%&quot; &gt;&gt; %UserProfile%\Desktop\log.txt
+			</div>
+		</div></div></div>	
+	</p>
+
+	<div class="box-outer"><div class="bluebox"><div class="box-inner">
+		<b>Note</b><br>
+		When RealtimeSync executes a Windows batch file (bat or cmd) a black console window is shown. You can hide it using the Visual Basic script
+		<span class="file-path">HideConsole.vbs</span> located in FreeFileSync's installation directory:
+		<br><br>
+		<div class="command-line">wscript &quot;C:\Program files\FreeFileSync\HideConsole.vbs&quot; C:\MyBatchFile.cmd</div>
+	</div></div></div>
+	<br>
+	<br>
+
+	<h2>Limitations:</h2>
+	<ul>
+		<li>If multiple changes happen at the same time, only the name of the first file is written to variable <b><span class="command-line">%changed_file%</span></b>.
+		<li>While RealtimeSync is executing the command line, monitoring is inactive and changes occurring during this time are not detected. 
+	</ul>
+</body>
+</html>
