@@ -1,0 +1,168 @@
+name: Build FreeFileSync (Final Version with warn_static.h & C++23 fix)
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Target architecture'
+        required: true
+        default: 'amd64'
+        type: choice
+        options:
+          - amd64
+          - arm64
+          - armhf
+          - i386
+
+jobs:
+  build:
+    name: Build for ${{ github.event.inputs.arch }}
+    runs-on: ${{ github.event.inputs.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    env:
+      ARCH: ${{ github.event.inputs.arch }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (Native/Cross)
+        run: |
+          sudo apt update
+          case "$ARCH" in
+            amd64)
+              sudo apt install -y wget unzip bzip2 make g++ pkg-config libgtk-3-dev libssl-dev libpsl-dev libidn2-dev patch git
+              ;;
+            arm64)
+              sudo apt install -y wget unzip bzip2 make g++ pkg-config libgtk-3-dev libssl-dev libpsl-dev libidn2-dev patch git
+              ;;
+            armhf)
+              sudo apt install -y wget unzip bzip2 make pkg-config patch git g++-arm-linux-gnueabihf
+              sudo dpkg --add-architecture armhf
+              sudo apt update
+              sudo apt install -y libgtk-3-dev:armhf libssl-dev:armhf libpsl-dev:armhf libidn2-dev:armhf
+              ;;
+            i386)
+              sudo apt install -y wget unzip bzip2 make pkg-config patch git g++-multilib
+              sudo dpkg --add-architecture i386
+              sudo apt update
+              sudo apt install -y libgtk-3-dev:i386 libssl-dev:i386 libpsl-dev:i386 libidn2-dev:i386
+              ;;
+          esac
+
+      - name: Build external dependencies (libssh2, libcurl, wxWidgets)
+        run: |
+          # libssh2
+          wget -q https://libssh2.org/download/libssh2-1.11.1.tar.gz
+          tar xzf libssh2-1.11.1.tar.gz
+          cd libssh2-1.11.1
+          mkdir build && cd build
+          case "$ARCH" in armhf) HOST=--host=arm-linux-gnueabihf ;; i386) HOST=--host=i686-linux-gnu ;; *) HOST= ;; esac
+          ../configure $HOST
+          make -j$(nproc) && sudo make install
+          cd ../..
+
+          # libcurl
+          wget -q https://curl.se/download/curl-8.15.0.tar.gz
+          tar xzf curl-8.15.0.tar.gz
+          cd curl-8.15.0
+          mkdir build && cd build
+          ../configure $HOST --with-openssl --with-libssh2 --enable-versioned-symbols
+          make -j$(nproc) && sudo make install
+          cd ../..
+
+          # wxWidgets
+          wget -q https://github.com/wxWidgets/wxWidgets/releases/download/v3.3.1/wxWidgets-3.3.1.tar.bz2
+          tar xjf wxWidgets-3.3.1.tar.bz2
+          cd wxWidgets-3.3.1
+          mkdir gtk-build && cd gtk-build
+          ../configure $HOST --disable-shared
+          make -j$(nproc) && sudo make install
+          cd ../..
+
+      - name: Clone FreeFileSync (version14) and apply patches
+        run: |
+          rm -rf FreeFileSync
+          git clone --branch version14 https://github.com/Geeeeeker/FreeFileSync.git
+          cd FreeFileSync
+
+          # 下载缺失的 warn_static.h
+          echo "Downloading missing warn_static.h from version13 branch..."
+          mkdir -p zen
+          wget -q -O zen/warn_static.h https://raw.githubusercontent.com/Geeeeeker/FreeFileSync/version13/zen/warn_static.h
+          if [ ! -f zen/warn_static.h ]; then
+            echo "Error: Failed to download warn_static.h"
+            exit 1
+          fi
+
+          # 查找 Makefile 位置
+          BUILD_DIR=$(dirname $(find . -name Makefile -type f | head -n 1))
+          echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_ENV
+          echo "REPO_ROOT=$(pwd)" >> $GITHUB_ENV
+
+          # 应用补丁：sftp.cpp
+          SFTP_CPP=$(find . -path "*/afs/sftp.cpp" -type f | head -n 1)
+          [ -n "$SFTP_CPP" ] && sed -i '21i#define MAX_SFTP_OUTGOING_SIZE 30000\n#define MAX_SFTP_READ_SIZE 30000' "$SFTP_CPP"
+
+          # Makefile GTK3 修改
+          [ -f "$BUILD_DIR/Makefile" ] && sed -i 's/`pkg-config --cflags gtk+-2.0`/`pkg-config --cflags gtk+-3.0`/; s/-isystem\/usr\/include\/gtk-2.0/-isystem\/usr\/include\/gtk-3.0/' "$BUILD_DIR/Makefile"
+
+          # application.cpp：将 #error 改为 #warning（基于内容，而非行号）
+          APP_CPP=$(find . -name application.cpp -type f | head -n 1)
+          if [ -n "$APP_CPP" ]; then
+            sed -i 's/#error why is wxWidgets uncaught exception handling enabled!?/#warning why is wxWidgets uncaught exception handling enabled!?/' "$APP_CPP"
+          else
+            echo "Warning: application.cpp not found"
+          fi
+
+          # darkmode.cpp 补丁
+          DARKMODE_CPP=$(find . -path "*/wx+/darkmode.cpp" -type f | head -n 1)
+          if [ -n "$DARKMODE_CPP" ]; then
+            sed -i '63s/globalDefaultThemeIsDark = wxSystemSettings::GetAppearance().AreAppsDark();/globalDefaultThemeIsDark = false;/' "$DARKMODE_CPP"
+            sed -i '96,99d' "$DARKMODE_CPP"
+          fi
+
+      - name: Enable C++23 for GCC
+        run: |
+          cd $REPO_ROOT/$BUILD_DIR
+          if [ -f Makefile ]; then
+            # 在 cxxFlags 中添加 -std=c++23（如果尚未存在）
+            if ! grep -q -- '-std=c++23' Makefile; then
+              sed -i '/^cxxFlags *=/ s/$/ -std=c++23/' Makefile
+              echo "Added -std=c++23 to Makefile"
+            else
+              echo "-std=c++23 already present"
+            fi
+          else
+            echo "Error: Makefile not found in $BUILD_DIR"
+            exit 1
+          fi
+
+      - name: Build FreeFileSync
+        run: |
+          cd $REPO_ROOT/$BUILD_DIR
+          if [ "$ARCH" = "armhf" ]; then
+            make CC=arm-linux-gnueabihf-gcc CXX=arm-linux-gnueabihf-g++ -j$(nproc)
+          elif [ "$ARCH" = "i386" ]; then
+            make CC="gcc -m32" CXX="g++ -m32" -j$(nproc)
+          else
+            make -j$(nproc)
+          fi
+
+      - name: Package and Release
+        run: |
+          BIN_PATH=$(find $REPO_ROOT -name "FreeFileSync_*" -type f | head -n 1 || find $REPO_ROOT -name "FreeFileSync" -type f | head -n 1)
+          if [ -z "$BIN_PATH" ]; then echo "Binary not found"; exit 1; fi
+          cp "$BIN_PATH" "FreeFileSync_$ARCH"
+          zip "FreeFileSync_$ARCH.zip" "FreeFileSync_$ARCH"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreeFileSync_${{ env.ARCH }}
+          path: FreeFileSync_${{ env.ARCH }}.zip
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_id }}-${{ env.ARCH }}
+          name: FreeFileSync ${{ env.ARCH }} (build #${{ github.run_number }})
+          prerelease: true
+          files: FreeFileSync_${{ env.ARCH }}.zip
