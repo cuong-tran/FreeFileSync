@@ -3,16 +3,13 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef STATUS_HANDLER_IMPL_H_07682758976
-#define STATUS_HANDLER_IMPL_H_07682758976
+#pragma once
 
 #include <zen/basic_math.h>
 #include <zen/file_error.h>
 #include <zen/thread.h>
 #include "process_callback.h"
 #include "speed_test.h"
-
 
 namespace fff
 {
@@ -558,5 +555,3 @@ auto parallelScope(Function&& fun, std::mutex& singleThread) //throw X
     return fun(); //throw X
 }
 }
-
-#endif //STATUS_HANDLER_IMPL_H_07682758976

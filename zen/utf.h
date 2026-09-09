@@ -3,12 +3,9 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef UTF_H_01832479146991573473545
-#define UTF_H_01832479146991573473545
+#pragma once
 
 #include "string_tools.h" //copyStringTo
-
 
 namespace zen
 {
@@ -293,11 +290,9 @@ void codePointToUtf(impl::CodePoint cp, Function writeOutput) //"writeOutput" is
 template <class UtfString> inline
 bool isValidUtf(const UtfString& str)
 {
-    using namespace impl;
-
-    UtfDecoder<GetCharTypeT<UtfString>> decoder(strBegin(str), strLength(str));
-    while (const std::optional<CodePoint> cp = decoder.getNext())
-        if (*cp == REPLACEMENT_CHAR)
+    UtfDecoder<GetCharTypeT<UtfString>> decoder(strBegin(str), strSize(str));
+    while (const std::optional<impl::CodePoint> cp = decoder.getNext())
+        if (*cp == impl::REPLACEMENT_CHAR)
             return false;
 
     return true;
@@ -308,7 +303,7 @@ template <class UtfString> inline
 size_t unicodeLength(const UtfString& str) //return number of code points (+ correctly handle broken UTF encoding)
 {
     size_t uniLen = 0;
-    UtfDecoder<GetCharTypeT<UtfString>> decoder(strBegin(str), strLength(str));
+    UtfDecoder<GetCharTypeT<UtfString>> decoder(strBegin(str), strSize(str));
     while (decoder.getNext())
         ++uniLen;
     return uniLen;
@@ -318,7 +313,6 @@ size_t unicodeLength(const UtfString& str) //return number of code points (+ cor
 template <class UtfStringOut, class UtfStringIn> inline
 UtfStringOut getUnicodeSubstring(const UtfStringIn& str, size_t uniPosFirst, size_t uniPosLast) //return position of Unicode char in UTF-encoded string
 {
-    using namespace impl;
     using CharType = GetCharTypeT<UtfStringIn>;
     assert(uniPosFirst <= uniPosLast && uniPosLast <= unicodeLength(str));
 
@@ -328,9 +322,9 @@ UtfStringOut getUnicodeSubstring(const UtfStringIn& str, size_t uniPosFirst, siz
     UtfStringOut output;
     static_assert(std::is_same_v<GetCharTypeT<UtfStringOut>, CharType>);
 
-    UtfDecoder<CharType> decoder(strBegin(str), strLength(str));
+    UtfDecoder<CharType> decoder(strBegin(str), strSize(str));
 
-    for (size_t uniPos = 0; std::optional<CodePoint> cp = decoder.getNext(); ++uniPos) //[!] declaration in condition part of the for-loop
+    for (size_t uniPos = 0; std::optional<impl::CodePoint> cp = decoder.getNext(); ++uniPos) //[!] declaration in condition part of the for-loop
         if (uniPos >= uniPosFirst)
         {
             if (uniPos >= uniPosLast)
@@ -345,7 +339,7 @@ UtfStringOut getUnicodeSubstring(const UtfStringIn& str, size_t uniPosFirst, siz
 template <class TargetString, class SourceString> inline
 TargetString utfTo(SourceString&& str)
 {
-    if constexpr (std::bool_constant<sizeof(GetCharTypeT<SourceString>) == sizeof(GetCharTypeT<TargetString>)>())
+    if constexpr (sizeof(GetCharTypeT<SourceString>) == sizeof(GetCharTypeT<TargetString>))
         return copyStringTo<TargetString>(std::forward<SourceString>(str));
     else
     {
@@ -353,15 +347,28 @@ TargetString utfTo(SourceString&& str)
         using CharTrg = GetCharTypeT<TargetString>;
         static_assert(sizeof(CharSrc) != sizeof(CharTrg));
 
+        const size_t size = strSize(str);
+        const auto* first = strBegin(str);
+
         TargetString output;
 
-        UtfDecoder<CharSrc> decoder(strBegin(str), strLength(str));
-        while (const std::optional<impl::CodePoint> cp = decoder.getNext())
-            codePointToUtf<CharTrg>(*cp, [&](CharTrg c) { output += c; });
+        output.resize(size);
+
+        for (size_t i = 0; i < size; ++i)
+            if (const CharSrc c = first[i];
+                isAsciiChar(c)) //the happy path! 30% faster runtime (test case ffs_db file parsing "1 million file pairs")
+                output[i] = static_cast<CharTrg>(c);
+            else
+            {
+                output.resize(i);
+
+                UtfDecoder<CharSrc> decoder(first + i, size - i);
+                while (const std::optional<impl::CodePoint> cp = decoder.getNext())
+                    codePointToUtf<CharTrg>(*cp, [&](const CharTrg c2) { output += c2; });
+                break;
+            }
 
         return output;
     }
 }
 }
-
-#endif //UTF_H_01832479146991573473545

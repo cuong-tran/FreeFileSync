@@ -1,3 +1,13 @@
+FreeFileSync 14.12 [2026-09-09]
+-------------------------------
+Further reduced size of database files by 16%
+Improved toggle button layout calculations
+Fixed grid view filters not showing (Linux)
+Fixed text descriptions not wrapping
+Work around ERROR_UNTRUSTED_MOUNT_POINT
+Fixed bitmap buttons being shrinked (macOS)
+
+
 FreeFileSync 14.11 [2026-08-10]
 ------------------------------
 Fixed "TLS session resumption required" FTP error

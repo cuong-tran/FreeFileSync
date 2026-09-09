@@ -3,12 +3,9 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef CVRT_STRUC_H_018727409908342709743
-#define CVRT_STRUC_H_018727409908342709743
+#pragma once
 
 #include "dom.h"
-
 
 namespace zen
 {
@@ -56,27 +53,23 @@ ZEN_INIT_DETECT_MEMBER(insert) //
 }
 
 template <typename T>
-using IsStlContainer = std::bool_constant<
-                       impl_2384343::hasMemberType_value_type    <T>&&
-                       impl_2384343::hasMemberType_iterator      <T>&&
-                       impl_2384343::hasMemberType_const_iterator<T>&&
-                       impl_2384343::hasMember_begin             <T>&&
-                       impl_2384343::hasMember_end               <T>&&
-                       impl_2384343::hasMember_insert            <T>>;
+constexpr bool isStlContainer = impl_2384343::hasMemberType_value_type    <T>&&
+                                impl_2384343::hasMemberType_iterator      <T>&&
+                                impl_2384343::hasMemberType_const_iterator<T>&&
+                                impl_2384343::hasMember_begin             <T>&&
+                                impl_2384343::hasMember_end               <T>&&
+                                impl_2384343::hasMember_insert            <T>;
 
 
 template <class T>
 struct IsStlPair
 {
 private:
-    using Yes = char[1];
-    using No  = char[2];
-
     template <class T1, class T2>
-    static Yes& isPair(const std::pair<T1, T2>&);
-    static  No& isPair(...);
+    static std::true_type  isPair(std::pair<T1, T2>);
+    static std::false_type isPair(...);
 public:
-    enum { value = sizeof(isPair(std::declval<T>())) == sizeof(Yes) };
+    static constexpr bool value = decltype(isPair(std::declval<T>()))::value;
 };
 
 //######################################################################################
@@ -91,7 +84,7 @@ enum class ValueType
 
 template <class T>
 constexpr ValueType getValueType = getTextType<T> != TextType::other ? ValueType::other : //some string classes are also STL containers, so check this first
-                                   IsStlContainer<T>::value ? ValueType::stlContainer :
+                                   isStlContainer<T>        ? ValueType::stlContainer :
                                    IsStlPair     <T>::value ? ValueType::stlPair :
                                    ValueType::other;
 
@@ -197,5 +190,3 @@ bool readStruc(const XmlElement& input, T& value)
     return ConvertElement<T, getValueType<T>>().readStruc(input, value);
 }
 }
-
-#endif //CVRT_STRUC_H_018727409908342709743

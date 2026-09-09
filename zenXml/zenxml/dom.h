@@ -3,15 +3,12 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef DOM_H_82085720723894567204564256
-#define DOM_H_82085720723894567204564256
+#pragma once
 
 #include <string>
 #include <list>
 #include <unordered_map>
 #include "cvrt_text.h" //"readText/writeText"
-
 
 namespace zen
 {
@@ -57,13 +54,13 @@ public:
       \return "true" if value was retrieved successfully.
     */
     template <class T>
-    bool getAttribute(std::string_view name, T& value) const
+    bool getAttribute(const std::string_view name, T& value) const
     {
         auto it = attributesByName_.find(name);
         return it == attributesByName_.end() ? false : readText(it->second->value, value);
     }
 
-    bool hasAttribute(std::string_view name) const { return attributesByName_.contains(name); }
+    bool hasAttribute(const std::string_view name) const { return attributesByName_.contains(name); }
 
     ///Create or update an XML attribute.
     /**
@@ -89,7 +86,7 @@ public:
     }
 
     ///Remove the attribute with the given name.
-    void removeAttribute(std::string_view name)
+    void removeAttribute(const std::string_view name)
     {
         auto it = attributesByName_.find(name);
         if (it != attributesByName_.end())
@@ -265,5 +262,3 @@ private:
     XmlElement root_{"Root"};
 };
 }
-
-#endif //DOM_H_82085720723894567204564256

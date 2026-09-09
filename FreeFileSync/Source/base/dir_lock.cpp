@@ -213,7 +213,6 @@ LockInformation unserialize(const std::string& byteStream) //throw SysError
 
     char formatDescr[sizeof(LOCK_FILE_DESCR)] = {};
     readArray(streamIn, &formatDescr, sizeof(formatDescr)); //throw SysErrorUnexpectedEos
-
     if (!std::equal(std::begin(formatDescr), std::end(formatDescr), std::begin(LOCK_FILE_DESCR)))
         throw SysError(_("File content is corrupted.") + L" (invalid header)");
 

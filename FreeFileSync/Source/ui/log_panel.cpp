@@ -347,7 +347,7 @@ void LogPanel::setLog(const std::shared_ptr<const ErrorLog>& log)
 
     auto initButton = [](ToggleButton& btn, const char* imgName, const wxString& tooltip)
     {
-        btn.init(getImageButtonPressed(imgName), getImageButtonReleased(imgName));
+        btn.init(getImageButtonPressed(imgName), getImageButtonReleased(imgName), 0 /*pad*/);
         btn.SetToolTip(tooltip);
     };
 

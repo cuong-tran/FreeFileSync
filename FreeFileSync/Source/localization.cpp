@@ -145,8 +145,8 @@ std::vector<TranslationInfo> loadTranslations(const Zstring& zipPath) //throw Fi
                 zipStream.ReadAll(stream.data(), stream.size()))
             {
                 if (entry->GetCrc() != getCrc32(stream)) //wxZip does NOT check CRC32!
-                    throw FileError(replaceCpy(_("Cannot read file %x."), L"%x", fmtPath(zipPath)), 
-                        _("File content is corrupted.") + L" [" + utfTo<std::wstring>(entry->GetName()) + L']');
+                    throw FileError(replaceCpy(_("Cannot read file %x."), L"%x", fmtPath(zipPath)),
+                                    _("File content is corrupted.") + L" [" + utfTo<std::wstring>(entry->GetName()) + L']');
 
                 streams.emplace_back(zipPath + Zstr(':') + utfTo<Zstring>(entry->GetName()), std::move(stream));
             }
@@ -155,7 +155,7 @@ std::vector<TranslationInfo> loadTranslations(const Zstring& zipPath) //throw Fi
         }
 
         if (zipStream.GetLastError() != wxSTREAM_EOF || !zipLog.GetMessages().empty())
-             throw FileError(replaceCpy(_("Cannot read file %x."), L"%x", fmtPath(zipPath)), utfTo<std::wstring>(zipLog.GetMessages()));
+            throw FileError(replaceCpy(_("Cannot read file %x."), L"%x", fmtPath(zipPath)), utfTo<std::wstring>(zipLog.GetMessages()));
     }();
     //--------------------------------------------------------------------
 

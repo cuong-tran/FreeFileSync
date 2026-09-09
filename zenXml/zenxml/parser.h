@@ -3,14 +3,11 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef PARSER_H_81248670213764583021432
-#define PARSER_H_81248670213764583021432
+#pragma once
 
 #include <cstddef> //ptrdiff_t; req. on Linux
 #include <zen/string_tools.h>
 #include "dom.h"
-
 
 namespace zen
 {
@@ -74,7 +71,7 @@ XmlDoc parseXml(const std::string& stream); //throw XmlParsingError
 namespace xml_impl
 {
 template <class Predicate> inline
-std::string normalize(std::string_view str, Predicate pred) //pred: unary function taking a char, return true if value shall be encoded as hex
+std::string normalize(const std::string_view str, Predicate pred) //pred: unary function taking a char, return true if value shall be encoded as hex
 {
     std::string output;
     for (const char c : str)
@@ -141,7 +138,7 @@ bool checkEntity(CharIterator& first, CharIterator last, const char (&placeholde
 
 namespace
 {
-std::string denormalize(std::string_view str)
+std::string denormalize(const std::string_view str)
 {
     std::string output;
     for (auto it = str.begin(); it != str.end(); ++it)
@@ -572,5 +569,3 @@ XmlDoc parseXml(const std::string& stream) //throw XmlParsingError
     return xml_impl::XmlParser(stream).parse(); //throw XmlParsingError
 }
 }
-
-#endif //PARSER_H_81248670213764583021432

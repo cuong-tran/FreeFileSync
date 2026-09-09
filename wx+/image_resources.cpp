@@ -101,12 +101,12 @@ public:
         threadGroup_->run(createScalerTask(imageName, img, hqScale_, protResult_));
     }
 
-    std::unordered_map<std::string, wxImage> waitAndGetResult()
+    std::unordered_map<std::string, wxImage, BinaryStringHash, std::equal_to<>> waitAndGetResult()
     {
         assert(runningOnMainThread());
         threadGroup_->wait();
 
-        std::unordered_map<std::string, wxImage> output;
+        std::unordered_map<std::string, wxImage, BinaryStringHash, std::equal_to<>> output;
 
         protResult_.access([&](std::vector<std::pair<std::string, ImageHolder>>& result)
         {
@@ -127,7 +127,7 @@ private:
     Protected<std::vector<std::pair<std::string, ImageHolder>>> protResult_;
 
     using TaskType = FunctionReturnTypeT<decltype(&createScalerTask)>;
-    std::optional<ThreadGroup<TaskType>> threadGroup_{ThreadGroup<TaskType>(std::max<int>(std::thread::hardware_concurrency(), 1), Zstr("xBRZ Scaler"))};
+    std::optional<ThreadGroup<TaskType>> threadGroup_{std::in_place, std::max<int>(std::thread::hardware_concurrency(), 1), Zstr("xBRZ Scaler")};
     //hardware_concurrency() == 0 if "not computable or well defined"
 };
 
@@ -139,17 +139,17 @@ class ImageBuffer
 public:
     explicit ImageBuffer(const Zstring& filePath); //throw FileError
 
-    const wxImage& getImage(const std::string& name, int maxWidth /*optional*/, int maxHeight /*optional*/);
+    const wxImage& getImage(const std::string_view name, int maxWidth /*optional*/, int maxHeight /*optional*/);
 
 private:
     ImageBuffer           (const ImageBuffer&) = delete;
     ImageBuffer& operator=(const ImageBuffer&) = delete;
 
-    const wxImage& getRawImage   (const std::string& name);
-    const wxImage& getHqScaledImage(const std::string& name);
+    const wxImage& getRawImage     (const std::string_view name);
+    const wxImage& getHqScaledImage(const std::string_view name);
 
-    std::unordered_map<std::string, wxImage> imagesRaw_;
-    std::unordered_map<std::string, wxImage> imagesScaled_;
+    std::unordered_map<std::string, wxImage, BinaryStringHash, std::equal_to<>> imagesRaw_;
+    std::unordered_map<std::string, wxImage, BinaryStringHash, std::equal_to<>> imagesScaled_;
 
     std::optional<HqParallelScaler> hqScaler_;
 
@@ -157,20 +157,22 @@ private:
 
     struct OutImageKeyHash
     {
-        size_t operator()(const OutImageKey& imKey) const
+        using is_transparent = void; //enable heterogenous lookup!
+
+        template <class String>
+        size_t operator()(const std::tuple<String /*name*/, int /*height*/>& imKey) const
         {
             const auto& [name, height] = imKey;
 
             FNV1aHash<size_t> hash;
-            for (const char c : name)
-                hash.add(c);
 
+            hashAddBinaryString(hash, name);
             hash.add(height);
 
             return hash.get();
         }
     };
-    std::unordered_map<OutImageKey, wxImage, OutImageKeyHash> imagesOut_;
+    std::unordered_map<OutImageKey, wxImage, OutImageKeyHash, std::equal_to<> /*already is_transparent*/> imagesOut_;
 };
 
 
@@ -263,7 +265,7 @@ ImageBuffer::ImageBuffer(const Zstring& zipPath) //throw FileError
 }
 
 
-const wxImage& ImageBuffer::getRawImage(const std::string& name)
+const wxImage& ImageBuffer::getRawImage(const std::string_view name)
 {
     if (auto it = imagesRaw_.find(name);
         it != imagesRaw_.end())
@@ -274,7 +276,7 @@ const wxImage& ImageBuffer::getRawImage(const std::string& name)
 }
 
 
-const wxImage& ImageBuffer::getHqScaledImage(const std::string& name)
+const wxImage& ImageBuffer::getHqScaledImage(const std::string_view name)
 {
     //test: this function is first called about 220ms after ImageBuffer::ImageBuffer() has ended
     //      => should be enough time to finish xBRZ scaling in parallel (which takes 50ms)
@@ -294,7 +296,7 @@ const wxImage& ImageBuffer::getHqScaledImage(const std::string& name)
 }
 
 
-const wxImage& ImageBuffer::getImage(const std::string& name, int maxWidth /*optional*/, int maxHeight /*optional*/)
+const wxImage& ImageBuffer::getImage(const std::string_view name, int maxWidth /*optional*/, int maxHeight /*optional*/)
 {
     const wxImage& rawImg = getRawImage(name);
 
@@ -308,7 +310,7 @@ const wxImage& ImageBuffer::getImage(const std::string& name, int maxWidth /*opt
     if (maxHeight >= 0 && maxHeight < outHeight)
         outHeight = maxHeight;
 
-    const OutImageKey imgKey{name, outHeight};
+    const std::tuple<std::string_view /*name*/, int /*height*/> imgKey{name, outHeight};
 
     auto it = imagesOut_.find(imgKey);
     if (it == imagesOut_.end())
@@ -344,7 +346,7 @@ void zen::imageResourcesCleanup()
 }
 
 
-const wxImage& zen::loadImage(const std::string& name, int maxWidth /*optional*/, int maxHeight /*optional*/)
+const wxImage& zen::loadImage(const std::string_view name, int maxWidth /*optional*/, int maxHeight /*optional*/)
 {
     assert(runningOnMainThread()); //wxWidgets is not thread-safe!
     assert(globalImageBuffer);
@@ -354,7 +356,7 @@ const wxImage& zen::loadImage(const std::string& name, int maxWidth /*optional*/
 }
 
 
-const wxImage& zen::loadImage(const std::string& name, int maxSize)
+const wxImage& zen::loadImage(const std::string_view name, int maxSize)
 {
     return loadImage(name, maxSize, maxSize);
 }

@@ -3,9 +3,7 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef LEGACY_COMPILER_H_839567308565656789
-#define LEGACY_COMPILER_H_839567308565656789
+#pragma once
 
 #include <version> //contains all __cpp_lib_<feature> macros
 #include <string>
@@ -45,5 +43,3 @@ namespace zen
 double fromChars(const char* first, const char* last);
 char* toChars(char* first, char* last, double num);
 }
-
-#endif //LEGACY_COMPILER_H_839567308565656789

@@ -484,10 +484,10 @@ public:
     {
         FNV1aHash<uint64_t> pathHash;
         for (const Zstring& itemName : splitCpy<Zstring>(folder.getAbstractPath<side>().afsPath.value, FILE_NAME_SEPARATOR, SplitOnEmpty::skip))
-            hashAdd(pathHash, itemName); //not really needed ATM, but it's cleaner to hash *full* afsPath
+            hashAddName(pathHash, itemName); //not really needed ATM, but it's cleaner to hash *full* afsPath
 
         GetChildItemsHashed inst;
-        inst.recurse(folder, pathHash.get());
+        inst.recurse(folder, pathHash);
         return std::move(inst.childPathRefs_);
     }
 
@@ -497,40 +497,38 @@ private:
 
     GetChildItemsHashed() {}
 
-    void recurse(const ContainerObject& conObj, uint64_t parentPathHash)
+    void recurse(const ContainerObject& conObj, FNV1aHash<uint64_t> parentPathHash)
     {
         for (const FilePair& file : conObj.files())
-            childPathRefs_.push_back({&file, getPathHash(file, parentPathHash)});
+            childPathRefs_.push_back({&file, getPathHash(file, parentPathHash).get()});
         //S1 -> T (update)   is not a conflict (anymore) if S1, S2 contain different files
         //S2 -> T (update)   https://freefilesync.org/forum/viewtopic.php?t=9365#p36466
         for (const SymlinkPair& symlink : conObj.symlinks())
-            childPathRefs_.push_back({&symlink, getPathHash(symlink, parentPathHash)});
+            childPathRefs_.push_back({&symlink, getPathHash(symlink, parentPathHash).get()});
 
         for (const FolderPair& subFolder : conObj.subfolders())
         {
-            const uint64_t folderPathHash = getPathHash(subFolder, parentPathHash);
+            const FNV1aHash<uint64_t> folderPathHash = getPathHash(subFolder, parentPathHash);
 
-            childPathRefs_.emplace_back(&subFolder, folderPathHash);
+            childPathRefs_.emplace_back(&subFolder, folderPathHash.get());
 
             recurse(subFolder, folderPathHash);
         }
     }
 
-    static void hashAdd(FNV1aHash<uint64_t>& hash, const Zstring& itemName)
+    static void hashAddName(FNV1aHash<uint64_t>& hash, const Zstring& itemName)
     {
         if (isAsciiString(itemName)) //fast path: no need for extra memory allocation!
             for (const Zchar c : itemName)
                 hash.add(asciiToUpper(c));
         else
-            for (const Zchar c : getUpperCase(itemName))
-                hash.add(c);
+            hashAddBinaryString(hash, getUpperCase(itemName));
     }
 
-    static uint64_t getPathHash(const FileSystemObject& fsObj, uint64_t parentPathHash)
+    static FNV1aHash<uint64_t> getPathHash(const FileSystemObject& fsObj, FNV1aHash<uint64_t> parentPathHash)
     {
-        FNV1aHash<uint64_t> hash(parentPathHash);
-        hashAdd(hash, fsObj.getItemName<side>());
-        return hash.get();
+        hashAddName(parentPathHash, fsObj.getItemName<side>());
+        return parentPathHash;
     }
 
     std::vector<ChildPathRef> childPathRefs_;
@@ -1939,10 +1937,10 @@ void FolderPairSyncer::synchronizeFileInt(FilePair& file, SyncOperation syncOp) 
                                       file.isFollowedSymlink<sideSrc>());
 
             if (result.errorModTime) //log only; no popup
-                acb_.logMessage(result.errorModTime->toString(),                     
-                    file.base().getCompVariant() == CompareVariant::timeSize ?
-                                    PhaseCallback::MsgType::warning :
-                                    PhaseCallback::MsgType::info /*e.g. FTP server not supporting MFMT command*/); //throw ThreadStopRequest
+                acb_.logMessage(result.errorModTime->toString(),
+                                file.base().getCompVariant() == CompareVariant::timeSize ?
+                                PhaseCallback::MsgType::warning :
+                                PhaseCallback::MsgType::info /*e.g. FTP server not supporting MFMT command*/); //throw ThreadStopRequest
         }
         break;
 

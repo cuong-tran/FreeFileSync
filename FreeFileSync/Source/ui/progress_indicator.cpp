@@ -867,7 +867,7 @@ syncStat_(&syncStat)
     //set std order after button visibility was set
     setStandardButtonLayout(*pnl_.bSizerStdButtons, StdButtons().setAffirmative(pnl_.m_buttonPause).setCancel(pnl_.m_buttonStop));
 
-    setImage(*pnl_.m_bpButtonMinimizeToTray, loadImage("minimize_to_tray"));
+    setButtonLabel(*pnl_.m_bpButtonMinimizeToTray, loadImage("minimize_to_tray"), dipToWxsize(4));
 
     setImage(*pnl_.m_bitmapItemStat, IconBuffer::genericFileIcon(IconBuffer::IconSize::small));
     setImage(*pnl_.m_bitmapTimeStat, loadImage("time", -1 /*maxWidth*/, IconBuffer::getPixSize(IconBuffer::IconSize::small)));
@@ -1518,8 +1518,8 @@ void SyncProgressDialogImpl<TopLevelDialog>::showSummary(TaskResult syncResult, 
     const int imgListSize = dipToWxsize(16); //also required by GTK => don't use getMenuIconDipSize()
     auto imgList = std::make_unique<wxImageList>(imgListSize, imgListSize);
 
-    imgList->Add(toScaledBitmap(loadImage("progress", wxsizeToScreen(imgListSize))));
-    imgList->Add(toScaledBitmap(loadImage("log_file", wxsizeToScreen(imgListSize))));
+    imgList->Add(toDpiScaledBitmap(loadImage("progress", wxsizeToScreen(imgListSize))));
+    imgList->Add(toDpiScaledBitmap(loadImage("log_file", wxsizeToScreen(imgListSize))));
 
     pnl_.m_notebookResult->AssignImageList(imgList.release()); //pass ownership
 

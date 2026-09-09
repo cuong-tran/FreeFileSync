@@ -3,9 +3,7 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef GLOBALS_H_8013740213748021573485
-#define GLOBALS_H_8013740213748021573485
+#pragma once
 
 #include <atomic>
 #include <memory>
@@ -142,5 +140,3 @@ private:
     PodSharedPtr<T> ptr_;
 };
 }
-
-#endif //GLOBALS_H_8013740213748021573485

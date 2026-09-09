@@ -3,13 +3,10 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef COLOR_TOOLS_H_18301239864123785613
-#define COLOR_TOOLS_H_18301239864123785613
+#pragma once
 
 #include <zen/basic_math.h>
 #include <wx/colour.h>
-
 
 namespace zen
 {
@@ -215,5 +212,3 @@ wxColor hsvColor(double h, double s, double v) //h within [0, 360), s, v within 
 }
 #endif
 }
-
-#endif //COLOR_TOOLS_H_18301239864123785613

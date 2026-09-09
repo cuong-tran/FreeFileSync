@@ -38,14 +38,14 @@ std::pair<time_t, Zstring> fff::impl::parseVersionedFileName(const Zstring& file
 {
     const ZstringView ext(findLast(fileName.begin(), fileName.end(), Zstr('.')), fileName.end());
 
-    if (fileName.size() < 2 * ext.length() + 18)
+    if (fileName.size() < 2 * ext.size() + 18)
         return {};
 
-    const auto itExt1 = fileName.end() - (2 * ext.length() + 18);
-    if (!equalString(ext, ZstringView(itExt1, ext.length())))
+    const auto itExt1 = fileName.end() - (2 * ext.size() + 18);
+    if (!equalString(ext, ZstringView(itExt1, ext.size())))
         return {};
 
-    const auto itTs   = itExt1 + ext.length();
+    const auto itTs   = itExt1 + ext.size();
     const TimeComp tc = parseTime(Zstr(" %Y-%m-%d %H%M%S"), ZstringView(itTs, 18)); //returns TimeComp() on error
 
     const auto [localTime, timeValid] = localToTimeT(tc);

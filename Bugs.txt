@@ -53,13 +53,6 @@ ________________________________________________________________________________
 | libssh2 1.11.2_DEV |
 ----------------------
 __________________________________________________________________________________________________________
-src/session.c
-memory leak: https://github.com/libssh2/libssh2/issues/28
-
--if (session->state & LIBSSH2_STATE_NEWKEYS)
-+//if (session->state & LIBSSH2_STATE_NEWKEYS)
-
-__________________________________________________________________________________________________________
 move the following constants from src/sftp.h to include/libssh2_sftp.h:
 
 	#define MAX_SFTP_OUTGOING_SIZE 30000
@@ -153,6 +146,24 @@ Fix incorrect pane height calculations:
 +
 +        dock.min_size = dock_min_size;
 
+__________________________________________________________________________________________________________
+/src/common/stattextcmn.cpp
+Fix wxStaticText::Wrap doing nothing when updating text:
+
+bool wxStaticTextBase::UpdateLabelOrig(const wxString& label)
+{
+    if ( label == m_labelOrig )
+        return false;
+
+    m_labelOrig = label;
+
+    // We need to clear the existing unwrapped label as it doesn't correspond
+    // to the new value of the actual label any longer.
+    m_unwrappedLabel.clear();
++	m_currentWrap = 0;
+
+    return true;
+}
 __________________________________________________________________________________________________________
 /src/gtk/menu.cpp
 

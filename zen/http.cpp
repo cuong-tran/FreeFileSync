@@ -101,7 +101,7 @@ public:
                 //and only then allow AsyncStreamBuffer::write() which can block!
 
                 std::string headerBuf;
-                auto onHeaderData = [&](std::string_view headerLine)
+                auto onHeaderData = [&](const std::string_view headerLine)
                 {
                     if (headerReceived)
                         throw SysError(L"Unexpected header data after end of HTTP header.");
@@ -285,7 +285,7 @@ std::unique_ptr<HttpInputStream::Impl> sendHttpRequestImpl(const Zstring& url,
 
 
 //encode for "application/x-www-form-urlencoded"
-std::string urlencode(std::string_view str)
+std::string urlencode(const std::string_view str)
 {
     std::string output;
     for (const char c : str) //follow PHP spec: https://github.com/php/php-src/blob/e99d5d39239c611e1e7304e79e88545c4e71a073/ext/standard/url.c#L455
@@ -307,7 +307,7 @@ std::string urlencode(std::string_view str)
 }
 
 
-std::string urldecode(std::string_view str)
+std::string urldecode(const std::string_view str)
 {
     std::string output;
     for (size_t i = 0; i < str.size(); ++i)
@@ -342,7 +342,7 @@ std::string zen::xWwwFormUrlEncode(const std::vector<std::pair<std::string, std:
 }
 
 
-std::vector<std::pair<std::string, std::string>> zen::xWwwFormUrlDecode(std::string_view str)
+std::vector<std::pair<std::string, std::string>> zen::xWwwFormUrlDecode(const std::string_view str)
 {
     std::vector<std::pair<std::string, std::string>> output;
 
@@ -481,7 +481,7 @@ std::wstring zen::formatHttpError(int sc)
 }
 
 
-bool zen::isValidEmail(std::string_view email)
+bool zen::isValidEmail(const std::string_view email)
 {
     //https://en.wikipedia.org/wiki/Email_address#Syntax
     //https://tools.ietf.org/html/rfc3696 => note errata! https://www.rfc-editor.org/errata_search.php?rfc=3696
@@ -537,7 +537,7 @@ bool zen::isValidEmail(std::string_view email)
 }
 
 
-std::string zen::htmlSpecialChars(std::string_view str)
+std::string zen::htmlSpecialChars(const std::string_view str)
 {
     //mirror PHP: https://github.com/php/php-src/blob/e99d5d39239c611e1e7304e79e88545c4e71a073/ext/standard/html_tables.h#L6189
     std::string output;

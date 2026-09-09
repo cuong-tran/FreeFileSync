@@ -114,7 +114,7 @@ wxBitmap FfsTrayIcon::ProgressIconGenerator::get(double fraction)
         //fill yellow remainder
         fillRange(genImage, pixStart, pixCount, wxColor(240, 200, 0));
 
-        iconBuf_ = toScaledBitmap(genImage);
+        iconBuf_ = toDpiScaledBitmap(genImage);
         startPixBuf_ = pixStart;
     }
 

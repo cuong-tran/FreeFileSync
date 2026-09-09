@@ -225,11 +225,13 @@ public:
 
         //------------------------------------------------------------------------------
 
-        auto setButtonImage = [&](wxButton& button, ConfirmationButton3 btnType)
+        auto setButtonImage = [&](wxButton& btn, ConfirmationButton3 btnType)
         {
             auto it = cfg.buttonImages.find(btnType);
             if (it != cfg.buttonImages.end())
-                setImage(button, it->second); //caveat: image + text at the same time not working on GTK < 2.6
+            {
+    btn.SetBitmapLabel(toDpiScaledBitmap(it->second)); //the first call to SetBitmapLabel() *implicitly* sets the disabled bitmap, too, subsequent calls, DON'T!
+            }
         };
         setButtonImage(*m_buttonAccept,  ConfirmationButton3::accept);
         setButtonImage(*m_buttonAccept2, ConfirmationButton3::accept2);

@@ -3,9 +3,7 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef SCOPE_GUARD_H_8971632487321434
-#define SCOPE_GUARD_H_8971632487321434
+#pragma once
 
 #include <cassert>
 #include "legacy_compiler.h" //std::uncaught_exceptions
@@ -81,14 +79,12 @@ template <ScopeGuardRunMode runMode, class F> inline
 auto makeGuard(F&& fun) { return ScopeGuard<runMode, std::decay_t<F>>(std::forward<F>(fun)); }
 }
 
+#define ZEN_CASE_RETURN_STRING(X) case X: return ZEN_CASE_RETURN_STRING_IMPL(#X)
+#define ZEN_CASE_RETURN_STRING_IMPL(X) L ## X
+
 #define ZEN_CONCAT_SUB(X, Y) X ## Y
 #define ZEN_CONCAT(X, Y) ZEN_CONCAT_SUB(X, Y)
-
-#define ZEN_CHECK_CASE_FOR_CONSTANT(X) case X: return ZEN_CHECK_CASE_FOR_CONSTANT_IMPL(#X)
-#define ZEN_CHECK_CASE_FOR_CONSTANT_IMPL(X) L ## X
 
 #define ZEN_ON_SCOPE_EXIT(X)    [[maybe_unused]] auto ZEN_CONCAT(scopeGuard, __LINE__) = zen::makeGuard<zen::ScopeGuardRunMode::onExit   >([&]{ X; });
 #define ZEN_ON_SCOPE_FAIL(X)    [[maybe_unused]] auto ZEN_CONCAT(scopeGuard, __LINE__) = zen::makeGuard<zen::ScopeGuardRunMode::onFail   >([&]{ X; });
 #define ZEN_ON_SCOPE_SUCCESS(X) [[maybe_unused]] auto ZEN_CONCAT(scopeGuard, __LINE__) = zen::makeGuard<zen::ScopeGuardRunMode::onSuccess>([&]{ X; });
-
-#endif //SCOPE_GUARD_H_8971632487321434

@@ -3,13 +3,10 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef JSON_H_0187348321748321758934215734
-#define JSON_H_0187348321748321758934215734
+#pragma once
 
 #include <list>
 #include <zen/string_tools.h>
-
 
 namespace zen
 {
@@ -27,7 +24,7 @@ public:
 
     bool empty() const { return values_.empty(); }
 
-    const JsonValue* get(std::string_view name) const;
+    const JsonValue* get(const std::string_view name) const;
 
     template <class T>
     void set(std::string&& name, T&& value);
@@ -136,7 +133,7 @@ void JsonObject::swap(JsonObject& other) noexcept
 
 
 inline
-const JsonValue* JsonObject::get(std::string_view name) const
+const JsonValue* JsonObject::get(const std::string_view name) const
 {
     auto it = valuesByName_.find(name);
     return it == valuesByName_.end() ? nullptr : &(it->second->second);
@@ -615,5 +612,3 @@ JsonValue parseJson(const std::string& stream) //throw JsonParsingError
     return json_impl::JsonParser(stream).parse(); //throw JsonParsingError
 }
 }
-
-#endif //JSON_H_0187348321748321758934215734

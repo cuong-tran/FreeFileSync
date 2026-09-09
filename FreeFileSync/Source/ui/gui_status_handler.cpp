@@ -508,7 +508,7 @@ StatusHandlerFloatingDialog::DlgOptions StatusHandlerFloatingDialog::showResult(
     if (!taskCancelled() && !suspend && !autoClose && //only play when actually showing results dialog
         !soundFileSyncComplete_.empty())
     {
-                wxLogCollector soundLog; //wxWidgets shows modal error dialog by default => "no, wxWidgets, NO!"
+        wxLogCollector soundLog; //wxWidgets shows modal error dialog by default => "no, wxWidgets, NO!"
 
         wxSound::Play(utfTo<wxString>(soundFileSyncComplete_), wxSOUND_ASYNC);
 

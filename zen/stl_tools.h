@@ -3,10 +3,9 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
+#pragma once
 
-#ifndef STL_TOOLS_H_84567184321434
-#define STL_TOOLS_H_84567184321434
-
+#include <cstring> //memcpy
 #include <set>
 #include <map>
 #include <vector>
@@ -16,7 +15,6 @@
 #include <cassert>
 #include <optional>
 #include "type_traits.h"
-
 
 //enhancements for <algorithm>
 namespace zen
@@ -374,7 +372,7 @@ class FNV1aHash //FNV-1a: https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%8
 {
 public:
     FNV1aHash() {}
-    explicit FNV1aHash(Num startVal) : hashVal_(startVal) { assert(startVal != 0); /*yes, might be a real hash, but most likely bad init value*/}
+    //explicit FNV1aHash(Num startVal) : hashVal_(startVal) { assert(startVal != 0); /*yes, might be a real hash, but most likely bad init value*/}
 
     void add(Num n)
     {
@@ -392,6 +390,40 @@ private:
 
     Num hashVal_ = base_;
 };
-}
 
-#endif //STL_TOOLS_H_84567184321434
+
+template <class Num> inline
+void hashAddBytes(FNV1aHash<Num>& hash, const void* data, size_t size)
+{
+    constexpr size_t numSize = sizeof(Num);
+    auto bytes = static_cast<const unsigned char*>(data);
+
+    while (size >= numSize)
+    {
+        Num n /* = 0*/;
+        std::memcpy(&n, bytes, numSize); //instead of reinterpret_cast to avoid aliasing issues
+        hash.add(n);
+        bytes += numSize;
+        size  -= numSize;
+    }
+
+    if (size > 0)
+    {
+        Num n = 0;
+        std::memcpy(&n, bytes, size);
+        hash.add(n);
+    }
+
+#if 0 //alternative: slower?
+    while (size > 0)
+    {
+        const size_t junkSize = std::min(numSize, size);
+        Num n = 0;
+        std::memcpy(&n, bytes, junkSize);
+        hash.add(n);
+        bytes += junkSize;
+        size  -= junkSize;
+    }
+#endif
+}
+}

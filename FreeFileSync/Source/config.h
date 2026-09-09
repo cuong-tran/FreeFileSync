@@ -3,9 +3,7 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef PROCESS_XML_H_28345825704254262435
-#define PROCESS_XML_H_28345825704254262435
+#pragma once
 
 #include <zen/file_access.h>
 #include <wx/gdicmn.h>
@@ -16,7 +14,6 @@
 #include "ui/file_grid_attr.h"
 #include "ui/tree_grid_attr.h" //RTS: avoid tree grid's "file_hierarchy.h" dependency!
 #include "ui/cfg_grid.h"
-
 
 namespace fff
 {
@@ -278,5 +275,3 @@ std::optional<FilterConfig> parseFilterBuf(const std::string& filterBuf);
 void saveErrorLog(const zen::ErrorLog& log, const Zstring& filePath); //throw FileError
 zen::ErrorLog loadErrorLog(const Zstring& filePath); //throw FileError
 }
-
-#endif //PROCESS_XML_H_28345825704254262435

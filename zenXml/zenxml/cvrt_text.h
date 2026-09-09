@@ -3,13 +3,10 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef CVRT_TEXT_H_018727339083427097434
-#define CVRT_TEXT_H_018727339083427097434
+#pragma once
 
 #include <chrono>
 #include <zen/string_tools.h>
-
 
 namespace zen
 {
@@ -105,14 +102,11 @@ template <class T>
 struct IsChronoDuration
 {
 private:
-    using Yes = char[1];
-    using No  = char[2];
-
     template <class Rep, class Period>
-    static Yes& isDuration(std::chrono::duration<Rep, Period>);
-    static  No& isDuration(...);
+    static std::true_type  isDuration(std::chrono::duration<Rep, Period>);
+    static std::false_type isDuration(...);
 public:
-    enum { value = sizeof(isDuration(std::declval<T>())) == sizeof(Yes) };
+    static constexpr bool value = decltype(isDuration(std::declval<T>()))::value;
 };
 
 
@@ -246,5 +240,3 @@ bool readText(const std::string& input, T& value)
     return ConvertText<T, getTextType<T>>().readText(input, value);
 }
 }
-
-#endif //CVRT_TEXT_H_018727339083427097434

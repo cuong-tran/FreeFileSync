@@ -3,15 +3,12 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef ASYNC_TASK_H_839147839170432143214321
-#define ASYNC_TASK_H_839147839170432143214321
+#pragma once
 
 #include <zen/thread.h>
 #include <zen/scope_guard.h>
 #include <zen/stl_tools.h>
 #include <wx/timer.h>
-
 
 namespace zen
 {
@@ -158,5 +155,3 @@ private:
 };
 
 }
-
-#endif //ASYNC_TASK_H_839147839170432143214321

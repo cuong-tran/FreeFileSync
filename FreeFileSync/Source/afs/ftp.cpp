@@ -97,7 +97,7 @@ bool operator==(const FtpSessionCfg& lhs, const FtpSessionCfg& rhs)
 Zstring concatenateFtpFolderPathPhrase(const FtpLogin& login, const AfsPath& itemPath); //noexcept
 
 
-Zstring ansiToUtfEncoding(std::string_view str) //throw SysError
+Zstring ansiToUtfEncoding(const std::string_view str) //throw SysError
 {
     if (str.empty()) return {};
 
@@ -271,7 +271,7 @@ std::wstring formatFtpStatus(int sc)
         }
     }();
 
-    if (strLength(statusText) == 0)
+    if (strSize(statusText) == 0)
         return trimCpy(replaceCpy<std::wstring>(L"FTP status %x.", L"%x", numberTo<std::wstring>(sc)));
     else
         return trimCpy(replaceCpy<std::wstring>(L"FTP status %x: ", L"%x", numberTo<std::wstring>(sc)) + statusText);
@@ -703,7 +703,7 @@ public:
         return utfToServerEncoding(serverPath); //throw SysError
     }
 
-    Zstring serverToUtfEncoding(std::string_view str) //throw SysError
+    Zstring serverToUtfEncoding(const std::string_view str) //throw SysError
     {
         if (isAsciiString(str)) //fast path
             return {str.begin(), str.end()};
@@ -770,7 +770,7 @@ private:
         std::string curlRelPath; //libcurl expects encoded paths (except for '/' char!!!) => bug: https://github.com/curl/curl/pull/4423
 
         split(getServerPathInternal(itemPath), //throw SysError
-              '/', [&](std::string_view comp)
+              '/', [&](const std::string_view comp)
         {
             if (!comp.empty())
             {
@@ -905,7 +905,7 @@ private:
         Features output; //FEAT command: https://tools.ietf.org/html/rfc2389#page-4
         std::vector<std::string_view> lines = splitFtpResponse(featResponse);
 
-        auto it = std::find_if(lines.begin(), lines.end(), [](std::string_view line) { return startsWith(line, "211-") || startsWith(line, "211 "); });
+        auto it = std::find_if(lines.begin(), lines.end(), [](const std::string_view line) { return startsWith(line, "211-") || startsWith(line, "211 "); });
         if (it != lines.end())
         {
             ++it;
@@ -1320,7 +1320,7 @@ private:
         return output;
     }
 
-    static FtpItem parseMlstLine(std::string_view rawLine, FtpSession& session) //throw SysError
+    static FtpItem parseMlstLine(const std::string_view rawLine, FtpSession& session) //throw SysError
     {
         /*  https://tools.ietf.org/html/rfc3659
             type=cdir;sizd=4096;modify=20170116230740;UNIX.mode=0755;UNIX.uid=874;UNIX.gid=869;unique=902g36e1c55; .
@@ -1380,7 +1380,7 @@ private:
                                BUT: practially this will be the inode ID/file index, so we can assume persistence */
                         const std::string_view uniqueId = afterFirst(fact, '=', IfNotFoundReturn::none);
                         assert(!uniqueId.empty());
-                        item.filePrint = hashString<AFS::FingerPrint>(uniqueId);
+                        item.filePrint = hashBinaryString<AFS::FingerPrint>(uniqueId);
                         //other metadata to hash e.g. create fact? => not available on Linux-hosted FTP!
                     }
                 }
@@ -1488,7 +1488,7 @@ private:
         return output;
     }
 
-    static FtpItem parseUnixLine(std::string_view rawLine, time_t utcTimeNow, int utcCurrentYear, int ownerGroupCount, FtpSession& session) //throw SysError
+    static FtpItem parseUnixLine(const std::string_view rawLine, time_t utcTimeNow, int utcCurrentYear, int ownerGroupCount, FtpSession& session) //throw SysError
     {
         /* Unix standard listing: "ls -l --all"
 
@@ -2713,7 +2713,7 @@ AbstractPath fff::createItemPathFtp(const Zstring& itemPathPhrase) //noexcept
     trim(pathPhrase);
 
     if (startsWithAsciiNoCase(pathPhrase, ftpPrefix))
-        pathPhrase = pathPhrase.c_str() + strLength(ftpPrefix);
+        pathPhrase = pathPhrase.c_str() + strSize(ftpPrefix);
     trim(pathPhrase, TrimSide::left, [](Zchar c) { return c == Zstr('/') || c == Zstr('\\'); });
 
     const ZstringView credentials = beforeFirst<ZstringView>(pathPhrase, Zstr('@'), IfNotFoundReturn::none);

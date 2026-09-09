@@ -3,15 +3,12 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef SERIALIZE_H_839405783574356
-#define SERIALIZE_H_839405783574356
+#pragma once
 
 #include <functional>
 #include "sys_error.h"
     #include <unistd.h> //sysconf
 //keep header clean from specific stream implementations! (e.g.file_io.h)! used by abstract.h!
-
 
 namespace zen
 {
@@ -111,6 +108,9 @@ struct MemoryStreamIn
     }
 
     size_t pos() const { return pos_; }
+    std::string_view buf() const { return memRef_; }
+
+    void seek(size_t newPos) { assert(newPos <= memRef_.size()); pos_ = newPos;}
 
 private:
     //MemoryStreamIn         (const MemoryStreamIn&) = delete; -> why not allow copying?
@@ -421,15 +421,13 @@ C readContainer(BufferedInputStream& stream) //throw SysErrorUnexpectedEos
     {
         try
         {
-            cont.resize(size); //throw std::length_error, std::bad_alloc
+            cont.resize(size); //throw std::bad_alloc, std::length_error
         }
-        catch (std::length_error&) { throw SysErrorUnexpectedEos(); } //most likely due to data corruption!
-        catch (   std::bad_alloc&) { throw SysErrorUnexpectedEos(); } //
+        catch (   std::bad_alloc&) { throw SysErrorUnexpectedEos(); } //most likely due to data corruption!
+        catch (std::length_error&) { throw SysErrorUnexpectedEos(); } //
 
         readArray(stream, &cont[0], sizeof(typename C::value_type) * size); //throw SysErrorUnexpectedEos
     }
     return cont;
 }
 }
-
-#endif //SERIALIZE_H_839405783574356

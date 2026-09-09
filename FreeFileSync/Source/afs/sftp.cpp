@@ -2171,7 +2171,7 @@ AbstractPath fff::createItemPathSftp(const Zstring& itemPathPhrase) //noexcept
     trim(pathPhrase);
 
     if (startsWithAsciiNoCase(pathPhrase, sftpPrefix))
-        pathPhrase = pathPhrase.c_str() + strLength(sftpPrefix);
+        pathPhrase = pathPhrase.c_str() + strSize(sftpPrefix);
     trim(pathPhrase, TrimSide::left, [](Zchar c) { return c == Zstr('/') || c == Zstr('\\'); });
 
     const ZstringView credentials = beforeFirst<ZstringView>(pathPhrase, Zstr('@'), IfNotFoundReturn::none);

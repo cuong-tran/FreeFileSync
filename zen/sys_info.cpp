@@ -9,6 +9,7 @@
 #include "file_access.h"
 #include "sys_version.h"
 
+    #include <iostream>
     #include "symlink_target.h"
     #include "file_io.h"
     #include <ifaddrs.h>
@@ -59,7 +60,7 @@ Zstring zen::getLoginUser() //throw FileError
     //getlogin() is smarter than simply evaluating $LOGNAME! even in contexts without
     //$LOGNAME, e.g. "sudo su" on Ubuntu, it returns the correct non-root user!
     if (const char* loginUser = ::getlogin()) //https://linux.die.net/man/3/getlogin
-        if (strLength(loginUser) > 0 && !equalString(loginUser, "root"))
+        if (strSize(loginUser) > 0 && !equalString(loginUser, "root"))
             return loginUser;
     //BUT: getlogin() can fail with ENOENT on Linux Mint: https://freefilesync.org/forum/viewtopic.php?t=8181
 

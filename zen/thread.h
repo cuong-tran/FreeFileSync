@@ -3,9 +3,7 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef THREAD_H_7896323423432235246427
-#define THREAD_H_7896323423432235246427
+#pragma once
 
 #include <thread>
 #include <future>
@@ -162,7 +160,7 @@ public:
     ~ThreadGroup()
     {
         for (InterruptibleThread& w : worker_)
-            w.requestStop(); //similar, but not the same as ~InterruptibleThread: stop *all* at the same time before join!
+            w.requestStop(); //similar, but not the same as ~InterruptibleThread: stop *all* at the same time before each join!
 
         if (detach_) //detach() without requestStop() doesn't make sense
             for (InterruptibleThread& w : worker_)
@@ -509,5 +507,3 @@ bool AsyncFirstResult<T>::timedWait(const Duration& duration) const { return asy
 template <class T> inline
 std::optional<T> AsyncFirstResult<T>::get() const { return asyncResult_->getResult(jobsTotal_); }
 }
-
-#endif //THREAD_H_7896323423432235246427

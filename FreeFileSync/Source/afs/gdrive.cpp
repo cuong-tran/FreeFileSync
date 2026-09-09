@@ -174,7 +174,7 @@ AFS::FingerPrint getGdriveFilePrint(const std::string& itemId)
 {
     assert(!itemId.empty());
     //Google Drive item ID is persistent and globally unique! :)
-    return hashString<AFS::FingerPrint>(itemId);
+    return hashBinaryString<AFS::FingerPrint>(itemId);
 }
 
 //----------------------------------------------------------------------------------------------------------------
@@ -327,7 +327,7 @@ HttpSession::Result googleHttpsRequest(const Zstring& serverName, const std::str
                                        std::vector<CurlOption> extraOptions,
                                        const std::function<void  (std::span<const char> buf)>& writeResponse /*throw X*/, //optional
                                        const std::function<size_t(std::span<      char> buf)>& readRequest   /*throw X*/, //optional; return "bytesToRead" bytes unless end of stream!
-                                       const std::function<void  (std::string_view   header)>& receiveHeader /*throw X*/, //optional
+                                       const std::function<void  (const std::string_view   header)>& receiveHeader /*throw X*/, //optional
                                        int timeoutSec)
 {
     //https://developers.google.com/drive/api/v3/performance
@@ -354,7 +354,7 @@ HttpSession::Result gdriveHttpsRequest(const std::string& serverRelPath, //throw
                                        const std::vector<CurlOption>& extraOptions,
                                        const std::function<void  (std::span<const char> buf)>& writeResponse /*throw X*/, //optional
                                        const std::function<size_t(std::span<      char> buf)>& readRequest   /*throw X*/, //optional; return "bytesToRead" bytes unless end of stream!
-                                       const std::function<void  (std::string_view   header)>& receiveHeader /*throw X*/, //optional
+                                       const std::function<void  (const std::string_view   header)>& receiveHeader /*throw X*/, //optional
                                        const GdriveAccess& access)
 {
     extraHeaders.push_back("Authorization: Bearer " + access.token);
@@ -683,7 +683,7 @@ GdriveAccessInfo gdriveAuthorizeAccess(const std::string& gdriveLoginHint, const
             }
             httpResponse = "HTTP/1.0 200 OK"         "\r\n"
                            "Content-Type: text/html" "\r\n"
-                           "Content-Length: " + numberTo<std::string>(strLength(htmlMsg)) + "\r\n"
+                           "Content-Length: " + numberTo<std::string>(strSize(htmlMsg)) + "\r\n"
                            "\r\n" + htmlMsg;
         }
 
@@ -1733,7 +1733,7 @@ std::string /*itemId*/ gdriveUploadFile(const Zstring& fileName, const std::stri
 
         std::string uploadUrl;
 
-        auto onHeaderData = [&](std::string_view header)
+        auto onHeaderData = [&](const std::string_view header)
         {
             //"The callback will be called once for each header and only complete header lines are passed on to the callback" (including \r\n at the end)
             if (startsWithAsciiNoCase(header, "Location:"))
@@ -2783,7 +2783,7 @@ private:
 
         try
         {
-            streamOut.ref() += compress(streamOutBody.ref(), 3 /*best compression level: see db_file.cpp*/); //throw SysError
+            streamOut.ref() += compress(streamOutBody.ref(), 4 /*best compression level: see db_file.cpp*/); //throw SysError
         }
         catch (const SysError& e) { throw FileError(replaceCpy(_("Cannot write file %x."), L"%x", fmtPath(dbFilePath)), e.toString()); }
 
@@ -2809,13 +2809,13 @@ private:
         {
             MemoryStreamIn streamIn(byteStream);
             //-------- file format header --------
-            char tmp[sizeof(DB_FILE_DESCR)] = {};
-            readArray(streamIn, &tmp, sizeof(tmp)); //throw SysErrorUnexpectedEos
+            char formatDescr[sizeof(DB_FILE_DESCR)] = {};
+            readArray(streamIn, &formatDescr, sizeof(formatDescr)); //throw SysErrorUnexpectedEos
 
             const std::shared_ptr<int> timeoutSec2 = std::make_shared<int>(timeoutSec); //context option: valid only for duration of this call!
 
             //TODO: remove migration code at some time! 2020-07-03
-            if (!std::equal(std::begin(tmp), std::end(tmp), std::begin(DB_FILE_DESCR)))
+            if (!std::equal(std::begin(formatDescr), std::end(formatDescr), std::begin(DB_FILE_DESCR)))
             {
                 const std::string& uncompressedStream = decompress(byteStream); //throw SysError
                 MemoryStreamIn streamIn2(uncompressedStream);
@@ -2842,7 +2842,7 @@ private:
             }
             else
             {
-                if (!std::equal(std::begin(tmp), std::end(tmp), std::begin(DB_FILE_DESCR)))
+                if (!std::equal(std::begin(formatDescr), std::end(formatDescr), std::begin(DB_FILE_DESCR)))
                     throw SysError(_("File content is corrupted.") + L" (invalid header)");
 
                 const int version = readNumber<int32_t>(streamIn); //throw SysErrorUnexpectedEos
@@ -2850,7 +2850,7 @@ private:
                     version != DB_FILE_VERSION)
                     throw SysError(_("Unsupported data format.") + L' ' + replaceCpy(_("Version: %x"), L"%x", numberTo<std::wstring>(version)));
 
-                const std::string& uncompressedStream = decompress({byteStream.begin() + streamIn.pos(), byteStream.end()}); //throw SysError
+                const std::string& uncompressedStream = decompress({streamIn.buf().begin() + streamIn.pos(), streamIn.buf().end()}); //throw SysError
                 MemoryStreamIn streamInBody(uncompressedStream);
 
                 auto accessBuf = makeSharedRef<GdriveAccessBuffer>(streamInBody); //throw SysError
@@ -4088,7 +4088,7 @@ AbstractPath fff::createItemPathGdrive(const Zstring& itemPathPhrase) //noexcept
     trim(pathPhrase);
 
     if (startsWithAsciiNoCase(pathPhrase, gdrivePrefix))
-        pathPhrase = pathPhrase.c_str() + strLength(gdrivePrefix);
+        pathPhrase = pathPhrase.c_str() + strSize(gdrivePrefix);
     trim(pathPhrase, TrimSide::left, [](Zchar c) { return c == Zstr('/') || c == Zstr('\\'); });
 
     const ZstringView fullPath = beforeFirst<ZstringView>(pathPhrase, Zstr('|'), IfNotFoundReturn::all);

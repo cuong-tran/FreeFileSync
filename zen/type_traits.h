@@ -3,9 +3,7 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef TYPE_TRAITS_H_3425628658765467
-#define TYPE_TRAITS_H_3425628658765467
+#pragma once
 
 #include <span>
 #include <algorithm>
@@ -122,13 +120,10 @@ bool isLessFor(Predicate&& pred, const Arg& lhs, const Arg& rhs)
 //################ implementation ######################
 #define ZEN_INIT_DETECT_MEMBER(NAME)   \
     \
-    template<bool isClass, class T>    \
+    template <bool isClass, class T>   \
     struct HasMemberImpl_##NAME        \
     {                                  \
     private:                           \
-        using Yes = char[1];           \
-        using No  = char[2];           \
-        \
         template <typename U, U t>     \
         class Helper {};               \
         \
@@ -137,62 +132,56 @@ bool isLessFor(Predicate&& pred, const Arg& lhs, const Arg& rhs)
         template <class U>             \
         struct Helper2 : public U, public Fallback {};  /*this works only for class types!!!*/ \
         \
-        template <class U> static  No& hasMember(Helper<int Fallback::*, &Helper2<U>::NAME>*); \
-        template <class U> static Yes& hasMember(...);                                         \
-    public:                                                                                    \
-        static constexpr bool value = sizeof(hasMember<T>(nullptr)) == sizeof(Yes);            \
-    };                                                                                         \
+        template <class U> static std::false_type hasMember(Helper<int Fallback::*, &Helper2<U>::NAME>*); \
+        template <class U> static std::true_type  hasMember(...);                                         \
+    public:                                                                   \
+        static constexpr bool value = decltype(hasMember<T>(nullptr))::value; \
+    };                                                                        \
     \
-    template <class T>                                                                         \
-    struct HasMemberImpl_##NAME<false, T> : std::false_type {};                                \
+    template <class T>                                                        \
+    struct HasMemberImpl_##NAME<false, T> : std::false_type {};               \
     \
-    template <class T> constexpr bool hasMember_##NAME = HasMemberImpl_##NAME<std::is_class_v<T>, T>::value;
+    template <class T>                                                        \
+    constexpr bool hasMember_##NAME = HasMemberImpl_##NAME<std::is_class_v<T>, T>::value;
+
+#if 0 //alternative, but doesn't handle overloaded functions e.g. std::string::append
+#define ZEN_INIT_DETECT_MEMBER(NAME)                                                     \
+    template <typename T, typename = void>                                               \
+    struct HasMemberImpl_##NAME : std::false_type {};                                    \
+    \
+    template <typename T>                                                                \
+    struct HasMemberImpl_##NAME<T, std::void_t<decltype(&T::NAME)>> : std::true_type {}; \
+    \
+    template <class T>                                                                   \
+    constexpr bool hasMember_##NAME = HasMemberImpl_##NAME<T>::value;
+#endif
 
 //####################################################################
 
-#define ZEN_INIT_DETECT_MEMBER2(NAME, TYPE)         \
+#define ZEN_INIT_DETECT_MEMBER2(NAME, TYPE)           \
+    template <typename T, typename = void>            \
+    struct HasMemberImpl_##NAME : std::false_type {}; \
     \
-    template<typename U>                            \
-    class HasMember_##NAME                          \
-    {                                               \
-        using Yes = char[1];                        \
-        using No  = char[2];                        \
-        \
-        template <typename T, T t> class Helper {}; \
-        \
-        template <class T> static Yes& hasMember(Helper<TYPE, &T::NAME>*);          \
-        template <class T> static  No& hasMember(...);                              \
-    public:                                                                         \
-        static constexpr bool value = sizeof(hasMember<U>(nullptr)) == sizeof(Yes); \
-    };                                                                              \
+    template <typename T>                             \
+    struct HasMemberImpl_##NAME<T, std::void_t<decltype(static_cast<TYPE>(&T::NAME))>> : std::true_type {}; \
     \
-    template <class T> constexpr bool hasMember_##NAME = HasMember_##NAME<T>::value;
+    template <class T>                                \
+    constexpr bool hasMember_##NAME = HasMemberImpl_##NAME<T>::value;
 
 //####################################################################
 
-#define ZEN_INIT_DETECT_MEMBER_TYPE(TYPENAME)  \
+#define ZEN_INIT_DETECT_MEMBER_TYPE(TYPENAME)                 \
+    template <typename T, typename = void>                    \
+    struct HasMemberTypeImpl_##TYPENAME : std::false_type {}; \
     \
-    template<typename T>                       \
-    class HasMemberType_##TYPENAME             \
-    {                                          \
-        using Yes = char[1];                   \
-        using No  = char[2];                   \
-        \
-        template <typename U> class Helper {}; \
-        \
-        template <class U> static Yes& hasMemberType(Helper<typename U::TYPENAME>*);    \
-        template <class U> static  No& hasMemberType(...);                              \
-    public:                                                                             \
-        static constexpr bool value = sizeof(hasMemberType<T>(nullptr)) == sizeof(Yes); \
-    };                                                                                  \
+    template <typename T>                                     \
+    struct HasMemberTypeImpl_##TYPENAME<T, std::void_t<typename T::TYPENAME>> : std::true_type {}; \
     \
-    template <class T> constexpr bool hasMemberType_##TYPENAME = HasMemberType_##TYPENAME<T>::value;
+    template <class T>                                        \
+    constexpr bool hasMemberType_##TYPENAME = HasMemberTypeImpl_##TYPENAME<T>::value;
 }
 
 
 //---------------------------------------------------------------------------
 //ZEN macro consistency checks: => place in most-used header!
 
-
-
-#endif //TYPE_TRAITS_H_3425628658765467

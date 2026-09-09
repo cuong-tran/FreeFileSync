@@ -3,9 +3,7 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef FOCUS_1084731021985757843
-#define FOCUS_1084731021985757843
+#pragma once
 
 #include <zen/scope_guard.h>
 #include <wx/toplevel.h>
@@ -124,7 +122,7 @@ void setText(wxTextCtrl& control, const wxString& newText, bool* additionalLayou
 {
     const wxString& label = control.GetValue(); //perf: don't call twice!
     if (additionalLayoutChange && !*additionalLayoutChange && control.IsShown()) //never revert from true to false!
-        *additionalLayoutChange = label.length() != newText.length(); //avoid screen flicker: update layout only when necessary
+        *additionalLayoutChange = label.size() != newText.size(); //avoid screen flicker: update layout only when necessary
 
     if (label != newText)
         control.ChangeValue(newText);
@@ -139,7 +137,7 @@ void setText(wxStaticText& control, const wxString& newText, bool* additionalLay
 
     const wxString& label = control.GetLabelText(); //perf: don't call twice!
     if (additionalLayoutChange && !*additionalLayoutChange && control.IsShown()) //"better" or overkill(?): IsShownOnScreen()
-        *additionalLayoutChange = label.length() != newText.length(); //avoid screen flicker: update layout only when necessary
+        *additionalLayoutChange = label.size() != newText.size(); //avoid screen flicker: update layout only when necessary
 
     if (label != newText)
         control.SetLabelText(newText);
@@ -503,5 +501,3 @@ private:
     inline static std::unordered_map<const wxTopLevelWindow* /*don't access! use as key only!*/, Rect> initialRects_;
 };
 }
-
-#endif //FOCUS_1084731021985757843

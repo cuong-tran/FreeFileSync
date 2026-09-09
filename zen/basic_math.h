@@ -3,15 +3,12 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef BASIC_MATH_H_3472639843265675
-#define BASIC_MATH_H_3472639843265675
+#pragma once
 
 #include <cassert>
 #include <cmath>
 #include <numbers>
 #include "type_traits.h"
-
 
 namespace numeric
 {
@@ -368,5 +365,3 @@ double norm2(InputIterator first, InputIterator last)
     return std::sqrt(result) * scale;
 }
 }
-
-#endif //BASIC_MATH_H_3472639843265675

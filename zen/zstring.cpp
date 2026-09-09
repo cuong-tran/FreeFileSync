@@ -22,12 +22,12 @@ Zstring getUnicodeNormalForm_NonAsciiValidUtf(const Zstring& str, UnicodeNormalF
 
     try
     {
-        gchar* strNorm = ::g_utf8_normalize(str.c_str(), str.length(), form == UnicodeNormalForm::nfc ? G_NORMALIZE_NFC : G_NORMALIZE_NFD);
+        gchar* strNorm = ::g_utf8_normalize(str.c_str(), str.size(), form == UnicodeNormalForm::nfc ? G_NORMALIZE_NFC : G_NORMALIZE_NFD);
         if (!strNorm)
             throw SysError(formatSystemError("g_utf8_normalize", L"", L"Conversion failed."));
         ZEN_ON_SCOPE_EXIT(::g_free(strNorm));
 
-        const std::string_view strNormView(strNorm, strLength(strNorm));
+        const std::string_view strNormView(strNorm, strSize(strNorm));
 
         if (equalString(str, strNormView)) //avoid extra memory allocation
             return str;
@@ -284,8 +284,8 @@ std::weak_ordering compareNoCase(const Zstring& lhs, const Zstring& rhs)
 
 bool equalNoCase(const Zstring& lhs, const Zstring& rhs)
 {
-    const bool isAsciiL = isAsciiString(lhs);
-    const bool isAsciiR = isAsciiString(rhs);
+    const bool isAsciiL = isAsciiString(lhs); //need *full* check first, see above comment regarding "decomposed Unicode"
+    const bool isAsciiR = isAsciiString(rhs); //
 
     //fast-path: no extra memory allocations
     //caveat: ASCII-char and non-ASCII Unicode *can* compare case-insensitive equal!!! e.g. i and ı https://freefilesync.org/forum/viewtopic.php?t=9718

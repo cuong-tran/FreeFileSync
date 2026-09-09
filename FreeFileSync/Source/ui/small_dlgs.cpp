@@ -74,9 +74,9 @@ AboutDlg::AboutDlg(wxWindow* parent) : AboutDlgGenerated(parent)
     setImage(*m_bitmapLogo,     loadImage(darkAppearance ? "ffs-header-dark" : "ffs-header-light"));
     setImage(*m_bitmapLogoLeft, loadImage(darkAppearance ? "ffs-logo-dark"   : "ffs-logo-light"));
 
-    setBitmapTextLabel(*m_bpButtonForum, loadImage("ffs_forum"), L"FreeFileSync Forum");
-    setBitmapTextLabel(*m_bpButtonEmail, loadImage("ffs_email"), wxString() + L"zenju" + L'@' + /*don't leave full email in either source or binary*/ L"freefilesync.org");
-    m_bpButtonEmail->SetToolTip(                          wxString() + L"mailto:zenju" + L'@' + /*don't leave full email in either source or binary*/ L"freefilesync.org");
+    setButtonLabel(*m_bpButtonForum, loadImage("ffs_forum"), L"FreeFileSync Forum");
+    setButtonLabel(*m_bpButtonEmail, loadImage("ffs_email"), wxString() + L"zenju" + L'@' + /*don't leave full email in either source or binary*/ L"freefilesync.org");
+    m_bpButtonEmail->SetToolTip(                      wxString() + L"mailto:zenju" + L'@' + /*don't leave full email in either source or binary*/ L"freefilesync.org");
 
     wxString build = utfTo<wxString>(ffsVersion);
 
@@ -105,7 +105,7 @@ AboutDlg::AboutDlg(wxWindow* parent) : AboutDlgGenerated(parent)
         m_staticTextDonate->Hide(); //temporarily! => avoid impact to dialog width
 
         setRelativeFontSize(*m_buttonDonate1, 1.25);
-        setBitmapTextLabel(*m_buttonDonate1, loadImage("ffs_heart", dipToScreen(28)), m_buttonDonate1->GetLabelText());
+        setButtonLabel(*m_buttonDonate1, loadImage("ffs_heart", dipToScreen(28)), m_buttonDonate1->GetLabelText());
 
         m_buttonShowSupporterDetails->Hide();
         m_buttonDonate2->Hide();
@@ -121,7 +121,7 @@ AboutDlg::AboutDlg(wxWindow* parent) : AboutDlgGenerated(parent)
     for (const TranslationInfo& ti : getAvailableTranslations())
     {
         //country flag
-        wxStaticBitmap* staticBitmapFlag = new wxStaticBitmap(m_scrolledWindowTranslators, wxID_ANY, toScaledBitmap(loadImage(ti.languageFlag)));
+        wxStaticBitmap* staticBitmapFlag = new wxStaticBitmap(m_scrolledWindowTranslators, wxID_ANY, toDpiScaledBitmap(loadImage(ti.languageFlag)));
         fgSizerTranslators->Add(staticBitmapFlag, 0, wxALIGN_CENTER);
 
         //translator name
@@ -278,14 +278,48 @@ CloudSetupDlg::CloudSetupDlg(wxWindow* parent, Zstring& folderPathPhrase, Zstrin
 {
     setStandardButtonLayout(*bSizerStdButtons, StdButtons().setAffirmative(m_buttonOK).setCancel(m_buttonCancel));
 
-    setImage(*m_toggleBtnGdrive, loadImage("google_drive"));
-
     setRelativeFontSize(*m_toggleBtnGdrive, 1.25);
     setRelativeFontSize(*m_toggleBtnSftp,   1.25);
     setRelativeFontSize(*m_toggleBtnFtp,    1.25);
 
-    setBitmapTextLabel(*m_buttonGdriveAddUser,    loadImage("user_add",    dipToScreen(20)), m_buttonGdriveAddUser   ->GetLabelText());
-    setBitmapTextLabel(*m_buttonGdriveRemoveUser, loadImage("user_remove", dipToScreen(20)), m_buttonGdriveRemoveUser->GetLabelText());
+    //------------------------------------------------------------------------------------------------
+    const wxSize minSize{dipToScreen(80), loadImage("google_drive").GetHeight() + dipToScreen(4)};
+
+    auto generateSelectImage = [&](wxButton& btn, const std::string_view imgName, bool selected)
+    {
+        wxImage img = createImageFromText(btn.GetLabelText(), btn.GetFont(),
+                                          selected ? *wxBLACK : //accessibility: always set both foreground AND background colors! see getColorToggleButtonFill()
+                                          btn.GetForegroundColour());
+        if (!imgName.empty())
+        {
+            wxImage imgIco = /*mirrorIfRtl*/ loadImage(imgName);
+
+            if (!selected)
+                imgIco = greyScale(imgIco);
+
+            img = wxTheApp->GetLayoutDirection() != wxLayout_RightToLeft ?
+                  stackImages(imgIco, img, ImageStackLayout::horizontal, ImageStackAlignment::center, dipToScreen(5)) :
+                  stackImages(img, imgIco, ImageStackLayout::horizontal, ImageStackAlignment::center, dipToScreen(5));
+        }
+        if (selected)
+            img = layOver(rectangleImage(getMaxSize(minSize, img.GetSize() + wxSize(dipToScreen(10), 0)),
+                                         getColorToggleButtonFill(), getColorToggleButtonBorder(), dipToScreen(1)), img);
+
+        return img;
+    };
+
+    m_toggleBtnGdrive->init(generateSelectImage(*m_toggleBtnGdrive, "google_drive", true /*selected*/),
+                            generateSelectImage(*m_toggleBtnGdrive, "google_drive", false /*selected*/), 0 /*pad*/);
+
+    m_toggleBtnSftp->init(generateSelectImage(*m_toggleBtnSftp, "", true /*selected*/),
+                          generateSelectImage(*m_toggleBtnSftp, "", false /*selected*/), 0 /*pad*/);
+
+    m_toggleBtnFtp->init(generateSelectImage(*m_toggleBtnFtp, "", true /*selected*/),
+                         generateSelectImage(*m_toggleBtnFtp, "", false /*selected*/), 0 /*pad*/);
+    //------------------------------------------------------------------------------------------------
+
+    setButtonLabel(*m_buttonGdriveAddUser,    loadImage("user_add",    dipToScreen(20)), m_buttonGdriveAddUser   ->GetLabelText());
+    setButtonLabel(*m_buttonGdriveRemoveUser, loadImage("user_remove", dipToScreen(20)), m_buttonGdriveRemoveUser->GetLabelText());
 
     setImage(*m_bitmapGdriveUser,  loadImage("user",   dipToScreen(20)));
     setImage(*m_bitmapGdriveDrive, loadImage("drive",  dipToScreen(20)));
@@ -650,9 +684,9 @@ void CloudSetupDlg::onSelectKeyfile(wxCommandEvent& event)
 
 void CloudSetupDlg::updateGui()
 {
-    m_toggleBtnGdrive->SetValue(type_ == CloudType::gdrive);
-    m_toggleBtnSftp  ->SetValue(type_ == CloudType::sftp);
-    m_toggleBtnFtp   ->SetValue(type_ == CloudType::ftp);
+    m_toggleBtnGdrive->setActive(type_ == CloudType::gdrive);
+    m_toggleBtnSftp  ->setActive(type_ == CloudType::sftp);
+    m_toggleBtnFtp   ->setActive(type_ == CloudType::ftp);
 
     bSizerGdrive->Show(type_ == CloudType::gdrive);
     bSizerServer->Show(type_ == CloudType::ftp || type_ == CloudType::sftp);
@@ -1448,7 +1482,7 @@ OptionsDlg::OptionsDlg(wxWindow* parent, GlobalConfig& globalCfg) :
         try { return extractWxImage(fff::getFileManagerIcon(dipToScreen(20))); /*throw SysError*/ }
         catch ([[maybe_unused]] const SysError& e) { assert(false); return loadImage("file_manager", dipToScreen(20)); }
     }());
-    setImage(*m_bpButtonShowLogFolder, imgFileManagerSmall_);
+    setButtonLabel(*m_bpButtonShowLogFolder, imgFileManagerSmall_);
     m_bpButtonShowLogFolder->SetToolTip(translate(extCommandFileManager.description));//translate default external apps on the fly: "Show in Explorer"
 
     m_logFolderPath->SetHint(utfTo<wxString>(defaultCfg_.logFolderPhrase));
@@ -1468,11 +1502,11 @@ OptionsDlg::OptionsDlg(wxWindow* parent, GlobalConfig& globalCfg) :
     setImage(*m_bitmapCompareDone,        loadImage("compare",      dipToScreen(20)));
     setImage(*m_bitmapSyncDone,           loadImage("start_sync",   dipToScreen(20)));
     setImage(*m_bitmapAlertPending,       loadImage("msg_error",    dipToScreen(20)));
-    setImage(*m_bpButtonPlayCompareDone,  loadImage("play_sound"));
-    setImage(*m_bpButtonPlaySyncDone,     loadImage("play_sound"));
-    setImage(*m_bpButtonPlayAlertPending, loadImage("play_sound"));
-    setImage(*m_bpButtonAddRow,           loadImage("item_add"));
-    setImage(*m_bpButtonRemoveRow,        loadImage("item_remove"));
+    setButtonLabel(*m_bpButtonPlayCompareDone,  loadImage("play_sound" ), 0 /*pad*/);
+    setButtonLabel(*m_bpButtonPlaySyncDone,     loadImage("play_sound" ), 0 /*pad*/);
+    setButtonLabel(*m_bpButtonPlayAlertPending, loadImage("play_sound" ), 0 /*pad*/);
+    setButtonLabel(*m_bpButtonAddRow,           loadImage("item_add"   ), 0 /*pad*/);
+    setButtonLabel(*m_bpButtonRemoveRow,        loadImage("item_remove"), 0 /*pad*/);
 
     //--------------------------------------------------------------------------------
     m_checkListHiddenDialogs->Hide();

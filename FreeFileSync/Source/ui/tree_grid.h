@@ -3,15 +3,12 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef TREE_VIEW_H_841703190201835280256673425
-#define TREE_VIEW_H_841703190201835280256673425
+#pragma once
 
 #include <functional>
 #include <wx+/grid.h>
 #include "tree_grid_attr.h"
 #include "../base/file_hierarchy.h"
-
 
 namespace fff
 {
@@ -175,5 +172,3 @@ void setShowPercentage(zen::Grid& grid, bool value);
 bool getShowPercentage(const zen::Grid& grid);
 }
 }
-
-#endif //TREE_VIEW_H_841703190201835280256673425

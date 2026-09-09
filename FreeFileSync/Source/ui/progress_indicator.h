@@ -3,15 +3,12 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef PROGRESS_INDICATOR_H_8037493452348
-#define PROGRESS_INDICATOR_H_8037493452348
+#pragma once
 
 #include <functional>
 #include <zen/error_log.h>
 #include "wx+/window_tools.h"
 #include "../status_handler.h"
-
 
 namespace fff
 {
@@ -106,5 +103,3 @@ private:
     const bool timerWasRunning_;
 };
 }
-
-#endif //PROGRESS_INDICATOR_H_8037493452348

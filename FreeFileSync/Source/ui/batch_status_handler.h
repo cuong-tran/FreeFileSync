@@ -3,15 +3,12 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef BATCH_STATUS_HANDLER_H_857390451451234566
-#define BATCH_STATUS_HANDLER_H_857390451451234566
+#pragma once
 
 #include <zen/error_log.h>
 #include "progress_indicator.h"
 #include "../config.h"
 #include "../status_handler.h"
-
 
 namespace fff
 {
@@ -82,5 +79,3 @@ private:
     std::optional<TaskResult> syncResult_;
 };
 }
-
-#endif //BATCH_STATUS_HANDLER_H_857390451451234566

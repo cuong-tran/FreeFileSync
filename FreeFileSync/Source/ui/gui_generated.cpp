@@ -2738,27 +2738,26 @@ CloudSetupDlgGenerated::CloudSetupDlgGenerated( wxWindow* parent, wxWindowID id,
     m_staticText136->Wrap( -1 );
     bSizer272->Add( m_staticText136, 0, wxTOP|wxRIGHT|wxLEFT, 5 );
 
-    wxBoxSizer* bSizer231;
-    bSizer231 = new wxBoxSizer( wxHORIZONTAL );
+    wxBoxSizer* bSizer2311;
+    bSizer2311 = new wxBoxSizer( wxHORIZONTAL );
 
-    m_toggleBtnGdrive = new wxToggleButton( this, wxID_ANY, _("Google Drive"), wxDefaultPosition, wxDefaultSize, 0 );
-    m_toggleBtnGdrive->SetValue( true );
+    m_toggleBtnGdrive = new zen::ToggleButton( this, wxID_ANY, _("Google Drive"), wxDefaultPosition, wxSize( -1, -1 ), 0 );
     m_toggleBtnGdrive->SetFont( wxFont( wxNORMAL_FONT->GetPointSize(), wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD, false, wxEmptyString ) );
 
-    bSizer231->Add( m_toggleBtnGdrive, 0, wxTOP|wxBOTTOM|wxLEFT|wxEXPAND, 5 );
+    bSizer2311->Add( m_toggleBtnGdrive, 0, wxALL|wxEXPAND, 5 );
 
-    m_toggleBtnSftp = new wxToggleButton( this, wxID_ANY, _("SFTP"), wxDefaultPosition, wxSize( -1, -1 ), 0 );
+    m_toggleBtnSftp = new zen::ToggleButton( this, wxID_ANY, _("SFTP"), wxDefaultPosition, wxSize( -1, -1 ), 0 );
     m_toggleBtnSftp->SetFont( wxFont( wxNORMAL_FONT->GetPointSize(), wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD, false, wxEmptyString ) );
 
-    bSizer231->Add( m_toggleBtnSftp, 0, wxTOP|wxBOTTOM|wxLEFT|wxEXPAND, 5 );
+    bSizer2311->Add( m_toggleBtnSftp, 0, wxTOP|wxBOTTOM|wxRIGHT, 5 );
 
-    m_toggleBtnFtp = new wxToggleButton( this, wxID_ANY, _("FTP"), wxDefaultPosition, wxSize( -1, -1 ), 0 );
+    m_toggleBtnFtp = new zen::ToggleButton( this, wxID_ANY, _("FTP"), wxDefaultPosition, wxSize( -1, -1 ), 0 );
     m_toggleBtnFtp->SetFont( wxFont( wxNORMAL_FONT->GetPointSize(), wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD, false, wxEmptyString ) );
 
-    bSizer231->Add( m_toggleBtnFtp, 0, wxALL|wxEXPAND, 5 );
+    bSizer2311->Add( m_toggleBtnFtp, 0, wxTOP|wxBOTTOM|wxRIGHT, 5 );
 
 
-    bSizer272->Add( bSizer231, 0, 0, 5 );
+    bSizer272->Add( bSizer2311, 1, wxEXPAND, 5 );
 
 
     bSizer72->Add( bSizer272, 0, wxALL, 5 );
@@ -3260,9 +3259,9 @@ CloudSetupDlgGenerated::CloudSetupDlgGenerated( wxWindow* parent, wxWindowID id,
 
     // Connect Events
     this->Connect( wxEVT_CLOSE_WINDOW, wxCloseEventHandler( CloudSetupDlgGenerated::onClose ) );
-    m_toggleBtnGdrive->Connect( wxEVT_COMMAND_TOGGLEBUTTON_CLICKED, wxCommandEventHandler( CloudSetupDlgGenerated::onConnectionGdrive ), NULL, this );
-    m_toggleBtnSftp->Connect( wxEVT_COMMAND_TOGGLEBUTTON_CLICKED, wxCommandEventHandler( CloudSetupDlgGenerated::onConnectionSftp ), NULL, this );
-    m_toggleBtnFtp->Connect( wxEVT_COMMAND_TOGGLEBUTTON_CLICKED, wxCommandEventHandler( CloudSetupDlgGenerated::onConnectionFtp ), NULL, this );
+    m_toggleBtnGdrive->Connect( wxEVT_COMMAND_BUTTON_CLICKED, wxCommandEventHandler( CloudSetupDlgGenerated::onConnectionGdrive ), NULL, this );
+    m_toggleBtnSftp->Connect( wxEVT_COMMAND_BUTTON_CLICKED, wxCommandEventHandler( CloudSetupDlgGenerated::onConnectionSftp ), NULL, this );
+    m_toggleBtnFtp->Connect( wxEVT_COMMAND_BUTTON_CLICKED, wxCommandEventHandler( CloudSetupDlgGenerated::onConnectionFtp ), NULL, this );
     m_listBoxGdriveUsers->Connect( wxEVT_COMMAND_LISTBOX_SELECTED, wxCommandEventHandler( CloudSetupDlgGenerated::onGdriveUserSelect ), NULL, this );
     m_buttonGdriveAddUser->Connect( wxEVT_COMMAND_BUTTON_CLICKED, wxCommandEventHandler( CloudSetupDlgGenerated::onGdriveUserAdd ), NULL, this );
     m_buttonGdriveRemoveUser->Connect( wxEVT_COMMAND_BUTTON_CLICKED, wxCommandEventHandler( CloudSetupDlgGenerated::onGdriveUserRemove ), NULL, this );

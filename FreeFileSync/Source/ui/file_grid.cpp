@@ -297,8 +297,8 @@ struct SharedComponents //...between left, center, and right grids
     NavigationMarker navMarker;
     std::unique_ptr<GridEventManager> evtMgr;
     GridViewType gridViewType = GridViewType::action;
-    std::unordered_map<std::wstring, wxSize, StringHash, StringEqual> compExtentsBuf_; //buffer expensive wxDC::GetTextExtent() calls!
-    //StringHash, StringEqual => heterogenous lookup by std::wstring_view
+    std::unordered_map<std::wstring, wxSize, BinaryStringHash, std::equal_to<>> compExtentsBuf_; //buffer expensive wxDC::GetTextExtent() calls!
+    //StringHash => heterogenous lookup by std::wstring_view
 };
 
 //########################################################################################################

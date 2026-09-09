@@ -478,7 +478,7 @@ void updateTopButton(wxBitmapButton& btn,
     if (highlightCol.IsOk())
         btnImg = layOver(rectangleImage(btnImg.GetSize(), highlightCol), btnImg, wxALIGN_CENTER);
 
-    setImage(btn, btnImg);
+    setButtonLabel(btn, btnImg, 0 /*pad*/);
 }
 }
 
@@ -695,25 +695,24 @@ imgFileManagerSmall_([]
         return layOver(backImg, loadImage(layoverName, backImg.GetWidth() * 7 / 10), wxALIGN_TOP | wxALIGN_RIGHT);
     };
 
-    setImage(*m_bpButtonCmpConfig,  loadImage("options_compare"));
-    setImage(*m_bpButtonSyncConfig, loadImage("options_sync"));
+    setButtonLabel(*m_bpButtonCmpConfig,  loadImage("options_compare"));
+    setButtonLabel(*m_bpButtonSyncConfig, loadImage("options_sync"));
 
-    setImage(*m_bpButtonCmpContext,        mirrorIfRtl(loadImage("button_arrow_right")));
-    setImage(*m_bpButtonFilterContext,     mirrorIfRtl(loadImage("button_arrow_right")));
-    setImage(*m_bpButtonSyncContext,       mirrorIfRtl(loadImage("button_arrow_right")));
-    setImage(*m_bpButtonViewFilterContext, mirrorIfRtl(loadImage("button_arrow_right")));
+    setButtonLabel(*m_bpButtonCmpContext,        mirrorIfRtl(loadImage("button_arrow_right")), 0 /*pad*/);
+    setButtonLabel(*m_bpButtonFilterContext,     mirrorIfRtl(loadImage("button_arrow_right")), 0 /*pad*/);
+    setButtonLabel(*m_bpButtonSyncContext,       mirrorIfRtl(loadImage("button_arrow_right")), 0 /*pad*/);
+    setButtonLabel(*m_bpButtonViewFilterContext, mirrorIfRtl(loadImage("button_arrow_right")), 0 /*pad*/);
 
     //m_bpButtonNew      ->set dynamically
-    setImage(*m_bpButtonOpen, loadImage("cfg_load"));
+    setButtonLabel(*m_bpButtonOpen, loadImage("cfg_load"), dipToWxsize(3) /*pad*/);
     //m_bpButtonSave     ->set dynamically
-    setImage(*m_bpButtonSaveAs,      generateSaveAsImage("start_sync"));
-    setImage(*m_bpButtonSaveAsBatch, generateSaveAsImage("cfg_batch"));
+    setButtonLabel(*m_bpButtonSaveAs,      generateSaveAsImage("start_sync"), dipToWxsize(3) /*pad*/);
+    setButtonLabel(*m_bpButtonSaveAsBatch, generateSaveAsImage("cfg_batch"),  dipToWxsize(3) /*pad*/);
 
-    setImage(*m_bpButtonAddPair,    loadImage("item_add"));
-    setImage(*m_bpButtonHideSearch, loadImage("close_panel"));
-    //setImage(*m_bpButtonToggleLog,  loadImage("log_file"));
+    setButtonLabel(*m_bpButtonAddPair,    loadImage("item_add"),    0 /*pad*/);
+    setButtonLabel(*m_bpButtonHideSearch, loadImage("close_panel"), 0 /*pad*/);
+    //setButtonLabel(*m_bpButtonToggleLog,  loadImage("log_file"));
 
-    m_bpButtonFilter   ->SetMinSize({screenToWxsize(loadImage("options_filter").GetWidth()) + dipToWxsize(27), -1}); //make the filter button wider
     m_textCtrlSearchTxt->SetMinSize({dipToWxsize(220), -1});
 
     //----------------------------------------------------------------------------------------
@@ -726,7 +725,7 @@ imgFileManagerSmall_([]
         return stackImages(labelImage, mirrorIfRtl(loadImage(imgName)), ImageStackLayout::vertical, ImageStackAlignment::center);
     };
     m_bpButtonViewType->init(generateViewTypeImage("viewtype_sync_action"),
-                             generateViewTypeImage("viewtype_cmp_result"));
+                             generateViewTypeImage("viewtype_cmp_result"), dipToWxsize(1) /*pad*/);
     //tooltip is updated dynamically in setViewTypeSyncAction()
     //----------------------------------------------------------------------------------------
     m_bpButtonShowExcluded  ->SetToolTip(_("Show filtered or temporarily excluded files"));
@@ -829,9 +828,7 @@ imgFileManagerSmall_([]
     updateTopButton(*m_buttonCompare, loadImage("compare"), getVariantName(CompareVariant::timeSize), "cmp_time", nullptr /*extraIconName*/, wxNullColour);
     m_panelTopButtons->GetSizer()->SetSizeHints(m_panelTopButtons); //~=Fit() + SetMinSize()
 
-    m_buttonCancel->SetMinSize({std::max(m_buttonCancel->GetSize().x, dipToWxsize(TOP_BUTTON_OPTIMAL_WIDTH_DIP)),
-                                std::max(m_buttonCancel->GetSize().y, m_buttonCompare->GetSize().y)
-                               });
+    m_buttonCancel->SetMinSize(getMaxSize(m_buttonCancel->GetSize(), {dipToWxsize(TOP_BUTTON_OPTIMAL_WIDTH_DIP), m_buttonCompare->GetSize().y}));
 
     auiMgr_.AddPane(m_panelTopButtons,
                     wxAuiPaneInfo().Name(L"TopPanel").Layer(2).Top().Row(1).Caption(_("Main Bar")).CaptionVisible(false).
@@ -1091,7 +1088,7 @@ imgFileManagerSmall_([]
     //register regular check for update on next idle event
     Bind(wxEVT_IDLE, &MainDialog::onStartupUpdateCheck, this);
 
-    //asynchronous call to wxWindow::Dimensions(): fix superfluous frame on right and bottom when FFS is started in fullscreen mode
+    //asynchronous call to wxWindow::Layout(): fix superfluous frame on right and bottom when FFS is started in fullscreen mode
     Bind(wxEVT_IDLE, &MainDialog::onLayoutWindowAsync, this);
     wxCommandEvent evtDummy;           //call once before onLayoutWindowAsync()
     onResizeLeftFolderWidth(evtDummy); //
@@ -3339,7 +3336,7 @@ void MainDialog::updateUnsavedCfgStatus()
 
     if (m_bpButtonNew->IsEnabled() != allowNew || !m_bpButtonNew->GetBitmap().IsOk()) //support polling
     {
-        setImage(*m_bpButtonNew, allowNew ? loadImage("cfg_new") : makeBrightGrey(loadImage("cfg_new")));
+        setButtonLabel(*m_bpButtonNew, allowNew ? loadImage("cfg_new") : makeBrightGrey(loadImage("cfg_new")), dipToWxsize(3) /*pad*/);
         m_bpButtonNew->Enable(allowNew);
         m_menuItemNew->Enable(allowNew);
     }
@@ -3354,7 +3351,7 @@ void MainDialog::updateUnsavedCfgStatus()
 
     if (m_bpButtonSave->IsEnabled() != allowSave || !m_bpButtonSave->GetBitmap().IsOk()) //support polling
     {
-        setImage(*m_bpButtonSave, allowSave ? loadImage("cfg_save") : makeBrightGrey(loadImage("cfg_save")));
+        setButtonLabel(*m_bpButtonSave, allowSave ? loadImage("cfg_save") : makeBrightGrey(loadImage("cfg_save")), dipToWxsize(3) /*pad*/);
         m_bpButtonSave->Enable(allowSave);
         m_menuItemSave->Enable(allowSave); //bitmap is automatically greyscaled on Win7 (introducing a crappy looking shift), but not on XP
     }
@@ -4542,7 +4539,8 @@ void MainDialog::onViewFilterContext(wxEvent& event)
 void MainDialog::updateGlobalFilterButton()
 {
     //global filter: test for Null-filter
-    setImage(*m_bpButtonFilter, greyScaleIfDisabled(loadImage("options_filter"), !isNullFilter(currentCfg_.mainCfg.globalFilter)));
+    setButtonLabel(*m_bpButtonFilter, greyScaleIfDisabled(loadImage("options_filter"), !isNullFilter(currentCfg_.mainCfg.globalFilter)));
+    m_bpButtonFilter->SetMinSize(m_bpButtonFilter->GetMinSize() + wxSize(dipToWxsize(15), 0)); //make the filter button wider
 
     m_bpButtonFilter->SetToolTip(_("Filter") + L" (F7)" + getFilterSummaryForTooltip(currentCfg_.mainCfg.globalFilter));
     //m_bpButtonFilterContext->SetToolTip(m_bpButtonFilter->GetToolTipText());
@@ -5302,14 +5300,13 @@ void MainDialog::setLastOperationLog(const ProcessSummary& summary, const std::s
     logPanel_->setLog(errorLog);
 
     m_panelLog->Layout();
-    //m_panelItemStats->Dimensions(); //needed?
-    //m_panelTimeStats->Dimensions(); //
+    //m_panelItemStats->Layout(); //needed?
+    //m_panelTimeStats->Layout(); //
 
-    const wxImage& logBtnImg = layOver(loadImage("log_file"), logOverlayImage, wxALIGN_BOTTOM | wxALIGN_RIGHT);
-    m_bpButtonToggleLog->init(layOver(generatePressedButtonBack(logBtnImg.GetSize() + wxSize(dipToScreen(10), dipToScreen(10))), logBtnImg), logBtnImg);
+    const wxImage& logImg = layOver(loadImage("log_file"), logOverlayImage, wxALIGN_BOTTOM | wxALIGN_RIGHT);
+    const wxSize maxSize = getMaxSize(logImg.GetSize() + wxSize(dipToScreen(10), dipToScreen(10)), {0, m_bpButtonViewType->GetMinSize().y});
 
-    const int logBtnSize = m_bpButtonViewType->GetSize().GetHeight();
-    m_bpButtonToggleLog->SetMinSize({logBtnSize, logBtnSize});
+    m_bpButtonToggleLog->init(layOver(generatePressedButtonBack(maxSize), logImg), logImg, 0 /*pad*/);
 
     m_bpButtonToggleLog->Show(static_cast<bool>(errorLog));
 }
@@ -5539,8 +5536,10 @@ void MainDialog::updateGridViewData()
                 wxImage imgButtonPressed  = stackImages(imgCategory,     imgCountPressed,  ImageStackLayout::horizontal, ImageStackAlignment::bottom);
                 wxImage imgButtonReleased = stackImages(imgIconReleased, imgCountReleased, ImageStackLayout::horizontal, ImageStackAlignment::bottom);
 
-                btn.init(mirrorIfRtl(layOver(generatePressedButtonBack(imgButtonPressed.GetSize()), imgButtonPressed)),
-                         mirrorIfRtl(imgButtonReleased));
+                const wxSize maxSize = getMaxSize(imgButtonPressed.GetSize(), {0, m_bpButtonViewType->GetMinSize().y});
+
+                btn.init(mirrorIfRtl(layOver(generatePressedButtonBack(maxSize), imgButtonPressed)),
+                         mirrorIfRtl(imgButtonReleased), 0 /*pad*/);
             }
         }
 
@@ -5639,7 +5638,7 @@ void MainDialog::updateGridViewData()
     m_bpButtonViewType         ->Show(anyViewButtonShown);
     m_bpButtonViewFilterContext->Show(anyViewButtonShown);
 
-    //m_panelViewFilter->Dimensions(); -> yes, needed, but will also be called in updateStatistics();
+    //m_panelViewFilter->Layout(); -> yes, needed, but will also be called in updateStatistics();
 
     //all three grids retrieve their data directly via gridDataView
     filegrid::refresh(*m_gridMainL, *m_gridMainC, *m_gridMainR);
@@ -6013,7 +6012,7 @@ void MainDialog::updateGuiForFolderPair()
     m_bpButtonLocalCompCfg->Show(showLocalCfgFirstPair);
     m_bpButtonLocalSyncCfg->Show(showLocalCfgFirstPair);
     m_bpButtonLocalFilter ->Show(showLocalCfgFirstPair);
-    setImage(*m_bpButtonSwapSides, loadImage(showLocalCfgFirstPair ? "swap_slim" : "swap"));
+    setButtonLabel(*m_bpButtonSwapSides, loadImage(showLocalCfgFirstPair ? "swap_slim" : "swap"), dipToWxsize(3));
 
     //update sub-panel sizes for calculations below!!!
     m_panelTopCenter->GetSizer()->SetSizeHints(m_panelTopCenter); //~=Fit() + SetMinSize()
@@ -6098,7 +6097,7 @@ void MainDialog::insertAddFolderPair(const std::vector<LocalPairConfig>& newPair
             newPair->m_folderPathRight->setHistory(folderHistoryRight_);
 
             const wxSize optionsIconSize = loadImage("item_add").GetSize();
-            setImage(*(newPair->m_bpButtonFolderPairOptions), resizeCanvas(mirrorIfRtl(loadImage("button_arrow_right")), optionsIconSize, wxALIGN_CENTER));
+            setButtonLabel(*(newPair->m_bpButtonFolderPairOptions), resizeCanvas(mirrorIfRtl(loadImage("button_arrow_right")), optionsIconSize, wxALIGN_CENTER), 0 /*pad*/);
 
             //important: make sure panel has proper default height!
             newPair->GetSizer()->SetSizeHints(newPair); //~=Fit() +SetMinSize()

@@ -3,17 +3,14 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef CRC_H_23489275827847235
-#define CRC_H_23489275827847235
+#pragma once
 
 #include "type_traits.h"
 
-
 namespace zen
 {
-uint16_t getCrc16(std::string_view str);
-uint32_t getCrc32(std::string_view str);
+uint16_t getCrc16(const std::string_view str);
+uint32_t getCrc32(const std::string_view str);
 template <class ByteIterator> uint16_t getCrc16(ByteIterator first, ByteIterator last);
 template <class ByteIterator> uint32_t getCrc32(ByteIterator first, ByteIterator last);
 
@@ -21,8 +18,8 @@ template <class ByteIterator> uint32_t getCrc32(ByteIterator first, ByteIterator
 
 
 //------------------------- implementation -------------------------------
-inline uint16_t getCrc16(std::string_view str) { return getCrc16(str.begin(), str.end()); }
-inline uint32_t getCrc32(std::string_view str) { return getCrc32(str.begin(), str.end()); }
+inline uint16_t getCrc16(const std::string_view str) { return getCrc16(str.begin(), str.end()); }
+inline uint32_t getCrc32(const std::string_view str) { return getCrc32(str.begin(), str.end()); }
 
 
 template <class ByteIterator> inline
@@ -106,5 +103,3 @@ uint32_t getCrc32(ByteIterator first, ByteIterator last) //https://en.wikipedia.
     return crc ^ 0xFFFFFFFF;
 }
 }
-
-#endif //CRC_H_23489275827847235

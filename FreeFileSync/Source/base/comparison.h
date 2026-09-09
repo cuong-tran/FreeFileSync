@@ -3,15 +3,12 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef COMPARISON_H_8032178534545426
-#define COMPARISON_H_8032178534545426
+#pragma once
 
 #include "file_hierarchy.h"
 #include "process_callback.h"
 #include "norm_filter.h"
 #include "lock_holder.h"
-
 
 namespace fff
 {
@@ -41,5 +38,3 @@ FolderComparison compare(WarningDialogs& warnings,
                          const std::vector<FolderPairCfg>& fpCfgList,
                          ProcessCallback& callback /*throw X*/); //throw X
 }
-
-#endif //COMPARISON_H_8032178534545426

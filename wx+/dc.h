@@ -3,9 +3,7 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef DC_H_4987123956832143243214
-#define DC_H_4987123956832143243214
+#pragma once
 
 #include <variant>
 #include <unordered_map>
@@ -42,10 +40,13 @@ void drawFilledRectangle(wxDC& dc, wxRect rect, const wxColor& innerCol, const w
         rect.height > 0)
     {
         dc.SetPen(*wxTRANSPARENT_PEN);
-        dc.SetBrush(borderCol);
-        dc.DrawRectangle(rect);
 
-        rect.Deflate(borderSize); //more wxWidgets design mistakes: behavior of wxRect::Deflate depends on object being const/non-const!!!
+        if (borderSize > 0)
+        {
+            dc.SetBrush(borderCol);
+            dc.DrawRectangle(rect);
+            rect.Deflate(borderSize); //more wxWidgets design mistakes: behavior of wxRect::Deflate depends on object being const/non-const!!!
+        }
 
         if (rect.width  > 0 &&
             rect.height > 0)
@@ -62,7 +63,8 @@ void drawRectangleBorder(wxDC& dc, const wxRect& rect, const wxColor& col, int b
 {
     assert(col.IsSolid());
     if (rect.width  > 0 &&
-        rect.height > 0)
+        rect.height > 0 &&
+        borderSize > 0)
     {
         dc.SetPen(*wxTRANSPARENT_PEN);
         dc.SetBrush(col);
@@ -143,7 +145,7 @@ int getDpiScalePercent()
 
 
 inline
-wxBitmap toScaledBitmap(const wxImage& img /*expected to be DPI-scaled!*/)
+wxBitmap toDpiScaledBitmap(const wxImage& img /*expected to be DPI-scaled!*/)
 {
     //wxBitmap(const wxImage& image, int depth = -1, double WXUNUSED(scale) = 1.0) => wxWidgets just ignores scale parameter! WTF!
     wxBitmap bmpScaled(img);
@@ -186,6 +188,13 @@ wxRect getBoundingBox(const wxRect& rect1, const wxRect& rect2)
 }
 
 
+inline
+wxSize getMaxSize(const wxSize& sz1, const wxSize& sz2)
+{
+    return {std::max(sz1.x, sz2.x), std::max(sz1.y, sz2.y)};
+}
+
+
 inline //work around yet another wxWidgets screw up: WTF does "operator-(wxPoint, wxPoint)" return wxPoint instead of wxSize!??
 wxSize subtract(const wxPoint& lhs, const wxPoint& rhs)
 {
@@ -206,11 +215,11 @@ public:
             oldRect_ = it->second;
 
             const wxRect tmp = getIntersection(r, *oldRect_); //better safe than sorry
-            assert(!tmp.IsEmpty()); //"setting an empty clipping region is equivalent to DestroyClippingRegion()"
-
             if (tmp != *oldRect_)
             {
                 dc.SetClippingRegion(tmp); //new clipping region is intersection of given and previously set regions
+                assert(!tmp.IsEmpty()); //"setting an empty clipping region is equivalent to DestroyClippingRegion()" => WRONG!
+                //this is outdated wxBullshit. Works as expected on Windows/macOS/Linux. nevertheless let's see if this ever happens at all!
                 it->second = tmp;
                 clippingDone_ = true;
             }
@@ -232,11 +241,10 @@ public:
             //caveat: actual clipping region is smaller when rect is partially outside the DC
             //=> ensure consistency for validateClippingBuffer()
             const wxRect tmp = getIntersection(r, oldRect_? *oldRect_ : dcArea);
-            assert(!tmp.IsEmpty());
-
             if (tmp != (oldRect_? *oldRect_ : dcArea))
             {
                 dc.SetClippingRegion(tmp);
+                assert(!tmp.IsEmpty());
                 clippingAreas_.emplace(&dc, tmp);
                 clippingDone_ = true;
                 recursionBegin_ = true;
@@ -347,5 +355,3 @@ private:
     std::variant<std::monostate, wxPaintDC, BufferedPaintDC> dc_;
 };
 }
-
-#endif //DC_H_4987123956832143243214

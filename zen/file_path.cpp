@@ -49,7 +49,7 @@ std::optional<PathComponents> zen::parsePathComponents(const Zstring& itemPath)
 
     if (!pc && startsWith(itemPath, "/run/user/")) //Ubuntu, e.g.: /run/user/1000/gvfs/smb-share:server=192.168.62.145,share=folder
     {
-        Zstring tmp(itemPath.begin() + strLength("/run/user/"), itemPath.end());
+        Zstring tmp(itemPath.begin() + strSize("/run/user/"), itemPath.end());
         tmp = beforeFirst(tmp, "/gvfs/", IfNotFoundReturn::none);
         if (!tmp.empty() && std::all_of(tmp.begin(), tmp.end(), [](const char c) { return isDigit(c); }))
         /**/pc = doParse(6 /*sepCountVolumeRoot*/, false /*rootWithSep*/);

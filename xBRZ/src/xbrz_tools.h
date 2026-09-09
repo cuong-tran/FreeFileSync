@@ -14,15 +14,12 @@
 // * of the file, but you are not obligated to do so. If you do not wish to   *
 // * do so, delete this exception statement from your version.                *
 // ****************************************************************************
-
-#ifndef XBRZ_TOOLS_H_825480175091875
-#define XBRZ_TOOLS_H_825480175091875
+#pragma once
 
 #include <cassert>
 #include <vector>
 #include <algorithm>
 #include <type_traits>
-
 
 namespace xbrz
 {
@@ -251,5 +248,3 @@ void nearestNeighborScaleOverSource(const PixSrc* src, int srcWidth, int srcHeig
 }
 #endif
 }
-
-#endif //XBRZ_TOOLS_H_825480175091875

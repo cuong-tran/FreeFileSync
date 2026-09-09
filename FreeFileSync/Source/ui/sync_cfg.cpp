@@ -43,7 +43,7 @@ void initBitmapRadioButtons(const std::vector<std::pair<ToggleButton*, std::stri
     auto generateSelectImage = [physicalLeft](wxButton& btn, const std::string& imgName, bool selected)
     {
         wxImage imgTxt = createImageFromText(btn.GetLabelText(), btn.GetFont(),
-                                             selected ? *wxBLACK : //accessibility: always set both foreground AND background colors! see renderSelectedButton()
+                                             selected ? *wxBLACK : //accessibility: always set both foreground AND background colors! see getColorToggleButtonFill()
                                              btn.GetForegroundColour());
 
         wxImage imgIco = mirrorIfRtl(loadImage(imgName, -1 /*maxWidth*/, dipToScreen(getMenuIconDipSize())));
@@ -59,30 +59,22 @@ void initBitmapRadioButtons(const std::vector<std::pair<ToggleButton*, std::stri
                            stackImages(imgIco, imgTxt, ImageStackLayout::horizontal, ImageStackAlignment::center, dipToScreen(5)) :
                            stackImages(imgTxt, imgIco, ImageStackLayout::horizontal, ImageStackAlignment::center, dipToScreen(5));
 
-        return resizeCanvas(imgStack, imgStack.GetSize() + wxSize(dipToScreen(14), dipToScreen(12)), wxALIGN_CENTER);
+        return resizeCanvas(imgStack, imgStack.GetSize() + wxSize(dipToScreen(7 + 7), dipToScreen(6 + 6)), wxALIGN_CENTER);
     };
 
-    wxSize maxExtent;
+    wxSize maxSize;
     std::unordered_map<const ToggleButton*, wxImage> labelsNotSel;
     for (auto& [btn, imgName] : buttons)
     {
         wxImage img = generateSelectImage(*btn, imgName, false /*selected*/);
-        maxExtent.x = std::max(maxExtent.x, img.GetWidth());
-        maxExtent.y = std::max(maxExtent.y, img.GetHeight());
-
+        maxSize = getMaxSize(maxSize, img.GetSize());
         labelsNotSel[btn] = std::move(img);
     }
 
     for (auto& [btn, imgName] : buttons)
-    {
-        btn->init(layOver(rectangleImage(maxExtent, getColorToggleButtonFill(), getColorToggleButtonBorder(), dipToScreen(1)),
+        btn->init(layOver(rectangleImage(maxSize, getColorToggleButtonFill(), getColorToggleButtonBorder(), dipToScreen(1)),
                           generateSelectImage(*btn, imgName, true /*selected*/), wxALIGN_CENTER_VERTICAL | (physicalLeft ? wxALIGN_LEFT : wxALIGN_RIGHT)),
-                  resizeCanvas(labelsNotSel[btn], maxExtent,                     wxALIGN_CENTER_VERTICAL | (physicalLeft ? wxALIGN_LEFT : wxALIGN_RIGHT)));
-
-        btn->SetMinSize({screenToWxsize(maxExtent.x),
-                         screenToWxsize(maxExtent.y)}); //get rid of selection border on Windows + macOS :)
-        //SetMinSize() instead of SetSize() is needed here for wxWindows layout determination to work correctly
-    }
+                  resizeCanvas(labelsNotSel[btn], maxSize,                       wxALIGN_CENTER_VERTICAL | (physicalLeft ? wxALIGN_LEFT : wxALIGN_RIGHT)), 0 /*pad*/);
 }
 
 
@@ -521,7 +513,7 @@ globalLogFolderPhrase_(globalLogFolderPhrase)
     setStandardButtonLayout(*bSizerStdButtons, StdButtons().setAffirmative(m_buttonOK).setCancel(m_buttonCancel));
 
 
-    setBitmapTextLabel(*m_buttonAddNotes, loadImage("notes", dipToScreen(16)), m_buttonAddNotes->GetLabelText());
+    setButtonLabel(*m_buttonAddNotes, loadImage("notes", dipToScreen(16)), m_buttonAddNotes->GetLabelText());
 
     setImage(*m_bitmapNotes, loadImage("notes", dipToScreen(20)));
 
@@ -545,8 +537,8 @@ globalLogFolderPhrase_(globalLogFolderPhrase)
 
     auto addToImageList = [&](const wxImage& img)
     {
-        imgList->Add(toScaledBitmap(img));
-        imgList->Add(toScaledBitmap(greyScale(img)));
+        imgList->Add(toDpiScaledBitmap(img));
+        imgList->Add(toDpiScaledBitmap(greyScale(img)));
     };
     //add images in same sequence like ConfigTypeImage enum!!!
     addToImageList(loadImage("options_compare", wxsizeToScreen(imgListSize)));
@@ -604,7 +596,7 @@ globalLogFolderPhrase_(globalLogFolderPhrase)
     fixSpinCtrl(*m_spinCtrlMaxSize);
     fixSpinCtrl(*m_spinCtrlTimespan);
 
-    setImage(*m_bpButtonDefaultContext, mirrorIfRtl(loadImage("button_arrow_right")));
+    setButtonLabel(*m_bpButtonDefaultContext, mirrorIfRtl(loadImage("button_arrow_right")), 0 /*pad*/);
 
     //------------- synchronization panel -----------------
     m_buttonTwoWay->SetToolTip(getSyncVariantDescription(SyncVariant::twoWay));
@@ -657,7 +649,7 @@ globalLogFolderPhrase_(globalLogFolderPhrase)
         try { return extractWxImage(fff::getFileManagerIcon(dipToScreen(20))); /*throw SysError*/ }
         catch ([[maybe_unused]] const SysError& e) { assert(false); return loadImage("file_manager", dipToScreen(20)); }
     }());
-    setImage(*m_bpButtonShowLogFolder, imgFileManagerSmall_);
+    setButtonLabel(*m_bpButtonShowLogFolder, imgFileManagerSmall_);
     m_bpButtonShowLogFolder->SetToolTip(translate(extCommandFileManager.description));//translate default external apps on the fly: "Show in Explorer"
 
     m_logFolderPath->SetHint(utfTo<wxString>(globalLogFolderPhrase_));
@@ -1153,8 +1145,8 @@ auto updateDirButton(wxBitmapButton& button, SyncDirection dir,
             break;
     }
     wxImage img = mirrorIfRtl(loadImage(imgName));
-    button.SetBitmapLabel   (toScaledBitmap(          img));
-    button.SetBitmapDisabled(toScaledBitmap(greyScale(img))); //fix wxWidgets' all-too-clever multi-state!
+    button.SetBitmapLabel   (toDpiScaledBitmap(          img));
+    button.SetBitmapDisabled(toDpiScaledBitmap(greyScale(img))); //fix wxWidgets' all-too-clever multi-state!
     //=> the disabled bitmap is generated during first SetBitmapLabel() call but never updated again by wxWidgets!
 }
 
@@ -1584,8 +1576,8 @@ void ConfigDialog::updateMiscGui()
                     label = resizeCanvas(label, {label.GetWidth() + successIcon.GetWidth(), label.GetHeight()}, wxALIGN_LEFT);
 
                 button.SetToolTip(tooltip);
-                button.SetBitmapLabel   (toScaledBitmap(notifyCondition == emailNotifyCondition_ && sendEmailEnabled ? label : greyScale(label)));
-                button.SetBitmapDisabled(toScaledBitmap(greyScale(label))); //fix wxWidgets' all-too-clever multi-state!
+                button.SetBitmapLabel   (toDpiScaledBitmap(notifyCondition == emailNotifyCondition_ && sendEmailEnabled ? label : greyScale(label)));
+                button.SetBitmapDisabled(toDpiScaledBitmap(greyScale(label))); //fix wxWidgets' all-too-clever multi-state!
                 //=> the disabled bitmap is generated during first SetBitmapLabel() call but never updated again by wxWidgets!
             }
         };

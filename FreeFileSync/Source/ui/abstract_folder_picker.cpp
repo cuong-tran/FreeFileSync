@@ -93,11 +93,11 @@ AbstractFolderPickerDlg::AbstractFolderPickerDlg(wxWindow* parent, AbstractPath&
     auto imgList = std::make_unique<wxImageList>(iconSize, iconSize);
 
     //add images in same sequence like TreeNodeImage enum!!!
-    imgList->Add(toScaledBitmap(loadImage("server", wxsizeToScreen(iconSize))));
-    imgList->Add(toScaledBitmap(        IconBuffer::genericDirIcon (IconBuffer::IconSize::small)));
-    imgList->Add(toScaledBitmap(layOver(IconBuffer::genericDirIcon (IconBuffer::IconSize::small),
-                                        IconBuffer::linkOverlayIcon(IconBuffer::IconSize::small))));
-    imgList->Add(toScaledBitmap(loadImage("msg_error", wxsizeToScreen(iconSize))));
+    imgList->Add(toDpiScaledBitmap(loadImage("server", wxsizeToScreen(iconSize))));
+    imgList->Add(toDpiScaledBitmap(        IconBuffer::genericDirIcon (IconBuffer::IconSize::small)));
+    imgList->Add(toDpiScaledBitmap(layOver(IconBuffer::genericDirIcon (IconBuffer::IconSize::small),
+                                           IconBuffer::linkOverlayIcon(IconBuffer::IconSize::small))));
+    imgList->Add(toDpiScaledBitmap(loadImage("msg_error", wxsizeToScreen(iconSize))));
     assert(imgList->GetImageCount() == static_cast<int>(TreeNodeImage::error) + 1);
 
     m_treeCtrlFileSystem->AssignImageList(imgList.release()); //pass ownership

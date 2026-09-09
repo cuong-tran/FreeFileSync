@@ -219,6 +219,10 @@ wxImage zen::createImageFromText(const wxString& text, const wxFont& font, const
 
     wxMemoryDC dc; //the context used for bitmaps
     setScaleFactor(dc, getScreenDpiScale());
+
+    if (wxTheApp->GetLayoutDirection() == wxLayout_RightToLeft)
+        dc.SetLayoutDirection(wxLayout_RightToLeft); //handle e.g. "weak" bidi characters: -> arrows in hebrew/arabic
+
     dc.SetFont(font); //the font parameter of GetTextExtent() is not used on macOS, wxWidgets 2.9.5, so apply it to the DC directly!
 
     wxSize size = dc.GetTextExtent(text); //GetTextExtent() returns (0, 0) for empty string!
@@ -239,9 +243,6 @@ wxImage zen::createImageFromText(const wxString& text, const wxFont& font, const
     {
         dc.SelectObject(newBitmap); //copies scale factor from wxBitmap
         ZEN_ON_SCOPE_EXIT(dc.SelectObject(wxNullBitmap));
-
-        if (wxTheApp->GetLayoutDirection() == wxLayout_RightToLeft)
-            dc.SetLayoutDirection(wxLayout_RightToLeft); //handle e.g. "weak" bidi characters: -> arrows in hebrew/arabic
 
         dc.SetBackground(darkMode ? *wxBLACK_BRUSH : *wxWHITE_BRUSH);
         dc.Clear();
@@ -271,7 +272,11 @@ wxImage zen::createImageFromText(const wxString& text, const wxFont& font, const
     }
 
     const wxRect box = getVisibleBox(img.GetAlpha(), img.GetWidth(), img.GetHeight());
-    assert(box.x + box.width < img.GetWidth()); //we enlarged wxDC::GetTextExtent(), so last colum should be empty!
+
+    if (wxTheApp->GetLayoutDirection() == wxLayout_RightToLeft)
+        assert(box.x > 0); //we enlarged wxDC::GetTextExtent(), so *first* colum should be empty!
+    else
+        assert(box.x + box.width < img.GetWidth()); //we enlarged wxDC::GetTextExtent(), so *last* colum should be empty!
 
     if (box.width <= 0 || box.height <= 0)
     {
@@ -287,7 +292,7 @@ wxImage zen::createImageFromText(const wxString& text, const wxFont& font, const
                       output.GetWidth(), output.GetHeight());
 
     const unsigned char r = col.Red  (); //
-    const unsigned char g = col.Green(); //getting RGB involves virtual function calls!
+    const unsigned char g = col.Green(); //getting RGB involves virtual function calls! Not inlined!
     const unsigned char b = col.Blue (); //
 
     unsigned char* rgb = output.GetData();

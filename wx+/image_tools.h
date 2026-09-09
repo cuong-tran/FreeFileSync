@@ -3,15 +3,12 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef IMAGE_TOOLS_H_45782456427634254
-#define IMAGE_TOOLS_H_45782456427634254
+#pragma once
 
 #include <numeric>
 #include <wx/image.h>
 #include <zen/basic_math.h>
 #include <wx/colour.h>
-
 
 namespace zen
 {
@@ -143,5 +140,3 @@ void adjustBrightness(wxImage& img, int targetLevel)
     brighten(img, targetLevel - getAvgBrightness(img));
 }
 }
-
-#endif //IMAGE_TOOLS_H_45782456427634254

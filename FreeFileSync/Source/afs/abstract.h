@@ -3,9 +3,7 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef ABSTRACT_H_873450978453042524534234
-#define ABSTRACT_H_873450978453042524534234
+#pragma once
 
 #include <functional>
 #include <chrono>
@@ -13,7 +11,6 @@
 #include <zen/file_path.h>
 #include <zen/serialize.h> //InputStream/OutputStream support buffered stream concept
 #include <wx+/image_holder.h> //NOT a wxWidgets dependency!
-
 
 namespace fff
 {
@@ -576,5 +573,3 @@ void AbstractFileSystem::copySymlink(const AbstractPath& sourcePath, const Abstr
     sourcePath.afsDevice.ref().copySymlinkForSameAfsType(sourcePath.afsPath, targetPath, copyFilePermissions); //throw FileError
 }
 }
-
-#endif //ABSTRACT_H_873450978453042524534234
