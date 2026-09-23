@@ -48,6 +48,9 @@ LDFLAGS  += $(shell pkg-config --libs libidn2)
 CXXFLAGS += $(shell pkg-config --cflags libssh2)
 LDFLAGS  += $(shell pkg-config --libs libssh2)
 
+CXXFLAGS += $(shell pkg-config --cflags zlib)
+LDFLAGS  += $(shell pkg-config --libs zlib)
+
 CXXFLAGS += $(shell pkg-config --cflags gtk+-3.0)
 #treat as system headers so that warnings are hidden:
 CXXFLAGS += -isystem/usr/include/gtk-3.0
@@ -97,6 +100,7 @@ cppFiles += afs/gdrive.cpp
 cppFiles += afs/init_curl_libssh2.cpp
 cppFiles += afs/native.cpp
 cppFiles += afs/sftp.cpp
+cppFiles += afs/zip.cpp
 cppFiles += ui/batch_config.cpp
 cppFiles += ui/abstract_folder_picker.cpp
 cppFiles += ui/batch_status_handler.cpp
