@@ -106,7 +106,11 @@ public:
 
     std::string readAt(uint64_t offset, size_t len) const //throw SysError
     {
-        std::string buf(len, '\0');
+        std::string buf;
+        try { buf.resize(len); } //throw std::bad_alloc, std::length_error
+        catch (const std::bad_alloc& e) { throw SysError(_("Out of memory.") + L' ' + utfTo<std::wstring>(e.what())); }
+        catch (const std::length_error& e) { throw SysError(_("Out of memory.") + L' ' + utfTo<std::wstring>(e.what())); }
+
         readAt(offset, buf.data(), len); //throw SysError
         return buf;
     }
@@ -289,7 +293,12 @@ ZipIndex parseZipArchive(const Zstring& archivePath) //throw SysError
     if (!isZip64 && eocdOffset > cdOffset + cdSize)
         prefixSize = eocdOffset - (cdOffset + cdSize);
 
-    if (cdOffset + prefixSize + cdSize > details.fileSize)
+    //Zip64 values are untrusted 64-bit numbers: check without overflow before allocating the central directory buffer
+    if (cdOffset > details.fileSize ||
+        prefixSize > details.fileSize - cdOffset ||
+        cdSize > details.fileSize - cdOffset - prefixSize ||
+        cdSize > std::numeric_limits<size_t>::max() ||
+        entryCount > cdSize / 46 /*minimum central directory header size*/)
         throw SysError(_("ZIP archive is corrupted.") + L" (central directory)");
 
     //---------- parse central directory ----------
