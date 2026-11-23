@@ -54,6 +54,22 @@ uint64_t readLE64(const unsigned char* p) { return static_cast<uint64_t>(readLE3
 
 //-----------------------------------------------------------------------------------------------------------
 
+//detect a changed archive for the index cache: seconds alone miss a same-size rewrite within one second, inode catches replacement via rename
+struct ArchiveVersion
+{
+    time_t  modTime   = 0;
+    int64_t modTimeNs = 0;
+    dev_t   device    = 0;
+    ino_t   inode     = 0;
+    bool operator==(const ArchiveVersion&) const = default;
+};
+
+ArchiveVersion getArchiveVersion(const struct stat& fileInfo)
+{
+    return {fileInfo.st_mtim.tv_sec, static_cast<int64_t>(fileInfo.st_mtim.tv_nsec), fileInfo.st_dev, fileInfo.st_ino};
+}
+
+
 class ArchiveFile //thread-safe: pread() only
 {
 public:
@@ -72,14 +88,14 @@ public:
     struct Details
     {
         uint64_t fileSize;
-        time_t modTime;
+        ArchiveVersion version;
     };
     Details getDetails() const //throw SysError
     {
         struct stat fileInfo = {};
         if (::fstat(fd_, &fileInfo) != 0)
             THROW_LAST_SYS_ERROR("fstat");
-        return {static_cast<uint64_t>(fileInfo.st_size), fileInfo.st_mtime};
+        return {static_cast<uint64_t>(fileInfo.st_size), getArchiveVersion(fileInfo)};
     }
 
     //read exactly "len" bytes, fail otherwise
@@ -141,8 +157,8 @@ struct ZipFolderContent
 struct ZipIndex
 {
     std::map<Zstring, ZipFolderContent> folders; //relative folder path ("" == archive root) => content
-    uint64_t archiveSize = 0;
-    time_t   archiveModTime = 0;
+    uint64_t       archiveSize = 0;
+    ArchiveVersion archiveVersion;
 };
 
 
@@ -234,7 +250,7 @@ ZipIndex parseZipArchive(const Zstring& archivePath) //throw SysError
 
     ZipIndex index;
     index.archiveSize    = details.fileSize;
-    index.archiveModTime = details.modTime;
+    index.archiveVersion = details.version;
     index.folders[Zstring()]; //root
 
     if (details.fileSize < 22)
@@ -448,7 +464,7 @@ public:
         if (auto it = indexes_.find(archivePath);
             it != indexes_.end() &&
             it->second->archiveSize    == static_cast<uint64_t>(fileInfo.st_size) &&
-            it->second->archiveModTime == fileInfo.st_mtime)
+            it->second->archiveVersion == getArchiveVersion(fileInfo))
             return it->second;
 
         auto index = std::make_shared<const ZipIndex>(parseZipArchive(archivePath)); //throw SysError
