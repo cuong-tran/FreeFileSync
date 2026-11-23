@@ -24,8 +24,9 @@ CXXFLAGS += $(shell pkg-config --cflags gtk+-3.0)
 CXXFLAGS += -isystem/usr/include/gtk-3.0
 
 #wxWidgets without the wxColorHook patch from Bugs.txt (e.g. stock release or distro packages): let wx+/darkmode.cpp declare the hook itself
-haveWxColorHook := $(shell $(CXX) $(CXXFLAGS) -E -x c++ -include wx/settings.h /dev/null 2>/dev/null | grep -c refGlobalColorHook)
-ifeq ($(haveWxColorHook),0)
+#(YES/NO, or empty if the preprocessor run itself fails => leave it to the real compile to report the error)
+haveWxColorHook := $(shell if wxSettings=$$($(CXX) $(CXXFLAGS) -E -x c++ -include wx/settings.h /dev/null 2>/dev/null); then grep -q refGlobalColorHook <<< "$$wxSettings" && echo YES || echo NO; fi)
+ifeq ($(haveWxColorHook),NO)
     CXXFLAGS += -DZEN_WX_NO_COLOR_HOOK
 endif
 
