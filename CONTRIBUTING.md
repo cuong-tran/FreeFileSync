@@ -59,7 +59,7 @@ The source ships Linux makefiles only (`FreeFileSync/Source/Makefile` and `FreeF
 
 ### Build with the scripts in .github/build
 
-The scripts in [.github/build](.github/build/README.md) download OpenSSL, the pinned libssh2 snapshot, libcurl and wxWidgets, apply all the `Bugs.txt` patches, and install them into `.build/deps` in the repository, without root and without touching the system. They then build FreeFileSync and RealTimeSync against those libraries with the glib cap described below, keeping their objects in `.build/obj`. [.github/workflows/linux-patched-libs.yml](.github/workflows/linux-patched-libs.yml) runs them in CI.
+The scripts in [.github/build](.github/build/README.md) download OpenSSL, the pinned libssh2 snapshot, libcurl and wxWidgets, apply all the `Bugs.txt` patches, and install them into `.build/deps` in the repository, without root and without touching the system. They then build FreeFileSync and RealTimeSync against those libraries with the glib cap described below, keeping their objects in `.build/obj`. `.github/build/package.sh` packages the result as a `.deb` and a portable tar.gz with those libraries bundled. [.github/workflows/linux-build.yml](.github/workflows/linux-build.yml) runs them in CI: packages for x86_64 and aarch64, plus a compile-only build against the distribution's OpenSSL and libcurl and an unpatched libssh2 and wxWidgets.
 
 ### Build in Docker
 
@@ -108,7 +108,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DCRYPTO_B
 cmake --build build -j"$(nproc)" && sudo cmake --install build && sudo ldconfig
 ```
 
-`pkg-config --modversion libssh2` should then report the development version. `.github/workflows/linux-multiarch-build.yml` pins the commit the CI builds use.
+`pkg-config --modversion libssh2` should then report the development version. `.github/build/build-libssh2.sh` pins the commit the CI builds use.
 
 ### wxWidgets
 

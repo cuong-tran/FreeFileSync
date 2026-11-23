@@ -9,8 +9,10 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 command -v wx-config >/dev/null && [ "$(command -v wx-config)" = "$INSTALL_DIR/bin/wx-config" ] ||
     die "wx-config not found in $INSTALL_DIR/bin, run build.sh first"
 # pkg-config falls back to the system's .pc files for anything missing from the prefix, which would
-# link an unpatched system library without a word
+# link an unpatched system library without a word. FFS_SYSTEM_LIBS lists the ones that may come from the
+# system on purpose (e.g. "openssl libcurl" to build against the distribution's packages).
 for pc in openssl libssh2 libcurl; do
+    [[ " ${FFS_SYSTEM_LIBS:-} " == *" $pc "* ]] && continue
     [ "$(pkg-config --variable=prefix "$pc" 2>/dev/null)" = "$INSTALL_DIR" ] ||
         die "$pc is not installed in $INSTALL_DIR (pkg-config would use the system's), run build.sh first"
 done
