@@ -19,6 +19,7 @@ CXX += -pthread
 #build mode: "make" (default) for an optimized build into ../Build/Bin,
 #"make BUILD=debug" (or "make debug") for a debug build into ../Build/Debug/Bin
 BUILD ?= release
+#the debug build keeps -DNDEBUG like the release build, so assert() stays disabled
 ifeq ($(BUILD),debug)
     CXXFLAGS += -g3 -O0 #the later -O0 overrides -O3 above
     LDFLAGS  += -g
