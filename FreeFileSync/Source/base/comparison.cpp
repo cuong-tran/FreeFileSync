@@ -1151,24 +1151,29 @@ FolderComparison fff::compare(WarningDialogs& warnings,
                                    msg, warnings.warnDependentFolderPair); //throw X
     }
 
-    //ZIP archive on one side stored inside the folder on the other side: not found by the check above (different AFS types),
+    //ZIP archive of a base folder stored inside a base folder of any pair: not found by the checks for dependent folders (different AFS types),
     //but e.g. "Mirror" would delete the very archive it is reading from
     {
         std::wstring msg;
 
-        for (const auto& [folderPair, fpCfg] : workLoad)
-            for (const auto& [zipFolderPath, otherFolderPath] : {std::pair(folderPair.folderPathLeft,  folderPair.folderPathRight),
-                                                                std::pair(folderPair.folderPathRight, folderPair.folderPathLeft)})
+        for (const auto& [zipFolderPair, zipFpCfg] : workLoad)
+            for (const AbstractPath& zipFolderPath : {zipFolderPair.folderPathLeft, zipFolderPair.folderPathRight})
                 if (const Zstring archivePath = getZipArchivePath(zipFolderPath); !archivePath.empty())
-                    if (const std::optional<PathDependency> pd = getPathDependency(createItemPathNativeNoFormatting(archivePath), otherFolderPath);
-                        pd && pd->itemPathParent == otherFolderPath && !pd->relPath.empty() &&
-                        fpCfg.filter.nameFilter.ref().passFileFilter(pd->relPath))
-                        msg += L"\n\n" +
-                               AFS::getDisplayPath(zipFolderPath) + L" <-> " + L'\n' +
-                               AFS::getDisplayPath(otherFolderPath);
+                {
+                    const AbstractPath archiveNativePath = createItemPathNativeNoFormatting(archivePath);
+
+                    for (const auto& [folderPair, fpCfg] : workLoad)
+                        for (const AbstractPath& folderPath : {folderPair.folderPathLeft, folderPair.folderPathRight})
+                            if (const std::optional<PathDependency> pd = getPathDependency(archiveNativePath, folderPath);
+                                pd && pd->itemPathParent == folderPath && !pd->relPath.empty() &&
+                                fpCfg.filter.nameFilter.ref().passFileFilter(pd->relPath))
+                                msg += L"\n\n" +
+                                       AFS::getDisplayPath(zipFolderPath) + L" <-> " + L'\n' +
+                                       AFS::getDisplayPath(folderPath);
+                }
 
         if (!msg.empty())
-            callback.reportWarning(_("The ZIP archive is stored inside the folder on the other side of the folder pair and may be deleted or overwritten by the synchronization.") + L'\n' +
+            callback.reportWarning(_("A ZIP archive used as a base folder is stored inside another base folder and may be deleted or overwritten by the synchronization.") + L'\n' +
                                    _("The archive should be excluded via filter.") +
                                    msg, warnings.warnDependentFolderPair); //throw X
     }
