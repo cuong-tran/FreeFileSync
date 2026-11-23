@@ -1,0 +1,210 @@
+--- a/include/wx/settings.h
++++ b/include/wx/settings.h
+@@ -13,6 +13,8 @@
+ #include "wx/colour.h"
+ #include "wx/font.h"
+ 
++#include <memory>
++
+ class WXDLLIMPEXP_FWD_CORE wxWindow;
+ 
+ // possible values for wxSystemSettings::GetFont() parameter
+@@ -249,9 +251,31 @@
+ // include the declaration of the real platform-dependent class
+ // ----------------------------------------------------------------------------
+ 
++// FreeFileSync (Bugs.txt): support changing system colors for proper dark mode support
++struct wxColorHook
++{
++    virtual ~wxColorHook() {}
++    virtual wxColor getColor(wxSystemColour index) const = 0;
++};
++WXDLLIMPEXP_CORE inline std::unique_ptr<wxColorHook>& refGlobalColorHook()
++{
++    static std::unique_ptr<wxColorHook> globalColorHook;
++    return globalColorHook;
++}
++
+ class WXDLLIMPEXP_CORE wxSystemSettings : public wxSystemSettingsNative
+ {
+ public:
++#ifndef __WXUNIVERSAL__
++    static wxColour GetColour(wxSystemColour index)
++    {
++        if (refGlobalColorHook())
++            return refGlobalColorHook()->getColor(index);
++
++        return wxSystemSettingsNative::GetColour(index);
++    }
++#endif
++
+ #ifdef __WXUNIVERSAL__
+     // in wxUniversal we want to use the theme standard colours instead of the
+     // system ones, otherwise wxSystemSettings is just the same as
+--- a/src/aui/framemanager.cpp
++++ b/src/aui/framemanager.cpp
+@@ -2983,35 +2983,23 @@
+ 
+ 
+         // determine the dock's minimum size
+-        bool plus_border = false;
+-        bool plus_caption = false;
++        // FreeFileSync (Bugs.txt): fix incorrect pane height calculations
+         int dock_min_size = 0;
+         for ( const auto* p : dock.panes )
+         {
+             const wxAuiPaneInfo& pane = *p;
+             if (pane.min_size != wxDefaultSize)
+             {
++                int paneSize = dock.IsHorizontal() ? pane.min_size.y : pane.min_size.x;
+                 if (pane.HasBorder())
+-                    plus_border = true;
+-                if (pane.HasCaption())
+-                    plus_caption = true;
+-                if (dock.IsHorizontal())
+-                {
+-                    if (pane.min_size.y > dock_min_size)
+-                        dock_min_size = pane.min_size.y;
+-                }
+-                else
+-                {
+-                    if (pane.min_size.x > dock_min_size)
+-                        dock_min_size = pane.min_size.x;
+-                }
++                    paneSize += 2 * pane_borderSize;
++                if (pane.HasCaption() && dock.IsHorizontal())
++                    paneSize += caption_size;
++
++                if (paneSize > dock_min_size)
++                    dock_min_size = paneSize;
+             }
+         }
+-
+-        if (plus_border)
+-            dock_min_size += (pane_borderSize*2);
+-        if (plus_caption && dock.IsHorizontal())
+-            dock_min_size += (caption_size);
+ 
+         dock.min_size = dock_min_size;
+ 
+--- a/src/common/bmpbndl.cpp
++++ b/src/common/bmpbndl.cpp
+@@ -326,6 +326,12 @@
+ 
+ wxSize wxBitmapBundleImplSet::GetPreferredBitmapSizeAtScale(double scale) const
+ {
++    // FreeFileSync (Bugs.txt): work around DoGetPreferredSize()'s lossy
++    // "GetDefaultSize()*scaleBest" calculation being 1 pixel off the real image size
++    for (const auto& entry : m_entries)
++        if (entry.bitmap.GetScaleFactor() == scale)
++            return entry.bitmap.GetSize();
++
+     return DoGetPreferredSize(scale);
+ }
+ 
+--- a/src/common/stattextcmn.cpp
++++ b/src/common/stattextcmn.cpp
+@@ -365,6 +365,7 @@
+     // We need to clear the existing unwrapped label as it doesn't correspond
+     // to the new value of the actual label any longer.
+     m_unwrappedLabel.clear();
++    m_currentWrap = 0; // FreeFileSync (Bugs.txt): fix Wrap() doing nothing when updating text
+ 
+     return true;
+ }
+--- a/src/common/toplvcmn.cpp
++++ b/src/common/toplvcmn.cpp
+@@ -122,18 +122,10 @@
+     // any more as no events will be sent to the hidden window and without idle
+     // events we won't prune wxPendingDelete list and the application won't
+     // terminate
+-    for ( auto* item : wxTopLevelWindows )
+-    {
+-        wxTopLevelWindow * const win = static_cast<wxTopLevelWindow *>(item);
+-        if ( win != this && win->IsShown() )
+-        {
+-            // there remains at least one other visible TLW, we can hide this
+-            // one
+-            Hide();
+-
+-            break;
+-        }
+-    }
++    // FreeFileSync (Bugs.txt): there might not be a next idle event, e.g. a hidden
++    // window doesn't receive idle events on GTK2: https://freefilesync.org/forum/viewtopic.php?t=11935
++    Hide();
++    wxWakeUpIdle();
+ 
+     return true;
+ }
+--- a/src/gtk/button.cpp
++++ b/src/gtk/button.cpp
+@@ -245,16 +245,8 @@
+ 
+ #ifndef __WXGTK4__
+     wxGCC_WARNING_SUPPRESS(deprecated-declarations)
+-    if (wxIsStockID(m_windowId) && wxIsStockLabel(m_windowId, label))
+-    {
+-        const char *stock = wxGetStockGtkID(m_windowId);
+-        if (stock)
+-        {
+-            gtk_button_set_label(GTK_BUTTON(m_widget), stock);
+-            gtk_button_set_use_stock(GTK_BUTTON(m_widget), TRUE);
+-            return;
+-        }
+-    }
++    // FreeFileSync (Bugs.txt): don't replace stock labels with GTK stock items,
++    // which would leave translated "&OK/&Cancel" buttons untranslated
+     wxGCC_WARNING_RESTORE()
+ #endif
+ 
+--- a/src/gtk/menu.cpp
++++ b/src/gtk/menu.cpp
+@@ -863,7 +863,7 @@
+     }
+ 
+     // "show" occurs for sub-menus which are not showing, so use "map" instead
+-    g_signal_connect(m_menu, "map", G_CALLBACK(menu_map), this);
++    g_signal_connect(m_menu, "show", G_CALLBACK(menu_map), this); // FreeFileSync (Bugs.txt): "map" is never called on Ubuntu Unity, but "show" is
+     g_signal_connect(m_menu, "hide", G_CALLBACK(menu_hide), this);
+ }
+ 
+--- a/src/gtk/window.cpp
++++ b/src/gtk/window.cpp
+@@ -4485,21 +4485,8 @@
+ 
+ void wxWindowGTK::ConnectWidget( GtkWidget *widget )
+ {
+-    static bool isSourceAttached;
+-    if (!isSourceAttached)
+-    {
+-        // attach GSource to detect new GDK events
+-        isSourceAttached = true;
+-        static GSourceFuncs funcs = {
+-            source_prepare, source_check, source_dispatch,
+-            nullptr, nullptr, nullptr
+-        };
+-        GSource* source = g_source_new(&funcs, sizeof(GSource));
+-        // priority slightly higher than GDK_PRIORITY_EVENTS
+-        g_source_set_priority(source, GDK_PRIORITY_EVENTS - 1);
+-        g_source_attach(source, nullptr);
+-        g_source_unref(source);
+-    }
++    // FreeFileSync (Bugs.txt): don't attach the GSource that detects new GDK events,
++    // it breaks Backspace in the filter dialog: https://freefilesync.org/forum/viewtopic.php?t=347
+ 
+     // When we're called for the main widget itself (but not when connecting
+     // events for some other widget, such as individual radio buttons in
+--- a/src/unix/sound.cpp
++++ b/src/unix/sound.cpp
+@@ -735,7 +735,9 @@
+     else
+         m_data->m_dataWithHeader = const_cast<wxUint8*>(data);
+ 
+-    m_data->m_data = (&m_data->m_dataWithHeader[data_offset]);
++    // FreeFileSync (Bugs.txt): fix crackling sound at the beginning of WAV playback:
++    // skip the 8 bytes of Subchunk2ID and Subchunk2Size
++    m_data->m_data = (&m_data->m_dataWithHeader[data_offset + 8]);
+ 
+     return true;
+ }

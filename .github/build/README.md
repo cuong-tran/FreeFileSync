@@ -1,0 +1,48 @@
+# Building the patched libraries
+
+FreeFileSync 14.13 doesn't build against the libraries most Linux distributions ship; the Building section of [CONTRIBUTING.md](../../CONTRIBUTING.md#building) explains why and how to build them by hand.
+
+The scripts here download OpenSSL, libssh2, libcurl and wxWidgets, apply the `Bugs.txt` fixes from [patches/](patches/) and install them into `.build/deps` in the repository, without touching the system. Then they build FreeFileSync and RealTimeSync with the upstream makefiles against them.
+
+## Usage
+
+Install a C++26 compiler (g++ 14 or newer) and the system packages they still use. On Debian or Ubuntu:
+
+```bash
+sudo apt-get install build-essential g++-14 cmake pkg-config perl patch curl xz-utils bzip2 libgtk-3-dev libxtst-dev libidn2-dev zlib1g-dev
+```
+
+Build the libraries (OpenSSL, libssh2, libcurl, wxWidgets; under 10 minutes on 4 cores):
+
+```bash
+CC=gcc-14 CXX=g++-14 .github/build/build.sh
+```
+
+Build FreeFileSync and RealTimeSync into `FreeFileSync/Build/Bin`:
+
+```bash
+CXX=g++-14 .github/build/build-free-file-sync.sh
+```
+
+Its object files go to `.build/obj`, not the makefiles' `FreeFileSync/Build/Obj`, so they never mix with objects from the Docker or manual builds, and the binaries are relinked on every run. With `BUILD=debug` in the environment it builds the makefiles' debug FreeFileSync into `FreeFileSync/Build/Debug/Bin` (RealTimeSync has no debug mode).
+
+Each library has its own script (`build-openssl.sh`, `build-libssh2.sh`, `build-curl.sh`, `build-wxwidgets.sh`), so one can be rebuilt alone. `build.sh` skips a library whose version and patch are already installed.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `OPENSSL_VERSION`, `CURL_VERSION`, `WXWIDGETS_VERSION` | 3.5.9, 8.21.0, 3.3.4 | Library versions; also accepted as the first argument of each script |
+| `LIBSSH2_COMMIT` | `83284a05…` | libssh2 commit to build; 14.13 needs the unreleased 1.11.2_DEV API, so this is a pinned master snapshot from just before the 14.13 release |
+| `FFS_BUILD_DIR` | `<repo>/.build` | Downloads, unpacked sources and build trees |
+| `FFS_DEPS_PREFIX` | `$FFS_BUILD_DIR/deps` | Install prefix of the libraries |
+| `FFS_SKIP_PATCHES` | unset | Set to `1` to build a version that has no patch in `patches/`. An unpatched wxWidgets still compiles: the makefiles detect the missing `wxColorHook`, warn, and build without the dark mode contrast fix |
+| `JOBS` | `nproc` | Parallel make jobs |
+
+wxWidgets is linked statically. OpenSSL, libssh2 and libcurl are shared libraries found through an rpath to `.build/deps/lib`, so the binaries only run on the machine that built them unless those libraries are copied along.
+
+## Updating for a new release
+
+When an upstream release changes the library versions in `Bugs.txt`, update the defaults in the scripts and the checksums in `common.sh`, and port the `Bugs.txt` fixes to the new sources as `patches/<name>-<version>.patch` (a unified diff applied with `patch -p1` in the unpacked source tree). The scripts refuse to build a version without a patch, so a forgotten patch shows up as an error rather than a subtly broken build.
+
+The [Linux CI workflow](../workflows/linux-patched-libs.yml) runs these scripts on Ubuntu 24.04.
+
+The other Linux workflows don't use these scripts. [linux-multiarch-build.yml](../workflows/linux-multiarch-build.yml) builds its libraries inline, and [build-arm64.yml](../workflows/build-arm64.yml) uses its own [.github/scripts/build-wxwidgets.sh](../scripts/build-wxwidgets.sh), which is not the `build-wxwidgets.sh` here. Each carries its own copy of the wxWidgets color hook patch and the libssh2 commit pin, so update all three when a new release changes them.

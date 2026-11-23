@@ -19,6 +19,8 @@ Entries are grouped by the upstream release they were made against.
 - Both makefiles keep object files in `FreeFileSync/Build/Obj/` (and `Build/Debug/Obj/`) inside the checkout instead of a fixed folder in the shared temp directory, so checkouts don't mix objects and other users can't plant files there.
 - Added a `.gitignore` for the build output folders.
 - `CONTRIBUTING.md`: added a "Build in Docker" section and the debug build; `CLAUDE.md` points to both.
+- Updated the dependency build scripts in `.github/build/` for 14.13: they default to the library versions in `Bugs.txt`, add libssh2 (a pinned 1.11.2_DEV snapshot built with CMake), apply every `Bugs.txt` fix from `.github/build/patches/`, build wxWidgets with `--disable-exceptions`, verify download checksums, install into `.build/deps` with an rpath, and build FreeFileSync and RealTimeSync with the upstream makefiles, with the glib API capped at 2.76 for glib 2.78 and later. Usage is in `.github/build/README.md`.
+- Turned the dependency CI workflow into `linux-patched-libs.yml`, which builds the patched libraries and both apps on Ubuntu 24.04 with g++ 14, checks that the binaries load the patched libraries, and uploads them with those libraries as a tarball. It runs on pushes to `main`/`dev`, on pull requests that touch the sources or the build scripts, and on demand.
 
 ## FreeFileSync 14.9
 
@@ -35,3 +37,7 @@ Entries are grouped by the upstream release they were made against.
 ## FreeFileSync 14.5
 
 - `wx+/darkmode.cpp` declares `wxColorHook` and `refGlobalColorHook()` itself so that it compiles against a wxWidgets without the `Bugs.txt` patch.
+
+## FreeFileSync 13.7
+
+- Added scripts in `.github/build/` that build OpenSSL, libcurl and wxWidgets from source into the repository, and a GitHub Actions workflow that runs them.

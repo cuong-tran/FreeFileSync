@@ -57,6 +57,10 @@ Drop `--dry-run` to publish. It needs an authenticated `gh` CLI, skips releases 
 
 The source ships Linux makefiles only (`FreeFileSync/Source/Makefile` and `FreeFileSync/Source/RealTimeSync/Makefile`); there are no Windows or macOS project files and no test suite. Upstream recommends building against current library versions with the patches from `Bugs.txt` applied, and that file names the versions it was written for (for 14.13: wxWidgets 3.3.4, libcurl 8.21.0, a libssh2 1.11.2 development snapshot).
 
+### Build with the scripts in .github/build
+
+The scripts in [.github/build](.github/build/README.md) download OpenSSL, the pinned libssh2 snapshot, libcurl and wxWidgets, apply all the `Bugs.txt` patches, and install them into `.build/deps` in the repository, without root and without touching the system. They then build FreeFileSync and RealTimeSync against those libraries with the glib cap described below, keeping their objects in `.build/obj`. [.github/workflows/linux-patched-libs.yml](.github/workflows/linux-patched-libs.yml) runs them in CI.
+
 ### Build in Docker
 
 The `Dockerfile` at the repository root sets all of this up in an Ubuntu 26.04 image: GCC 15, libssh2 from the same development commit the CI builds use, libcurl 8.21.0 and wxWidgets 3.3.4 with the `Bugs.txt` `settings.h` patch and `--disable-exceptions`, downloads checked against pinned SHA-256 values, and the glib API cap described below. Build the image once, then compile the checked-out tree with it; by default it builds FreeFileSync and RealTimeSync:
