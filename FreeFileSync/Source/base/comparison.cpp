@@ -17,6 +17,7 @@
 #include "status_handler_impl.h"
 #include "../afs/concrete.h"
 #include "../afs/native.h"
+#include "../afs/zip.h"
 
 using namespace zen;
 using namespace fff;
@@ -1147,6 +1148,33 @@ FolderComparison fff::compare(WarningDialogs& warnings,
         if (!msg.empty())
             callback.reportWarning(_("One folder of the folder pair is a subfolder of the other.") +
                                    (shouldExclude ? L'\n' + _("The folder should be excluded via filter.") : L"") +
+                                   msg, warnings.warnDependentFolderPair); //throw X
+    }
+
+    //ZIP archive of a base folder stored inside a base folder of any pair: not found by the checks for dependent folders (different AFS types),
+    //but e.g. "Mirror" would delete the very archive it is reading from
+    {
+        std::wstring msg;
+
+        for (const auto& [zipFolderPair, zipFpCfg] : workLoad)
+            for (const AbstractPath& zipFolderPath : {zipFolderPair.folderPathLeft, zipFolderPair.folderPathRight})
+                if (const Zstring archivePath = getZipArchivePath(zipFolderPath); !archivePath.empty())
+                {
+                    const AbstractPath archiveNativePath = createItemPathNativeNoFormatting(archivePath);
+
+                    for (const auto& [folderPair, fpCfg] : workLoad)
+                        for (const AbstractPath& folderPath : {folderPair.folderPathLeft, folderPair.folderPathRight})
+                            if (const std::optional<PathDependency> pd = getPathDependency(archiveNativePath, folderPath);
+                                pd && pd->itemPathParent == folderPath && !pd->relPath.empty() &&
+                                fpCfg.filter.nameFilter.ref().passFileFilter(pd->relPath))
+                                msg += L"\n\n" +
+                                       AFS::getDisplayPath(zipFolderPath) + L" <-> " + L'\n' +
+                                       AFS::getDisplayPath(folderPath);
+                }
+
+        if (!msg.empty())
+            callback.reportWarning(_("A ZIP archive used as a base folder is stored inside another base folder and may be deleted or overwritten by the synchronization.") + L'\n' +
+                                   _("The archive should be excluded via filter.") +
                                    msg, warnings.warnDependentFolderPair); //throw X
     }
     //-------------------end of basic checks------------------------------------------

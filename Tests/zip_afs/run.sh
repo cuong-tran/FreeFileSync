@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# Build and run the ZIP AbstractFileSystem test (Linux only, like the app: needs a C++26 g++, zlib, glib/gio, python3, zip)
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+CXX="${CXX:-g++}"
+
+echo "== build"
+#same language standard and warnings as FreeFileSync/Source/Makefile; zen/sys_error.cpp needs glib + gio (GError)
+"$CXX" -std=c++26 -O1 -g -pthread -DNDEBUG -DWXINTL_NO_GETTEXT_MACRO -I"$ROOT" -I"$ROOT/zenXml" -include "zen/i18n.h" \
+    -Wall -Wfatal-errors -Wshadow -Wmissing-include-dirs -Wswitch-enum -Wcast-align -Wnon-virtual-dtor -Wimplicit-fallthrough -Wundef -Wpedantic -Wredundant-decls \
+    -Wno-unused-function -Wno-deprecated-enum-enum-conversion -Wno-maybe-uninitialized -Wno-free-nonheap-object -Wno-restrict -Wduplicated-cond -Wlogical-op \
+    $(pkg-config --cflags glib-2.0 gio-2.0 zlib) \
+    "$ROOT/Tests/zip_afs/zip_afs_test.cpp" \
+    "$ROOT/FreeFileSync/Source/afs/zip.cpp" \
+    "$ROOT/FreeFileSync/Source/afs/abstract.cpp" \
+    "$ROOT"/zen/{zstring,file_path,resolve_path,file_access,file_io,file_traverser,sys_error,sys_info,sys_version,thread,format_unit,legacy_compiler,process_exec}.cpp \
+    $(pkg-config --libs glib-2.0 gio-2.0 zlib) -o "$WORK/zip_afs_test"
+
+echo "== fixtures"
+REF="$WORK/ref"
+mkdir -p "$REF/sub dir/nested" "$REF/empty folder" "$REF/Données été"
+echo "hello" > "$REF/a.txt"
+head -c 300000 /dev/urandom > "$REF/sub dir/random.bin"                            # incompressible
+{ yes "compressible line" || true; } | head -n 50000 > "$REF/sub dir/nested/big.txt"  # multiple inflate blocks; "|| true": yes gets SIGPIPE, fatal with pipefail
+: > "$REF/sub dir/empty.txt"
+echo "accents" > "$REF/Données été/fichier é.txt"
+touch -d "2024-02-29 13:37:42" "$REF/a.txt"
+
+cd "$REF"
+python3 - "$WORK" <<'EOF'
+import os, sys, zipfile
+work = sys.argv[1]
+def add_all(zf, compress_type):
+    for dirpath, dirnames, filenames in os.walk("."):
+        for d in dirnames:
+            zf.write(os.path.join(dirpath, d), compress_type=compress_type)
+        for f in filenames:
+            zf.write(os.path.join(dirpath, f), compress_type=compress_type)
+with zipfile.ZipFile(f"{work}/py_deflate.zip", "w") as zf: add_all(zf, zipfile.ZIP_DEFLATED)
+with zipfile.ZipFile(f"{work}/py_stored.zip",  "w") as zf: add_all(zf, zipfile.ZIP_STORED)
+
+# stored archive with corrupted payload => CRC must be detected
+with zipfile.ZipFile(f"{work}/corrupt.zip", "w") as zf:
+    zf.writestr("corrupt.txt", "some payload that will be modified")
+data = bytearray(open(f"{work}/corrupt.zip", "rb").read())
+pos = data.find(b"some payload")
+data[pos] ^= 0xFF
+open(f"{work}/corrupt.zip", "wb").write(data)
+
+# more than 65535 entries without Zip64 records, entry count stored modulo 65536 (as some tools do)
+# => all entries must still be listed
+import struct
+with zipfile.ZipFile(f"{work}/many.zip", "w") as zf:
+    for i in range(65540):
+        zf.writestr(f"f{i}", "")
+data = open(f"{work}/many.zip", "rb").read()
+eocdPos  = data.rfind(b"PK\x05\x06")
+zip64Pos = data.rfind(b"PK\x06\x06", 0, eocdPos)
+assert zip64Pos > 0 # zipfile writes Zip64 records for > 65535 entries: strip them
+eocd = bytearray(data[eocdPos:eocdPos + 22])
+struct.pack_into("<HH", eocd, 8, 65540 & 0xffff, 65540 & 0xffff)
+open(f"{work}/many.zip", "wb").write(data[:zip64Pos] + bytes(eocd))
+
+# unsafe and clashing entry names => only "docs" (as folder), "docs/readme.txt" and "ok.txt" may be listed
+# zipfile cuts names at NUL and may normalize "..", so write placeholders of the same length and patch the raw bytes
+with zipfile.ZipFile(f"{work}/unsafe.zip", "w") as zf:
+    zf.writestr("XX/escape.txt", "outside the target folder") # => "../escape.txt": must be skipped
+    zf.writestr("aXNULb", "name cut short by c_str()")        # => "a\0NULb": must be skipped
+    zf.writestr("docs", "file with the name of a folder")     # clashes with the folder below: folder wins
+    zf.writestr("docs/readme.txt", "inside the folder")
+    zf.writestr("ok.txt", "normal entry")
+data = open(f"{work}/unsafe.zip", "rb").read()
+assert data.count(b"XX/escape.txt") == 2 and data.count(b"aXNULb") == 2 # local header + central directory
+data = data.replace(b"XX/escape.txt", b"../escape.txt").replace(b"aXNULb", b"a\0NULb")
+open(f"{work}/unsafe.zip", "wb").write(data)
+
+# archive comment containing a fake end-of-central-directory record ("PK\5\6" + 18 bytes, but not at the end of file)
+# => the real record must be used, i.e. one entry listed
+with zipfile.ZipFile(f"{work}/comment.zip", "w") as zf:
+    zf.writestr("entry.txt", "listed only if the real EOCD record is found")
+    zf.comment = b"note PK\x05\x06" + bytes(18) + b" end of note"
+EOF
+zip -q -r "$WORK/infozip.zip" .                 # Info-ZIP: extended time stamps, UTF-8 names
+zip -q -r -fz "$WORK/infozip64.zip" .           # force Zip64 extra fields
+cd "$WORK"
+
+echo "== test"
+for archive in py_deflate py_stored infozip infozip64; do
+    "$WORK/zip_afs_test" "$WORK/$archive.zip" "$REF"
+done
+cp "$WORK/py_deflate.zip" "$WORK/pipe|name.zip"       # '|' in the archive name must not be taken as the inner path separator
+"$WORK/zip_afs_test" "$WORK/pipe|name.zip" "$REF"
+"$WORK/zip_afs_test" --expect-read-error "$WORK/corrupt.zip" corrupt.txt
+"$WORK/zip_afs_test" --expect-item-count "$WORK/many.zip" 65540
+"$WORK/zip_afs_test" --expect-item-count "$WORK/unsafe.zip" 3
+"$WORK/zip_afs_test" --expect-item-count "$WORK/comment.zip" 1
+
+echo "== all ZIP tests passed"
