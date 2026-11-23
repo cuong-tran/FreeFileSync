@@ -75,10 +75,15 @@ jobs:
         mkdir -p "${pkg}/DEBIAN" "${pkg}/opt/FreeFileSync" "${pkg}/usr/bin" \
                  "${pkg}/usr/share/applications" "${pkg}/usr/share/pixmaps"
 
-        # FreeFileSync looks for its Resources folder next to the Bin folder of the executable
-        cp -r FreeFileSync/Build/Bin FreeFileSync/Build/Resources "${pkg}/opt/FreeFileSync/"
-        ln -s "/opt/FreeFileSync/Bin/FreeFileSync_${arch}" "${pkg}/usr/bin/freefilesync"
-        ln -s "/opt/FreeFileSync/Bin/RealTimeSync_${arch}" "${pkg}/usr/bin/realtimesync"
+        # same layout as upstream's Linux package: FreeFileSync looks for Resources next to the Bin folder of the
+        # executable, and RealTimeSync starts batch jobs with "<install dir>/FreeFileSync" (getFreeFileSyncLauncherPath())
+        mkdir -p dist/FreeFileSync
+        cp -r FreeFileSync/Build/Bin FreeFileSync/Build/Resources dist/FreeFileSync/
+        ln -s "Bin/FreeFileSync_${arch}" dist/FreeFileSync/FreeFileSync
+        ln -s "Bin/RealTimeSync_${arch}" dist/FreeFileSync/RealTimeSync
+        cp -a dist/FreeFileSync/. "${pkg}/opt/FreeFileSync/"
+        ln -s /opt/FreeFileSync/FreeFileSync "${pkg}/usr/bin/freefilesync"
+        ln -s /opt/FreeFileSync/RealTimeSync "${pkg}/usr/bin/realtimesync"
         unzip -p FreeFileSync/Build/Resources/Icons.zip FreeFileSync.png > "${pkg}/usr/share/pixmaps/freefilesync.png"
         unzip -p FreeFileSync/Build/Resources/Icons.zip RealTimeSync.png > "${pkg}/usr/share/pixmaps/realtimesync.png"
 
@@ -113,9 +118,9 @@ jobs:
         EOF
         cat "${pkg}/DEBIAN/control"
 
-        mkdir -p dist
         dpkg-deb --build --root-owner-group "${pkg}" "dist/freefilesync_${debVersion}_${debArch}.deb"
-        tar -C FreeFileSync/Build -czf "dist/FreeFileSync_${ffsVersion}_Linux_${arch}.tar.gz" Bin Resources
+        tar -C dist -czf "dist/FreeFileSync_${ffsVersion}_Linux_${arch}.tar.gz" FreeFileSync
+        rm -rf dist/FreeFileSync
         ls -l dist
 
     - name: Upload packages
