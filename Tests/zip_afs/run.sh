@@ -76,6 +76,12 @@ data = open(f"{work}/unsafe.zip", "rb").read()
 assert data.count(b"XX/escape.txt") == 2 and data.count(b"aXNULb") == 2 # local header + central directory
 data = data.replace(b"XX/escape.txt", b"../escape.txt").replace(b"aXNULb", b"a\0NULb")
 open(f"{work}/unsafe.zip", "wb").write(data)
+
+# archive comment containing a fake end-of-central-directory record ("PK\5\6" + 18 bytes, but not at the end of file)
+# => the real record must be used, i.e. one entry listed
+with zipfile.ZipFile(f"{work}/comment.zip", "w") as zf:
+    zf.writestr("entry.txt", "listed only if the real EOCD record is found")
+    zf.comment = b"note PK\x05\x06" + bytes(18) + b" end of note"
 EOF
 zip -q -r "$WORK/infozip.zip" .                 # Info-ZIP: extended time stamps, UTF-8 names
 zip -q -r -fz "$WORK/infozip64.zip" .           # force Zip64 extra fields
@@ -90,5 +96,6 @@ cp "$WORK/py_deflate.zip" "$WORK/pipe|name.zip"       # '|' in the archive name 
 "$WORK/zip_afs_test" --expect-read-error "$WORK/corrupt.zip" corrupt.txt
 "$WORK/zip_afs_test" --expect-item-count "$WORK/many.zip" 65540
 "$WORK/zip_afs_test" --expect-item-count "$WORK/unsafe.zip" 3
+"$WORK/zip_afs_test" --expect-item-count "$WORK/comment.zip" 1
 
 echo "== all ZIP tests passed"

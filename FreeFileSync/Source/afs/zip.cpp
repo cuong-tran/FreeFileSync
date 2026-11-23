@@ -262,12 +262,19 @@ ZipIndex parseZipArchive(const Zstring& archivePath) //throw SysError
     const std::string tail = archive.readAt(tailOffset, tailSize); //throw SysError
     const auto tailBytes = reinterpret_cast<const unsigned char*>(tail.data());
 
+    /* the archive comment may contain arbitrary bytes, including "PK\5\6": prefer the record whose declared comment ends exactly at the end of file;
+       none (e.g. data appended after the archive) => fall back to the last signature, like other ZIP readers  */
     std::optional<size_t> eocdPosTail;
     for (size_t i = tailSize - 22 + 1; i-- > 0;)
         if (readLE32(tailBytes + i) == SIG_EOCD)
         {
-            eocdPosTail = i;
-            break;
+            if (!eocdPosTail)
+                eocdPosTail = i; //fallback: last signature
+            if (i + 22 + readLE16(tailBytes + i + 20) == tailSize)
+            {
+                eocdPosTail = i;
+                break;
+            }
         }
     if (!eocdPosTail)
         throw SysError(_("File is not a ZIP archive.") + L" (EOCD)");
