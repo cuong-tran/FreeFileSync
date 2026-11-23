@@ -424,6 +424,11 @@ ZipIndex parseZipArchive(const Zstring& archivePath) //throw SysError
             index.folders[parentPath].files[fileName] = entry; //duplicate entries: last one wins (same as unzip)
         }
     }
+
+    //same name as file *and* folder (e.g. entries "docs" and "docs/readme.txt"): impossible on the target side => keep the folder
+    for (auto& [folderRelPath, content] : index.folders)
+        std::erase_if(content.files, [&](const auto& item) { return content.folders.contains(item.first); });
+
     return index;
 }
 
