@@ -3,6 +3,7 @@ name: ZIP AFS test
 #builds the read-only ZIP AbstractFileSystem (FreeFileSync/Source/afs/zip.cpp) with its zen dependencies and runs Tests/zip_afs against archives made by Python zipfile and Info-ZIP
 on:
   push:
+    branches: [dev, main] #other branches: through their pull request (or run by hand), so a PR push doesn't test the same commit twice
     paths:
       - 'FreeFileSync/Source/afs/**'
       - 'zen/**'
