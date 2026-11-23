@@ -8,7 +8,7 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 |---|---|---|---|---|
 | M1 Foundation | Plan and architecture | done | | n/a (docs) |
 | M1 Foundation | 1. Platform macros, `Tests/zen` | done | `d1e9037^..128099a`, fixes `584a353^..90c338a` | 8 findings: 7 fixed, 1 kept |
-| M1 Foundation | 2. Clang + libc++ on Linux | done, review fixes in progress | `9a0f61e^..8f3c1fd` | 6 findings, see below |
+| M1 Foundation | 2. Clang + libc++ on Linux | done | `9a0f61e^..8f3c1fd`, fixes `f36f54a`, `62e5860`, `8b96471`, `bbfdcb8`, `b12fa57`, `a2ac5e0`, `a3a3741` | 6 findings: 5 fixed, 1 kept |
 | M1 Foundation | 3. macOS dependency builds in CI | in progress | | |
 | M2 Sentry | | | | |
 | M3 macOS | | | | |
@@ -45,6 +45,10 @@ Marked `KNOWN_ISSUE` in `Tests/zen`, not fixed (upstream code):
 - `zen/sys_error.cpp` `formatGlibError()`: treats `G_FILE_ERROR` codes as errno values, so the message is wrong (e.g. `G_FILE_ERROR_NOENT` prints as `EINTR`).
 - `zen/sys_info.cpp` `getUserDownloadsPath()`: throws instead of falling back to `~/Downloads` when `xdg-user-dir` is not installed (non-root users only).
 
+## Open issues
+
+- `Resources/Animal.dat` is not in the upstream source zip, so every build from these sources (the Linux packages included) shows "Failed to load image" on first start, when the welcome dialog opens. Found by the new start check. CI uses a placeholder image for now. To do in M3 packaging: ship an own image in its place (decided over copying it from the official binaries, whose artwork license is unclear).
+
 ## Review findings
 
 ### M1 step 1 (`d1e9037^..128099a`, `/code-review medium`)
@@ -66,9 +70,9 @@ Result of the step: both apps compile, link and start with clang 20 + libc++ on 
 
 | # | Finding | Severity | Outcome |
 |---|---|---|---|
-| 1 | Object folder is shared between g++ and `STDLIB=libc++` builds, so switching toolchains fails at link | important | sent for fixing |
-| 2 | Compiler family detection matches "clang" anywhere in `--version` and treats everything else as GCC | nit | sent for fixing |
-| 3 | CI start check passes when the app shows an error dialog | nit | sent for fixing |
-| 4 | Cache key of the clang job misses the inline wxWidgets flags | nit | sent for fixing |
-| 5 | Stale docs (job count, g++-only wording) | nit | sent for fixing |
+| 1 | Object folder is shared between g++ and `STDLIB=libc++` builds, so switching toolchains fails at link | important | fixed in `f36f54a`: non-default toolchains get their own binary name and object folder (e.g. `FreeFileSync_x86_64-clang-libc++`) |
+| 2 | Compiler family detection matches "clang" anywhere in `--version` and treats everything else as GCC | nit | fixed in `f36f54a`, `62e5860`: detection from `__clang__`/`__GNUC__` |
+| 3 | CI start check passes when the app shows an error dialog | nit | fixed in `8b96471` and follow-ups: new `.github/build/check-app-starts.sh` (window title, error popups, stderr) |
+| 4 | Cache key of the clang job misses the inline wxWidgets flags | nit | fixed in `8b96471` |
+| 5 | Stale docs (job count, g++-only wording) | nit | fixed in `bbfdcb8` |
 | 6 | g++ test entries run as root, clang entries as a normal user | nit | no change needed: both variants are useful coverage; a comment is added |
