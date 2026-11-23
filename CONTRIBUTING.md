@@ -6,14 +6,16 @@ This repository mirrors the FreeFileSync source releases from [freefilesync.org]
 
 | Branch | Contents |
 | --- | --- |
-| `main` | All release commits, the update skill, and this repository's own docs (`README.md`, `FAQ.md`, `MANUAL.md`, `CONTRIBUTING.md`, `CLAUDE.md`, images in `docs/images/`). |
+| `main` | All release commits, the update skill, the monthly update workflow (`.github/workflows/`), and this repository's own docs (`README.md`, `FAQ.md`, `MANUAL.md`, `CONTRIBUTING.md`, `CLAUDE.md`, images in `docs/images/`). |
 | `upstream` | Release commits only, plus the update skill. New releases are imported here. |
 
 Release commits (`FreeFileSync <version>`, authored by Zenju and dated to the release) are exact snapshots of the upstream source zips. Don't amend or rebase them, and don't commit local changes to `upstream`.
 
 ## Getting new releases
 
-New releases are imported by the Claude Code skill in [.claude/skills/ffs-upstream-update](.claude/skills/ffs-upstream-update/SKILL.md). Ask Claude Code to "check for new FreeFileSync versions", or run the importer yourself on a clean `upstream` checkout:
+New releases are imported automatically by the [FreeFileSync upstream update](.github/workflows/ffs-upstream-update.yml) GitHub Actions workflow, which runs on the 1st of every month (06:17 UTC) and does what the skill below does: it imports any new releases into `upstream`, pushes it, and publishes the matching GitHub releases. It runs the scripts from `main` against a checkout of `upstream`. Start it by hand from the Actions tab or with `gh workflow run ffs-upstream-update.yml` (add `-f dry_run=true` to only list what it would do); each run's summary lists the imported versions, their release URLs and any files the website failed to deliver.
+
+The same steps are available as the Claude Code skill in [.claude/skills/ffs-upstream-update](.claude/skills/ffs-upstream-update/SKILL.md). Ask Claude Code to "check for new FreeFileSync versions", or run the importer yourself on a clean `upstream` checkout:
 
 ```bash
 git switch upstream

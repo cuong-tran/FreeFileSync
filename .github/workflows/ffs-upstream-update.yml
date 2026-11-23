@@ -1,0 +1,137 @@
+# Monthly run of the ffs-upstream-update skill (.claude/skills/ffs-upstream-update/SKILL.md):
+# import FreeFileSync releases newer than the last one on "upstream" from freefilesync.org
+# (archive and download pages), push them, then tag each release commit v<ver> and publish a
+# GitHub release with the website's prebuilt downloads attached (never the source zip).
+#
+# Scheduled workflows only run from the default branch, so this file lives on main. It runs the
+# scripts from main against a separate checkout of upstream, so nothing on upstream changes except
+# the new release commits.
+
+name: FreeFileSync upstream update
+
+on:
+  schedule:
+    - cron: "17 6 1 * *" # 06:17 UTC on the 1st of every month
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only list what would be imported and published"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # push upstream, push tags, create releases
+  actions: write # re-enable this workflow so GitHub doesn't disable it after 60 idle days
+
+concurrency:
+  group: ffs-upstream-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash # explicit, so steps run with -e -o pipefail and `| tee` keeps failures
+    env:
+      SCRIPTS: ${{ github.workspace }}/tools/.claude/skills/ffs-upstream-update/scripts
+      DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+    steps:
+      - name: Check out the update scripts (from ${{ github.ref_name }})
+        uses: actions/checkout@v5
+        with:
+          path: tools
+          sparse-checkout: .claude/skills/ffs-upstream-update/scripts
+          persist-credentials: false
+
+      - name: Check out upstream
+        uses: actions/checkout@v5
+        with:
+          path: repo
+          ref: upstream
+          fetch-depth: 0 # the importer reads the release history; tags come along too
+
+      - name: Import new releases
+        working-directory: repo
+        run: |
+          before=$(git rev-parse HEAD)
+          echo "BEFORE=$before" >> "$GITHUB_ENV"
+          python3 -I -u "$SCRIPTS/ffs_import.py" --repo . --branch upstream ${DRY_RUN:+--dry-run} 2>&1 |
+            tee "$RUNNER_TEMP/import.log"
+          git log --format='%h %ad %an <%ae> %s' --date=short "$before..HEAD"
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --short | head -20
+            echo "::error::working tree not clean after import"
+            exit 1
+          fi
+
+      - name: Push upstream
+        if: ${{ !inputs.dry_run }}
+        working-directory: repo
+        run: |
+          if [ "$(git rev-parse HEAD)" = "$BEFORE" ]; then
+            echo "no new release commits"
+          else
+            git push origin upstream # never forced; fails if the remote moved meanwhile
+          fi
+          echo "PUSHED=1" >> "$GITHUB_ENV"
+
+      - name: Publish GitHub releases
+        working-directory: repo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -I -u "$SCRIPTS/ffs_release.py" --repo . --branch upstream \
+            --gh-repo "$GITHUB_REPOSITORY" ${DRY_RUN:+--dry-run} 2>&1 | tee "$RUNNER_TEMP/release.log"
+
+      - name: Summary
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }} # read-only use: looks up each imported version's release
+        run: |
+          {
+            echo "## FreeFileSync upstream update${DRY_RUN:+ (dry run)}"
+            if [ -n "${BEFORE:-}" ] && [ "$(git -C repo rev-parse HEAD)" != "$BEFORE" ]; then
+              echo
+              if [ -n "${PUSHED:-}" ]; then
+                echo "### Imported and pushed"
+              else
+                echo "### Imported but not pushed (the run failed; these commits are discarded, a rerun imports them again)"
+              fi
+              git -C repo log --reverse --format='%s' "$BEFORE..HEAD" | sed -nE 's/^FreeFileSync (.*)$/\1/p' |
+                while read -r v; do
+                  # The release step publishes one version at a time and may fail midway, so ask
+                  # GitHub which of them actually have a published (non-draft) release.
+                  draft=""
+                  if [ -n "${PUSHED:-}" ]; then
+                    draft=$(gh release view "v$v" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || true)
+                  fi
+                  if [ "$draft" = "false" ]; then
+                    echo "- FreeFileSync $v: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/v$v"
+                  elif [ -n "${PUSHED:-}" ]; then
+                    echo "- FreeFileSync $v: release not published yet (rerun to publish it)"
+                  else
+                    echo "- FreeFileSync $v"
+                  fi
+                done
+            fi
+            for log in import release; do
+              if [ -s "$RUNNER_TEMP/$log.log" ]; then
+                echo
+                echo "### $log output"
+                echo '```'
+                cat "$RUNNER_TEMP/$log.log"
+                echo '```'
+              fi
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the schedule alive
+        if: ${{ always() && github.event_name == 'schedule' }} # also after failed runs
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          workflow=${GITHUB_WORKFLOW_REF%@*} # owner/repo/.github/workflows/<file>@<ref>
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/${workflow##*/}/enable"
