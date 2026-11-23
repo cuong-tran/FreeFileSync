@@ -1,36 +1,33 @@
 #!/bin/bash
+# Build a static GTK 3 wxWidgets without exception handling (FreeFileSync's application.cpp
+# refuses wxUSE_EXCEPTIONS), with the Bugs.txt fixes applied. The dark mode fix adds the
+# wxColorHook API that wx+/darkmode.cpp needs, so FreeFileSync doesn't compile without it.
+# Usage: build-wxwidgets.sh [version]   (or set WXWIDGETS_VERSION)
+set -euo pipefail
+# shellcheck source=./common.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 
-set -eaux
-WXWIDGETS_VERSION="${WXWIDGETS_VERSION:-${1:-3.2.3}}"
-REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && cd ../../ && pwd)"
-BUILD_DIR="$REPO_ROOT/.build"
-ARCHIVE_DIR="$REPO_ROOT/.build/archives"
-INSTALL_DIR="$REPO_ROOT/.build/lib"
-SOURCE_DIR="$REPO_ROOT/.build/src"
-FILENAME="wxWidgets-$WXWIDGETS_VERSION.tar.bz2"
-if [ ! -e "$ARCHIVE_DIR/$FILENAME" ]; then
-  # e.g., https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.3/wxWidgets-3.2.3.tar.bz2
-  mkdir -p "$ARCHIVE_DIR"
-  wget \
-    "https://github.com/wxWidgets/wxWidgets/releases/download/v$WXWIDGETS_VERSION/$FILENAME" \
-    -O "$ARCHIVE_DIR/$FILENAME"
+WXWIDGETS_VERSION="${1:-${WXWIDGETS_VERSION:-3.3.4}}"
+NAME="wxWidgets-$WXWIDGETS_VERSION"
+
+if is_installed "$NAME"; then
+    log "$NAME already installed in $INSTALL_DIR"
+    exit 0
 fi
-TARGET_DIR="$SOURCE_DIR/wxWidgets-$WXWIDGETS_VERSION"
-if [ ! -d "$TARGET_DIR" ]; then
-  mkdir -p "$SOURCE_DIR"
-  tar xf "$ARCHIVE_DIR/$FILENAME" -C "$SOURCE_DIR"
-fi
-TARGET_BUILD_DIR="$BUILD_DIR/tmp/wx"
-mkdir -p "$TARGET_BUILD_DIR" "$INSTALL_DIR"
-cd "$TARGET_BUILD_DIR" || exit
-if [ ! -e "$TARGET_BUILD_DIR/Makefile" ]; then
-  CONFIG="$(realpath -s --relative-to="$TARGET_BUILD_DIR" "$TARGET_DIR/configure")"
-  "$CONFIG" \
+
+fetch_source "$NAME" "$NAME.tar.bz2" "https://github.com/wxWidgets/wxWidgets/releases/download/v$WXWIDGETS_VERSION/$NAME.tar.bz2"
+
+cd "$(fresh_build_dir wxwidgets)"
+"$SOURCE_DIR/$NAME/configure" \
     --prefix="$INSTALL_DIR" \
+    --with-gtk=3 \
     --disable-shared \
+    --enable-no_exceptions \
     --disable-stc \
-    --enable-unicode \
-    --enable-no_exceptions
-fi
-make -j "$(nproc)"
-make -j "$(nproc)" install
+    --disable-webview \
+    --disable-mediactrl \
+    --disable-webrequest \
+    --disable-tests
+make -j "$JOBS"
+make install
+mark_installed "$NAME"

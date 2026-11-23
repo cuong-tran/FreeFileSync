@@ -1,16 +1,10 @@
 #!/bin/bash
+# Build all libraries FreeFileSync needs patched or newer than distros ship, in dependency order.
+# Each step is skipped if that version (with the current patch) is already installed.
+set -euo pipefail
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
-set -eaux
-
-# Use BASH_SOURCE to get the current directory of the script
-REPO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && cd ../../ && pwd)
-
-# shellcheck source=./build-openssl.sh
-source "$REPO_ROOT/.github/build/build-openssl.sh"
-
-# Curl depends on OpenSSL hence why this comes after 'build-openssl.sh'
-# shellcheck source=./build-curl.sh
-source "$REPO_ROOT/.github/build/build-curl.sh"
-
-# shellcheck source=./build-wxwidgets.sh
-source "$REPO_ROOT/.github/build/build-wxwidgets.sh"
+"$SCRIPT_DIR/build-openssl.sh"
+"$SCRIPT_DIR/build-libssh2.sh" # needs OpenSSL
+"$SCRIPT_DIR/build-curl.sh"    # needs OpenSSL and libssh2
+"$SCRIPT_DIR/build-wxwidgets.sh"

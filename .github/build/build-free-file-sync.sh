@@ -1,21 +1,13 @@
 #!/bin/bash
+# Build FreeFileSync and RealTimeSync with the upstream makefiles against the libraries
+# installed by build.sh. Binaries go to FreeFileSync/Build/Bin.
+set -euo pipefail
+# shellcheck source=./common.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 
-if [ -e "/etc/profile" ]; then
-  # shellcheck disable=SC1091
-  source /etc/profile || true
-fi
+command -v wx-config >/dev/null && [ "$(command -v wx-config)" = "$INSTALL_DIR/bin/wx-config" ] ||
+    die "wx-config not found in $INSTALL_DIR/bin, run build.sh first"
 
-set -eaux
-REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && cd ../../ && pwd)"
-BUILD_DIR="$REPO_ROOT/.build"
-INSTALL_DIR="$REPO_ROOT/.build/lib"
-TARGET_BUILD_DIR="$BUILD_DIR/tmp/freefilesync"
-mkdir -p "$TARGET_BUILD_DIR" "$INSTALL_DIR"
-
-PATH="$BUILD_DIR/lib/bin:${PATH:-}"
-
-SOURCE_DIR="$REPO_ROOT/FreeFileSync/Source"
-SOURCE_DIR_REL="$(realpath -s --relative-to="$TARGET_BUILD_DIR" "$SOURCE_DIR")"
-cd "$TARGET_BUILD_DIR" || exit
-make -C "$SOURCE_DIR_REL" -j "$(nproc)" all
-# make -C "$REPO_ROOT/FreeFileSync/Source" install
+# The makefiles append to CXXFLAGS/LDFLAGS from the environment, which carries the rpath to $INSTALL_DIR/lib.
+make -C "$REPO_ROOT/FreeFileSync/Source" -j "$JOBS"
+make -C "$REPO_ROOT/FreeFileSync/Source/RealTimeSync" -j "$JOBS"

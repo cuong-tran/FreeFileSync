@@ -1,0 +1,98 @@
+#!/bin/bash
+# Shared settings and helpers for the build-*.sh scripts. Source it, don't run it.
+#
+# Environment overrides:
+#   FFS_BUILD_DIR     work area for downloads, sources and build trees (default: <repo>/.build)
+#   FFS_DEPS_PREFIX   install prefix for the libraries (default: $FFS_BUILD_DIR/deps)
+#   FFS_SKIP_PATCHES  set to 1 to build a library version that has no patch in patches/
+#   JOBS              parallel make jobs (default: nproc)
+
+REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." &>/dev/null && pwd)"
+SCRIPT_DIR="$REPO_ROOT/.github/build"
+PATCH_DIR="$SCRIPT_DIR/patches"
+
+BUILD_DIR="${FFS_BUILD_DIR:-$REPO_ROOT/.build}"
+ARCHIVE_DIR="$BUILD_DIR/archives"
+SOURCE_DIR="$BUILD_DIR/src"
+WORK_DIR="$BUILD_DIR/tmp"
+INSTALL_DIR="${FFS_DEPS_PREFIX:-$BUILD_DIR/deps}"
+STAMP_DIR="$INSTALL_DIR/.stamps"
+JOBS="${JOBS:-$(nproc)}"
+
+# Make the installed libraries win over the system ones, at build time (wx-config, pkg-config)
+# and at run time (rpath; the libraries are installed as shared objects, except wxWidgets).
+export PATH="$INSTALL_DIR/bin:$PATH"
+export PKG_CONFIG_PATH="$INSTALL_DIR/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export CPPFLAGS="-I$INSTALL_DIR/include${CPPFLAGS:+ $CPPFLAGS}"
+export LDFLAGS="-L$INSTALL_DIR/lib -Wl,-rpath,$INSTALL_DIR/lib${LDFLAGS:+ $LDFLAGS}"
+
+# SHA-256 of the archives for the default versions. Other versions are downloaded unverified.
+declare -A KNOWN_SHA256=(
+    [openssl-3.5.9.tar.gz]=603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
+    [libssh2-1.11.1.tar.gz]=d9ec76cbe34db98eec3539fe2c899d26b0c837cb3eb466a56b0f109cabf658f7
+    [curl-8.21.0.tar.xz]=aa1b66a70eace83dc624508745646c08ae561de512ab403adffb93ac87fc72e6
+    [wxWidgets-3.3.4.tar.bz2]=815c16cafa4fcbfcf25c5c0a3418309c62257b8a3b6f91d85a1367a134f98c98
+)
+
+log() { printf '\n==> %s\n' "$*" >&2; }
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+# is_installed <name-version>: true if this version was installed with the current patch
+is_installed() {
+    [ -f "$STAMP_DIR/$1" ] && [ "$(cat "$STAMP_DIR/$1")" = "$(patch_id "$1")" ]
+}
+
+mark_installed() {
+    mkdir -p "$STAMP_DIR"
+    patch_id "$1" >"$STAMP_DIR/$1"
+}
+
+patch_id() {
+    local patch="$PATCH_DIR/$1.patch"
+    if [ -f "$patch" ]; then sha256sum "$patch" | cut -d' ' -f1; else echo unpatched; fi
+}
+
+# fetch_source <name-version> <archive file name> <url> [nopatch]
+# Downloads and verifies the archive, unpacks a fresh copy to $SOURCE_DIR/<name-version>
+# and applies patches/<name-version>.patch (the fixes listed in Bugs.txt).
+fetch_source() {
+    local name="$1" file="$2" url="$3" patchMode="${4:-}"
+    local archive="$ARCHIVE_DIR/$file"
+    local patch="$PATCH_DIR/$name.patch"
+
+    if [ "$patchMode" != nopatch ] && [ ! -f "$patch" ] && [ "${FFS_SKIP_PATCHES:-0}" != 1 ]; then
+        die "no patch for $name in $PATCH_DIR: port the $name fixes from Bugs.txt first, or set FFS_SKIP_PATCHES=1 to build it unpatched"
+    fi
+
+    mkdir -p "$ARCHIVE_DIR" "$SOURCE_DIR"
+    if [ ! -f "$archive" ]; then
+        log "Downloading $url"
+        curl -fL --retry 3 -o "$archive.part" "$url"
+        mv "$archive.part" "$archive"
+    fi
+
+    local expected="${KNOWN_SHA256[$file]:-}"
+    if [ -n "$expected" ]; then
+        echo "$expected  $archive" | sha256sum -c - >/dev/null ||
+            { rm -f "$archive"; die "checksum mismatch for $file (deleted, run again to re-download)"; }
+    else
+        log "No known checksum for $file, not verified"
+    fi
+
+    rm -rf "${SOURCE_DIR:?}/$name"
+    tar xf "$archive" -C "$SOURCE_DIR"
+    [ -d "$SOURCE_DIR/$name" ] || die "$file did not unpack to $SOURCE_DIR/$name"
+
+    if [ "$patchMode" != nopatch ] && [ -f "$patch" ]; then
+        log "Applying $(basename "$patch")"
+        patch -d "$SOURCE_DIR/$name" -p1 --forward --batch <"$patch"
+    fi
+}
+
+# fresh_build_dir <name>: prints an empty out-of-tree build directory
+fresh_build_dir() {
+    local dir="$WORK_DIR/$1"
+    rm -rf "$dir"
+    mkdir -p "$dir"
+    echo "$dir"
+}

@@ -1,0 +1,74 @@
+--- a/lib/ftp.c
++++ b/lib/ftp.c
+@@ -2029,6 +2029,18 @@
+     return CURLE_FTP_CANT_GET_HOST;
+   }
+   return *newhostp ? CURLE_OK : CURLE_OUT_OF_MEMORY;
++}
++
++/* FreeFileSync (Bugs.txt): https://github.com/curl/curl/issues/1455 */
++static bool is_routable_ip_v4(const unsigned int ip[4])
++{
++  if(ip[0] == 127 || /* 127.0.0.0/8 (localhost) */
++     ip[0] == 10 || /* 10.0.0.0/8 (private) */
++     (ip[0] == 192 && ip[1] == 168) || /* 192.168.0.0/16 (private) */
++     (ip[0] == 169 && ip[1] == 254) || /* 169.254.0.0/16 (link-local) */
++     (ip[0] == 172 && ip[1] / 16 == 1)) /* 172.16.0.0/12 (private) */
++    return FALSE;
++  return TRUE;
+ }
+ 
+ static bool match_pasv_6nums(const char *p,
+@@ -2093,6 +2105,7 @@
+           (ftpcode == 227)) {
+     /* positive PASV response */
+     unsigned int ip[6];
++    bool skip_ip;
+ 
+     /*
+      * Scan for a sequence of six comma-separated numbers and use them as
+@@ -2115,7 +2128,23 @@
+     }
+ 
+     /* we got OK from server */
+-    if(data->set.ftp_skip_ip) {
++    skip_ip = data->set.ftp_skip_ip;
++    if(!skip_ip && !is_routable_ip_v4(ip)) {
++      /* the server sent a private/local address: use the control connection
++         host instead, unless that is a non-routable IPv4 address too */
++      char *ctrl_host = NULL;
++      unsigned int ip_ctrl[4];
++      result = ftp_control_addr_dup(data, &ctrl_host);
++      if(result)
++        return result;
++      if(sscanf(ctrl_host, "%u.%u.%u.%u",
++                &ip_ctrl[0], &ip_ctrl[1], &ip_ctrl[2], &ip_ctrl[3]) != 4 ||
++         is_routable_ip_v4(ip_ctrl))
++        skip_ip = TRUE;
++      curlx_free(ctrl_host);
++    }
++
++    if(skip_ip) {
+       /* told to ignore the remotely given IP but instead use the host we used
+          for the control connection */
+       infof(data, "Skip %u.%u.%u.%u for data connection, reuse %s instead",
+@@ -2341,7 +2370,9 @@
+ 
+         /* Only if a body transfer was requested. */
+         if(ftp->transfer == PPTRANSFER_BODY) {
+-          result = ftp_nb_type(data, ftpc, ftp, TRUE, FTP_LIST_TYPE);
++          /* FreeFileSync (Bugs.txt): https://github.com/curl/curl/issues/4342 */
++          result = ftp_nb_type(data, ftpc, ftp,
++                               (bool)data->state.prefer_ascii, FTP_LIST_TYPE);
+           if(result)
+             return result;
+         }
+@@ -2349,7 +2380,7 @@
+       }
+       else {
+         if(data->set.prequote && !ftpc->file) {
+-          result = ftp_nb_type(data, ftpc, ftp, TRUE,
++          result = ftp_nb_type(data, ftpc, ftp, (bool)data->state.prefer_ascii,
+                                FTP_RETR_LIST_TYPE);
+         }
+         else {
