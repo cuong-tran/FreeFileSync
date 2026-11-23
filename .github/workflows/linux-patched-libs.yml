@@ -64,7 +64,15 @@ jobs:
         run: .github/build/build.sh
 
       - name: Build FreeFileSync and RealTimeSync
-        run: .github/build/build-free-file-sync.sh
+        shell: bash # the default run shell has no pipefail, and tee would hide a failed build
+        run: .github/build/build-free-file-sync.sh 2>&1 | tee build.log
+
+      # the makefiles only warn (and build a fallback) when wxWidgets lacks the Bugs.txt color hook,
+      # so make sure the patched wxWidgets was actually used
+      - name: Check the wxWidgets color hook patch is used
+        run: |
+          grep -q refGlobalColorHook .build/deps/include/wx-3.*/wx/settings.h || { echo "::error::installed wx/settings.h lacks the wxColorHook patch"; exit 1; }
+          if grep -q "lacks the wxColorHook patch" build.log; then echo "::error::the makefiles built the wxColorHook fallback"; exit 1; fi
 
       - name: Check the binaries use the patched libraries
         run: |
