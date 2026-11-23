@@ -5,8 +5,10 @@
 # (a GLib CRITICAL/ERROR message, a wx "Error:" line or a failed assertion).
 # With SCREENSHOT=<file.png> it also saves a screenshot of the screen after the check (needs ImageMagick's "import").
 # With OFFLINE=1 the app (and Xvfb) run in a network namespace without network access (needs root or sudo, and unshare
-# and setpriv from util-linux), so nothing depends on the internet: FreeFileSync's update check on a first start then
-# fails silently, as without a network, instead of showing an error when freefilesync.org rejects the CI machine.
+# and setpriv from util-linux), so the result doesn't depend on the internet: FreeFileSync's update check on a first
+# start then fails silently, as on a machine without a network.
+# Note: running as root, FreeFileSync keeps its settings in root's home (getpwnam), not $HOME, so only a non-root
+# user gets a real first start.
 # Needs xvfb-run and xdotool.
 # Usage: check-app-starts.sh <binary> <main window title regex>
 #   e.g. check-app-starts.sh FreeFileSync/Build/Bin/FreeFileSync_x86_64 '^FreeFileSync [0-9.]+ '
