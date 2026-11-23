@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Build FreeFileSync and RealTimeSync with the upstream makefiles against the libraries
 # installed by build.sh. Binaries go to FreeFileSync/Build/Bin (debug FreeFileSync: Build/Debug/Bin),
 # objects to $FFS_BUILD_DIR/obj.
