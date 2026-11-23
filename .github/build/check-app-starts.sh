@@ -1,7 +1,9 @@
 #!/bin/bash
 # Smoke test for a built app on Linux/X11: start it under Xvfb with an empty HOME and check that it shows its main window
 # and nothing else that looks like an error. Fails if the app exits early, its main window doesn't appear within
-# $WAIT_SECONDS (default 30), a visible window is titled like an error/warning popup, or stderr reports an error.
+# $WAIT_SECONDS (default 30), a visible window is titled like an error/warning popup, or stderr reports an error
+# (a GLib CRITICAL/ERROR message, a wx "Error:" line or a failed assertion).
+# With SCREENSHOT=<file.png> it also saves a screenshot of the screen after the check (needs ImageMagick's "import").
 # Needs xvfb-run and xdotool.
 # Usage: check-app-starts.sh <binary> <main window title regex>
 #   e.g. check-app-starts.sh FreeFileSync/Build/Bin/FreeFileSync_x86_64 '^FreeFileSync [0-9.]+ '
@@ -37,14 +39,19 @@ for (( i = 0; i < WAIT_SECONDS * 2; ++i )); do
         break
     fi
 done
+if [ -n "${SCREENSHOT:-}" ]; then
+    import -window root "$SCREENSHOT" 2>/dev/null || echo "screenshot failed" >&2
+fi
 echo "$result" > "$WORK/result.txt"
 kill "$pid" 2>/dev/null
 wait "$pid" 2>/dev/null
 exit 0
 EOF
 
-export BIN TITLE_REGEX WAIT_SECONDS WORK
-HOME="$WORK/home" LANG=C.UTF-8 xvfb-run -a -s "-screen 0 1280x1024x24" bash "$WORK/inside.sh"
+[ -n "${SCREENSHOT:-}" ] && SCREENSHOT="$(realpath -m -- "$SCREENSHOT")"
+export BIN TITLE_REGEX WAIT_SECONDS WORK SCREENSHOT
+# NO_AT_BRIDGE: no accessibility bus under Xvfb, so GTK would warn about it on stderr
+HOME="$WORK/home" LANG=C.UTF-8 NO_AT_BRIDGE=1 xvfb-run -a -s "-screen 0 1280x1024x24" bash "$WORK/inside.sh"
 
 result="$(cat "$WORK/result.txt" 2>/dev/null || echo "no result")"
 echo "== $(basename "$BIN"): $result"
@@ -65,7 +72,7 @@ esac
 if grep -Eiq '(^|[^a-z])(error|warning)([^a-z]|$)' "$WORK/titles.txt" 2>/dev/null; then
     echo "error: a window is titled like an error or warning popup" >&2; failed=1
 fi
-if grep -Eiq 'error|critical|assert' "$WORK/stderr.txt" 2>/dev/null; then
+if grep -Eq -- '-(CRITICAL|ERROR) \*\*|^Error:|[Aa]ssert' "$WORK/stderr.txt" 2>/dev/null; then
     echo "error: stderr reports an error" >&2; failed=1
 fi
 exit "$failed"
