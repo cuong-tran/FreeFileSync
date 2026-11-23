@@ -63,6 +63,19 @@ assert zip64Pos > 0 # zipfile writes Zip64 records for > 65535 entries: strip th
 eocd = bytearray(data[eocdPos:eocdPos + 22])
 struct.pack_into("<HH", eocd, 8, 65540 & 0xffff, 65540 & 0xffff)
 open(f"{work}/many.zip", "wb").write(data[:zip64Pos] + bytes(eocd))
+
+# unsafe and clashing entry names => only "docs" (as folder), "docs/readme.txt" and "ok.txt" may be listed
+# zipfile cuts names at NUL and may normalize "..", so write placeholders of the same length and patch the raw bytes
+with zipfile.ZipFile(f"{work}/unsafe.zip", "w") as zf:
+    zf.writestr("XX/escape.txt", "outside the target folder") # => "../escape.txt": must be skipped
+    zf.writestr("aXNULb", "name cut short by c_str()")        # => "a\0NULb": must be skipped
+    zf.writestr("docs", "file with the name of a folder")     # clashes with the folder below: folder wins
+    zf.writestr("docs/readme.txt", "inside the folder")
+    zf.writestr("ok.txt", "normal entry")
+data = open(f"{work}/unsafe.zip", "rb").read()
+assert data.count(b"XX/escape.txt") == 2 and data.count(b"aXNULb") == 2 # local header + central directory
+data = data.replace(b"XX/escape.txt", b"../escape.txt").replace(b"aXNULb", b"a\0NULb")
+open(f"{work}/unsafe.zip", "wb").write(data)
 EOF
 zip -q -r "$WORK/infozip.zip" .                 # Info-ZIP: extended time stamps, UTF-8 names
 zip -q -r -fz "$WORK/infozip64.zip" .           # force Zip64 extra fields
@@ -76,5 +89,6 @@ cp "$WORK/py_deflate.zip" "$WORK/pipe|name.zip"       # '|' in the archive name 
 "$WORK/zip_afs_test" "$WORK/pipe|name.zip" "$REF"
 "$WORK/zip_afs_test" --expect-read-error "$WORK/corrupt.zip" corrupt.txt
 "$WORK/zip_afs_test" --expect-item-count "$WORK/many.zip" 65540
+"$WORK/zip_afs_test" --expect-item-count "$WORK/unsafe.zip" 3
 
 echo "== all ZIP tests passed"
