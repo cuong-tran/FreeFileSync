@@ -1,4 +1,15 @@
-name: Build FreeFileSync (Final Version with warn_static.h & C++23 fix)
+# Builds FreeFileSync and RealTimeSync from the checked-in sources on Linux for amd64 and arm64
+# and uploads the binaries as workflow artifacts.
+#
+# Adapted from the Geeeeeker fork (https://github.com/Geeeeeker/FreeFileSync).
+# Run it by hand from the Actions tab; it also runs on pull requests that touch this workflow or the Makefiles.
+#
+# Library setup follows Bugs.txt: wxWidgets is built from source with the settings.h color hook
+# that wx+/darkmode.cpp needs and without exception handling (application.cpp has an #error for that),
+# and the MAX_SFTP_* constants that afs/sftp.cpp expects are added to the installed libssh2_sftp.h.
+# The other Bugs.txt patches only change runtime behavior and are not applied.
+
+name: Linux multi-arch build
 
 on:
   workflow_dispatch:
@@ -6,163 +17,130 @@ on:
       arch:
         description: 'Target architecture'
         required: true
-        default: 'amd64'
+        default: 'all'
         type: choice
         options:
+          - all
           - amd64
           - arm64
-          - armhf
-          - i386
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/linux-multiarch-build.yml'
+      - 'FreeFileSync/Source/Makefile'
+      - 'FreeFileSync/Source/RealTimeSync/Makefile'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WX_VERSION: '3.3.4'
+  WX_SHA256: '815c16cafa4fcbfcf25c5c0a3418309c62257b8a3b6f91d85a1367a134f98c98'
+  WX_PREFIX: /opt/wx
 
 jobs:
   build:
-    name: Build for ${{ github.event.inputs.arch }}
-    runs-on: ${{ github.event.inputs.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    env:
-      ARCH: ${{ github.event.inputs.arch }}
+    name: Build (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.arch == 'all') && '["amd64","arm64"]' || format('["{0}"]', inputs.arch)) }}
+    # native runners for both architectures; the container provides a GCC recent enough for -std=c++26
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    container: ubuntu:26.04
+    timeout-minutes: 90
+
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies (Native/Cross)
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt update
-          case "$ARCH" in
-            amd64)
-              sudo apt install -y wget unzip bzip2 make g++ pkg-config libgtk-3-dev libssl-dev libpsl-dev libidn2-dev patch git
-              ;;
-            arm64)
-              sudo apt install -y wget unzip bzip2 make g++ pkg-config libgtk-3-dev libssl-dev libpsl-dev libidn2-dev patch git
-              ;;
-            armhf)
-              sudo apt install -y wget unzip bzip2 make pkg-config patch git g++-arm-linux-gnueabihf
-              sudo dpkg --add-architecture armhf
-              sudo apt update
-              sudo apt install -y libgtk-3-dev:armhf libssl-dev:armhf libpsl-dev:armhf libidn2-dev:armhf
-              ;;
-            i386)
-              sudo apt install -y wget unzip bzip2 make pkg-config patch git g++-multilib
-              sudo dpkg --add-architecture i386
-              sudo apt update
-              sudo apt install -y libgtk-3-dev:i386 libssl-dev:i386 libpsl-dev:i386 libidn2-dev:i386
-              ;;
-          esac
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git bzip2 make g++ pkg-config perl \
+            libgtk-3-dev libssl-dev libcurl4-openssl-dev libssh2-1-dev libidn2-dev libselinux1-dev
+          g++ --version
 
-      - name: Build external dependencies (libssh2, libcurl, wxWidgets)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Add MAX_SFTP_* constants to libssh2_sftp.h (Bugs.txt)
         run: |
-          # libssh2
-          wget -q https://libssh2.org/download/libssh2-1.11.1.tar.gz
-          tar xzf libssh2-1.11.1.tar.gz
-          cd libssh2-1.11.1
-          mkdir build && cd build
-          case "$ARCH" in armhf) HOST=--host=arm-linux-gnueabihf ;; i386) HOST=--host=i686-linux-gnu ;; *) HOST= ;; esac
-          ../configure $HOST
-          make -j$(nproc) && sudo make install
-          cd ../..
+          header=$(pkg-config --variable=includedir libssh2)/libssh2_sftp.h
+          test -f "$header"
+          if ! grep -q 'define MAX_SFTP_OUTGOING_SIZE' "$header"; then
+            printf '\n#ifndef MAX_SFTP_OUTGOING_SIZE\n#define MAX_SFTP_OUTGOING_SIZE 30000\n#endif\n#ifndef MAX_SFTP_READ_SIZE\n#define MAX_SFTP_READ_SIZE 30000\n#endif\n' >> "$header"
+          fi
+          grep -n 'MAX_SFTP_' "$header"
 
-          # libcurl
-          wget -q https://curl.se/download/curl-8.15.0.tar.gz
-          tar xzf curl-8.15.0.tar.gz
-          cd curl-8.15.0
-          mkdir build && cd build
-          ../configure $HOST --with-openssl --with-libssh2 --enable-versioned-symbols
-          make -j$(nproc) && sudo make install
-          cd ../..
+      - name: Restore wxWidgets build
+        id: wx-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.WX_PREFIX }}
+          key: wx-${{ env.WX_VERSION }}-${{ matrix.arch }}-ubuntu26.04-${{ hashFiles('.github/workflows/linux-multiarch-build.yml') }}
 
-          # wxWidgets
-          wget -q https://github.com/wxWidgets/wxWidgets/releases/download/v3.3.1/wxWidgets-3.3.1.tar.bz2
-          tar xjf wxWidgets-3.3.1.tar.bz2
-          cd wxWidgets-3.3.1
-          mkdir gtk-build && cd gtk-build
-          ../configure $HOST --disable-shared
-          make -j$(nproc) && sudo make install
-          cd ../..
-
-      - name: Clone FreeFileSync (version14) and apply patches
+      - name: Build wxWidgets ${{ env.WX_VERSION }} (patched per Bugs.txt)
+        if: steps.wx-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ runner.temp }}
         run: |
-          rm -rf FreeFileSync
-          git clone --branch version14 https://github.com/Geeeeeker/FreeFileSync.git
-          cd FreeFileSync
+          curl -fsSL -o wx.tar.bz2 "https://github.com/wxWidgets/wxWidgets/releases/download/v${WX_VERSION}/wxWidgets-${WX_VERSION}.tar.bz2"
+          echo "${WX_SHA256}  wx.tar.bz2" | sha256sum -c -
+          tar -xjf wx.tar.bz2
+          cd "wxWidgets-${WX_VERSION}"
 
-          # 下载缺失的 warn_static.h
-          echo "Downloading missing warn_static.h from version13 branch..."
-          mkdir -p zen
-          wget -q -O zen/warn_static.h https://raw.githubusercontent.com/Geeeeeker/FreeFileSync/version13/zen/warn_static.h
-          if [ ! -f zen/warn_static.h ]; then
-            echo "Error: Failed to download warn_static.h"
-            exit 1
-          fi
+          # Bugs.txt, /include/wx/settings.h: global color hook for dark mode support (used by wx+/darkmode.cpp)
+          perl -0pi -e '
+            my $hook = "#include <memory>\n\n"
+                     . "struct wxColorHook\n{\n    virtual ~wxColorHook() {}\n    virtual wxColor getColor(wxSystemColour index) const = 0;\n};\n"
+                     . "WXDLLIMPEXP_CORE inline std::unique_ptr<wxColorHook>& refGlobalColorHook()\n{\n    static std::unique_ptr<wxColorHook> globalColorHook;\n    return globalColorHook;\n}\n\n";
+            my $getColour = "    static wxColour GetColour(wxSystemColour index)\n    {\n        if (refGlobalColorHook())\n            return refGlobalColorHook()->getColor(index);\n\n        return wxSystemSettingsNative::GetColour(index);\n    }\n";
+            s/(class WXDLLIMPEXP_CORE wxSystemSettings : public wxSystemSettingsNative\n\{\npublic:\n)/$hook$1$getColour/ or die "settings.h patch did not apply\n";
+          ' include/wx/settings.h
+          grep -q 'refGlobalColorHook' include/wx/settings.h
 
-          # 查找 Makefile 位置
-          BUILD_DIR=$(dirname $(find . -name Makefile -type f | head -n 1))
-          echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_ENV
-          echo "REPO_ROOT=$(pwd)" >> $GITHUB_ENV
+          mkdir gtk-build
+          cd gtk-build
+          ../configure --prefix="$WX_PREFIX" --with-gtk=3 --disable-shared --disable-exceptions \
+            --disable-webview --disable-mediactrl --without-opengl --without-libnotify \
+            --with-libpng=builtin --with-libjpeg=builtin --with-libtiff=builtin --with-libwebp=builtin \
+            --with-zlib=builtin --with-expat=builtin --with-regex=builtin
+          make -j"$(nproc)"
+          make install
 
-          # 应用补丁：sftp.cpp
-          SFTP_CPP=$(find . -path "*/afs/sftp.cpp" -type f | head -n 1)
-          [ -n "$SFTP_CPP" ] && sed -i '21i#define MAX_SFTP_OUTGOING_SIZE 30000\n#define MAX_SFTP_READ_SIZE 30000' "$SFTP_CPP"
-
-          # Makefile GTK3 修改
-          [ -f "$BUILD_DIR/Makefile" ] && sed -i 's/`pkg-config --cflags gtk+-2.0`/`pkg-config --cflags gtk+-3.0`/; s/-isystem\/usr\/include\/gtk-2.0/-isystem\/usr\/include\/gtk-3.0/' "$BUILD_DIR/Makefile"
-
-          # application.cpp：将 #error 改为 #warning（基于内容，而非行号）
-          APP_CPP=$(find . -name application.cpp -type f | head -n 1)
-          if [ -n "$APP_CPP" ]; then
-            sed -i 's/#error why is wxWidgets uncaught exception handling enabled!?/#warning why is wxWidgets uncaught exception handling enabled!?/' "$APP_CPP"
-          else
-            echo "Warning: application.cpp not found"
-          fi
-
-          # darkmode.cpp 补丁
-          DARKMODE_CPP=$(find . -path "*/wx+/darkmode.cpp" -type f | head -n 1)
-          if [ -n "$DARKMODE_CPP" ]; then
-            sed -i '63s/globalDefaultThemeIsDark = wxSystemSettings::GetAppearance().AreAppsDark();/globalDefaultThemeIsDark = false;/' "$DARKMODE_CPP"
-            sed -i '96,99d' "$DARKMODE_CPP"
-          fi
-
-      - name: Enable C++23 for GCC
+      - name: Check wxWidgets configuration
         run: |
-          cd $REPO_ROOT/$BUILD_DIR
-          if [ -f Makefile ]; then
-            # 在 cxxFlags 中添加 -std=c++23（如果尚未存在）
-            if ! grep -q -- '-std=c++23' Makefile; then
-              sed -i '/^cxxFlags *=/ s/$/ -std=c++23/' Makefile
-              echo "Added -std=c++23 to Makefile"
-            else
-              echo "-std=c++23 already present"
-            fi
-          else
-            echo "Error: Makefile not found in $BUILD_DIR"
-            exit 1
-          fi
+          echo "$WX_PREFIX/bin" >> "$GITHUB_PATH"
+          "$WX_PREFIX/bin/wx-config" --version
+          "$WX_PREFIX/bin/wx-config" --selected-config
+          grep -rq 'refGlobalColorHook' "$WX_PREFIX/include"
+          # application.cpp refuses to compile against a wxWidgets with exception handling enabled
+          grep -rE '#define wxUSE_EXCEPTIONS +0' "$WX_PREFIX/lib/wx/include"
 
       - name: Build FreeFileSync
-        run: |
-          cd $REPO_ROOT/$BUILD_DIR
-          if [ "$ARCH" = "armhf" ]; then
-            make CC=arm-linux-gnueabihf-gcc CXX=arm-linux-gnueabihf-g++ -j$(nproc)
-          elif [ "$ARCH" = "i386" ]; then
-            make CC="gcc -m32" CXX="g++ -m32" -j$(nproc)
-          else
-            make -j$(nproc)
-          fi
+        run: make -C FreeFileSync/Source -j"$(nproc)"
 
-      - name: Package and Release
-        run: |
-          BIN_PATH=$(find $REPO_ROOT -name "FreeFileSync_*" -type f | head -n 1 || find $REPO_ROOT -name "FreeFileSync" -type f | head -n 1)
-          if [ -z "$BIN_PATH" ]; then echo "Binary not found"; exit 1; fi
-          cp "$BIN_PATH" "FreeFileSync_$ARCH"
-          zip "FreeFileSync_$ARCH.zip" "FreeFileSync_$ARCH"
+      - name: Build RealTimeSync
+        run: make -C FreeFileSync/Source/RealTimeSync -j"$(nproc)"
 
-      - name: Upload artifact
+      - name: List binaries
+        run: |
+          ls -l FreeFileSync/Build/Bin
+          for bin in FreeFileSync/Build/Bin/FreeFileSync_* FreeFileSync/Build/Bin/RealTimeSync_*; do
+            test -x "$bin"
+            echo "== $bin"
+            ldd "$bin" | grep -E 'curl|ssh2|ssl|idn2|gtk-3' || true
+          done
+
+      - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
-          name: FreeFileSync_${{ env.ARCH }}
-          path: FreeFileSync_${{ env.ARCH }}.zip
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: build-${{ github.run_id }}-${{ env.ARCH }}
-          name: FreeFileSync ${{ env.ARCH }} (build #${{ github.run_number }})
-          prerelease: true
-          files: FreeFileSync_${{ env.ARCH }}.zip
+          name: FreeFileSync-linux-${{ matrix.arch }}
+          path: |
+            FreeFileSync/Build/Bin/FreeFileSync_*
+            FreeFileSync/Build/Bin/RealTimeSync_*
+          if-no-files-found: error
