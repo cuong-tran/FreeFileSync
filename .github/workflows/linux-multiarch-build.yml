@@ -41,6 +41,8 @@ env:
   WX_VERSION: '3.3.4'
   WX_SHA256: '815c16cafa4fcbfcf25c5c0a3418309c62257b8a3b6f91d85a1367a134f98c98'
   WX_PREFIX: /opt/wx
+  # bump WX_CACHE_REV whenever the wxWidgets patch or configure options below change
+  WX_CACHE_REV: 1
 
 jobs:
   build:
@@ -77,12 +79,13 @@ jobs:
           fi
           grep -n 'MAX_SFTP_' "$header"
 
+      # restore and save are separate steps so a wxWidgets build is kept even when the FreeFileSync build fails
       - name: Restore wxWidgets build
         id: wx-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.WX_PREFIX }}
-          key: wx-${{ env.WX_VERSION }}-${{ matrix.arch }}-ubuntu26.04-${{ hashFiles('.github/workflows/linux-multiarch-build.yml') }}
+          key: wx-${{ env.WX_VERSION }}-rev${{ env.WX_CACHE_REV }}-ubuntu26.04-${{ matrix.arch }}
 
       - name: Build wxWidgets ${{ env.WX_VERSION }} (patched per Bugs.txt)
         if: steps.wx-cache.outputs.cache-hit != 'true'
@@ -111,6 +114,13 @@ jobs:
             --with-zlib=builtin --with-expat=builtin --with-regex=builtin
           make -j"$(nproc)"
           make install
+
+      - name: Save wxWidgets build
+        if: steps.wx-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.WX_PREFIX }}
+          key: wx-${{ env.WX_VERSION }}-rev${{ env.WX_CACHE_REV }}-ubuntu26.04-${{ matrix.arch }}
 
       - name: Check wxWidgets configuration
         run: |
