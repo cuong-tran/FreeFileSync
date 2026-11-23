@@ -19,7 +19,7 @@
 FROM ubuntu:26.04
 
 # last libssh2 master commit before the FreeFileSync 14.13 release (2026-10-16)
-# .github/workflows/linux-multiarch-build.yml pins the same libssh2 commit and wxWidgets version: update both together
+# .github/workflows/linux-multiarch-build.yml and build-arm64.yml pin the same libssh2 commit and wxWidgets version: update all three together
 ARG LIBSSH2_COMMIT=83284a05a1add34722c1fa36fa706fe7aced87b6
 ARG LIBSSH2_SHA256=03e70390ceafcde9ceb98654d9e55f05c705c2e62c05863d5284e4e11f51b8a7
 # curl publishes signatures, not checksums: this SHA-256 is of the tarball verified against its .asc signature
