@@ -35,7 +35,6 @@ jobs:
       run:
         shell: bash # explicit, so steps run with -e -o pipefail and `| tee` keeps failures
     env:
-      GH_TOKEN: ${{ github.token }}
       SCRIPTS: ${{ github.workspace }}/tools/.claude/skills/ffs-upstream-update/scripts
       DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
     steps:
@@ -58,7 +57,8 @@ jobs:
         run: |
           before=$(git rev-parse HEAD)
           echo "BEFORE=$before" >> "$GITHUB_ENV"
-          python3 -I "$SCRIPTS/ffs_import.py" --repo . --branch upstream ${DRY_RUN:+--dry-run} | tee "$RUNNER_TEMP/import.log"
+          python3 -I -u "$SCRIPTS/ffs_import.py" --repo . --branch upstream ${DRY_RUN:+--dry-run} 2>&1 |
+            tee "$RUNNER_TEMP/import.log"
           git log --format='%h %ad %an <%ae> %s' --date=short "$before..HEAD"
           if [ -n "$(git status --porcelain)" ]; then
             git status --short | head -20
@@ -75,25 +75,38 @@ jobs:
           else
             git push origin upstream # never forced; fails if the remote moved meanwhile
           fi
+          echo "PUSHED=1" >> "$GITHUB_ENV"
 
       - name: Publish GitHub releases
         working-directory: repo
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          python3 -I "$SCRIPTS/ffs_release.py" --repo . --branch upstream \
-            --gh-repo "$GITHUB_REPOSITORY" ${DRY_RUN:+--dry-run} | tee "$RUNNER_TEMP/release.log"
+          python3 -I -u "$SCRIPTS/ffs_release.py" --repo . --branch upstream \
+            --gh-repo "$GITHUB_REPOSITORY" ${DRY_RUN:+--dry-run} 2>&1 | tee "$RUNNER_TEMP/release.log"
+          echo "RELEASED=1" >> "$GITHUB_ENV"
 
       - name: Summary
         if: ${{ always() }}
-        working-directory: repo
         run: |
           {
             echo "## FreeFileSync upstream update${DRY_RUN:+ (dry run)}"
-            if [ -n "${BEFORE:-}" ] && [ "$(git rev-parse HEAD)" != "$BEFORE" ]; then
+            if [ -n "${BEFORE:-}" ] && [ "$(git -C repo rev-parse HEAD)" != "$BEFORE" ]; then
               echo
-              echo "### Imported"
-              git log --reverse --format='%s' "$BEFORE..HEAD" | sed -nE 's/^FreeFileSync (.*)$/\1/p' |
+              if [ -n "${RELEASED:-}" ]; then
+                echo "### Imported and released"
+              elif [ -n "${PUSHED:-}" ]; then
+                echo "### Imported and pushed, but the releases were not published (rerun to publish them)"
+              else
+                echo "### Imported but not pushed (the run failed; these commits are discarded, a rerun imports them again)"
+              fi
+              git -C repo log --reverse --format='%s' "$BEFORE..HEAD" | sed -nE 's/^FreeFileSync (.*)$/\1/p' |
                 while read -r v; do
-                  echo "- FreeFileSync $v: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/v$v"
+                  if [ -n "${RELEASED:-}" ]; then
+                    echo "- FreeFileSync $v: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/v$v"
+                  else
+                    echo "- FreeFileSync $v"
+                  fi
                 done
             fi
             for log in import release; do
@@ -108,6 +121,10 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the schedule alive
-        if: ${{ github.event_name == 'schedule' }}
+        if: ${{ always() && github.event_name == 'schedule' }} # also after failed runs
         continue-on-error: true
-        run: gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/ffs-upstream-update.yml/enable"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          workflow=${GITHUB_WORKFLOW_REF%@*} # owner/repo/.github/workflows/<file>@<ref>
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/${workflow##*/}/enable"
