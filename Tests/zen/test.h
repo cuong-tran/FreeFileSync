@@ -1,10 +1,13 @@
 // Minimal test harness for Tests/zen: CHECK-style macros that count failures and print file/line, no framework.
 //
 // - TEST_CASE(name) { ... } registers a test; it runs in a fresh, empty folder "testDir" (Zstring, absolute path) that is removed afterwards
+// - SANDBOX_TEST_CASE(name): same, for tests that depend on the environment run.sh sets up (HOME/XDG_DATA_HOME in a sandbox, ZEN_TEST_* variables);
+//   skipped unless ZEN_TEST_SANDBOX is set, so running zen_test directly can't e.g. move files into the user's real recycle bin
 // - CHECK(cond), CHECK_EQUAL(a, b): count a failure and continue
 // - CHECK_THROWS(E, statement...): statement must throw E (or a type derived from E)
 // - CHECK_THROWS_NOT(E, NotE, statement...): statement must throw E, but not the more specific NotE (e.g. FileError, but not ErrorTargetExisting)
-// - KNOWN_ISSUE(cond, note): documents an upstream bug: a failing cond is reported but not counted as failure
+// - KNOWN_ISSUE(cond, note): documents an upstream bug: a failing cond is reported but not counted as failure;
+//   a cond that holds (the bug no longer reproduces) is a failure, so stale markers get noticed
 //
 // Test code must stay portable: use std::filesystem or zen APIs only, and branch on ZEN_LINUX/ZEN_MAC/ZEN_WIN (zen/build_info.h)
 // where the expected behavior legitimately differs, with a comment.
@@ -30,6 +33,7 @@ struct TestCase
 {
     const char* name;
     TestFunction fun;
+    bool needsSandbox;
 };
 
 inline std::vector<TestCase>& registry()
@@ -40,7 +44,7 @@ inline std::vector<TestCase>& registry()
 
 struct Registrar
 {
-    Registrar(const char* name, TestFunction fun) { registry().push_back({name, fun}); }
+    Registrar(const char* name, TestFunction fun, bool needsSandbox) { registry().push_back({name, fun, needsSandbox}); }
 };
 
 inline int checkCount      = 0;
@@ -143,10 +147,13 @@ inline Zstring nativeRelPath(Zstring relPath)
 }
 
 
-#define TEST_CASE(name)                                                         \
+#define ZEN_TEST_CASE_IMPL(name, needsSandbox)                                  \
     static void name(const Zstring& testDir);                                   \
-    static const zentest::Registrar name##Registrar(#name, name);               \
+    static const zentest::Registrar name##Registrar(#name, name, needsSandbox); \
     static void name([[maybe_unused]] const Zstring& testDir)
+
+#define TEST_CASE(name)         ZEN_TEST_CASE_IMPL(name, false)
+#define SANDBOX_TEST_CASE(name) ZEN_TEST_CASE_IMPL(name, true)
 
 #define CHECK(...) /*variadic: conditions may contain commas*/                 \
     do {                                                                        \
@@ -205,5 +212,5 @@ inline Zstring nativeRelPath(Zstring relPath)
             std::cerr << __FILE__ << ':' << __LINE__ << ": KNOWN ISSUE: " #cond " (" << (note) << ')' << std::endl; \
         }                                                                       \
         else                                                                    \
-            std::cerr << __FILE__ << ':' << __LINE__ << ": known issue no longer reproduces, update the test: " #cond << std::endl; \
+            zentest::reportFailure(__FILE__, __LINE__, "known issue no longer reproduces, update the test: " #cond); \
     } while (false)

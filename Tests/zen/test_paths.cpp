@@ -27,7 +27,7 @@ Zstring absPath(const Zstring& relPath) { return rootPath + nativeRelPath(relPat
 }
 
 
-TEST_CASE(filePathHelpers)
+SANDBOX_TEST_CASE(filePathHelpers)
 {
     //item name, extension
     CHECK_EQUAL(getItemName(absPath("dir/file.txt")), Zstring("file.txt"));
@@ -107,7 +107,7 @@ TEST_CASE(filePathHelpers)
 }
 
 
-TEST_CASE(resolvePath)
+SANDBOX_TEST_CASE(resolvePath)
 {
     //macros: environment variables
     CHECK_EQUAL(expandMacros("a %ZEN_TEST_VAR% b"), Zstring("a zen test value b"));
@@ -156,11 +156,15 @@ TEST_CASE(resolvePath)
     CHECK_EQUAL(getResolvedFilePath("~/docs"), appendPath(userHome, "docs"));
     CHECK_EQUAL(getResolvedFilePath("~user"), appendPath(toZ(fs::current_path()), "~user")); //only "~" and "~/" are expanded
 
-    const Zstring home = *getEnvironmentVar("HOME");
     //path phrase aliases: $HOME => %HOME%
-    const std::vector<Zstring> aliases = getPathPhraseAliases(appendPath(home, "docs"));
-    CHECK(std::find(aliases.begin(), aliases.end(), appendPath(home, "docs")) != aliases.end());
-    CHECK(std::find(aliases.begin(), aliases.end(), "%HOME%/docs") != aliases.end());
+    const std::optional<Zstring> home = getEnvironmentVar("HOME"); //set by run.sh
+    CHECK(home && !home->empty());
+    if (home && !home->empty())
+    {
+        const std::vector<Zstring> aliases = getPathPhraseAliases(appendPath(*home, "docs"));
+        CHECK(std::find(aliases.begin(), aliases.end(), appendPath(*home, "docs")) != aliases.end());
+        CHECK(std::find(aliases.begin(), aliases.end(), "%HOME%/docs") != aliases.end());
+    }
 #endif
 
     //makePathPhrase(): a trailing space must survive trimming

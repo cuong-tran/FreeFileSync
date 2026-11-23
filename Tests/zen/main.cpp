@@ -5,7 +5,10 @@
 //   names:  run only these tests (default: all)
 //
 // Each test runs in a new folder "<root>/zen_test-<random>/<test name>", removed afterwards with everything in it.
+// Tests registered with SANDBOX_TEST_CASE run only if ZEN_TEST_SANDBOX is set, as Tests/zen/run.sh does after pointing HOME,
+// XDG_DATA_HOME etc. into a temporary folder; otherwise they are skipped with a message.
 
+#include <cstdlib>
 #include <random>
 #include "test.h"
 
@@ -63,10 +66,20 @@ int main(int argc, char* argv[])
     }
     const fs::path baseCanonical = fs::canonical(basePath); //tests compare paths: avoid symlinks in the temp folder path (e.g. /tmp => /private/tmp on macOS)
 
+    const bool inSandbox = std::getenv("ZEN_TEST_SANDBOX") != nullptr;
+    size_t skippedCount = 0;
+
     for (const TestCase& tc : tests)
     {
         const int failuresBefore = failureCount;
         std::cout << "== " << tc.name << std::endl;
+
+        if (tc.needsSandbox && !inSandbox)
+        {
+            std::cout << "   SKIPPED: needs the sandbox set up by Tests/zen/run.sh (ZEN_TEST_SANDBOX is not set)" << std::endl;
+            ++skippedCount;
+            continue;
+        }
 
         const fs::path testPath = baseCanonical / tc.name;
         fs::create_directory(testPath);
@@ -94,7 +107,10 @@ int main(int argc, char* argv[])
     if (ec)
         reportFailure("main", 0, "cannot remove base folder (not empty?): " + ec.message());
 
-    std::cout << "== zen tests: " << tests.size() << " test cases, " << checkCount << " checks, " <<
-              failureCount << " failures, " << knownIssueCount << " known issues" << std::endl;
+    std::cout << "== zen tests: " << tests.size() - skippedCount << " test cases, " << checkCount << " checks, " <<
+              failureCount << " failures, " << knownIssueCount << " known issues";
+    if (skippedCount > 0)
+        std::cout << ", " << skippedCount << " skipped (no sandbox)";
+    std::cout << std::endl;
     return failureCount == 0 ? 0 : 1;
 }

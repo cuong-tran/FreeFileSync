@@ -10,7 +10,7 @@ using namespace zen;
 using namespace zentest;
 
 
-TEST_CASE(recycler)
+SANDBOX_TEST_CASE(recycler)
 {
     const Zstring filePath = appendPath(testDir, "to recycle.txt");
     writeFile(filePath, "recycle me");
