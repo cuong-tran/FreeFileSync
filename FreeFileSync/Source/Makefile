@@ -35,6 +35,12 @@ CXXFLAGS += $(shell pkg-config --cflags gtk+-3.0)
 #treat as system headers so that warnings are hidden:
 CXXFLAGS += -isystem/usr/include/gtk-3.0
 
+#wxWidgets without the wxColorHook patch from Bugs.txt (e.g. stock release or distro packages): let wx+/darkmode.cpp declare the hook itself
+haveWxColorHook := $(shell $(CXX) $(CXXFLAGS) -E -x c++ -include wx/settings.h /dev/null 2>/dev/null | grep -c refGlobalColorHook)
+ifeq ($(haveWxColorHook),0)
+    CXXFLAGS += -DZEN_WX_NO_COLOR_HOOK
+endif
+
 #support for SELinux (optional)
 haveSelinux := $(shell pkg-config --exists libselinux && echo YES)
 ifeq ($(haveSelinux),YES)

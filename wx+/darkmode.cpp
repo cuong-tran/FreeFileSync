@@ -13,16 +13,25 @@
 
 using namespace zen;
 
+
+#ifdef ZEN_WX_NO_COLOR_HOOK //set by the Makefile if wx/settings.h lacks the wxColorHook patch from Bugs.txt
+//declare the hook ourselves so that unpatched wxWidgets builds still compile: wxSystemSettings::GetColour() will not consult it,
+//so the enhanced contrast for wxSYS_COLOUR_GRAYTEXT is lost, but the color theme otherwise works as usual
+#include <memory>
+
 struct wxColorHook
- {
-     virtual ~wxColorHook() {}
+{
+    virtual ~wxColorHook() {}
     virtual wxColor getColor(wxSystemColour index) const = 0;
- };
- WXDLLIMPEXP_CORE inline std::unique_ptr<wxColorHook>& refGlobalColorHook()
- {
-     static std::unique_ptr<wxColorHook> globalColorHook;
-     return globalColorHook;
+};
+
+inline std::unique_ptr<wxColorHook>& refGlobalColorHook()
+{
+    static std::unique_ptr<wxColorHook> globalColorHook;
+    return globalColorHook;
 }
+#endif
+
 
 bool zen::darkModeAvailable()
 {
