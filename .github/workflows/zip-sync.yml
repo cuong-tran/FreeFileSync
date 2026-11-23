@@ -17,6 +17,10 @@ on:
       - '.github/workflows/zip-sync.yml'
   workflow_dispatch:
 
+concurrency: #like the Linux build workflows: a newer push cancels the run it supersedes
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   zip-afs-test:
     runs-on: ubuntu-24.04
