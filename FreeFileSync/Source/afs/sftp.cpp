@@ -6,15 +6,6 @@
 
 #include "sftp.h"
 #include <array>
-
-// libssh2 constants not exposed in public headers - define them manually
-#ifndef MAX_SFTP_READ_SIZE
-#define MAX_SFTP_READ_SIZE 30000
-#endif
-#ifndef MAX_SFTP_OUTGOING_SIZE
-#define MAX_SFTP_OUTGOING_SIZE 30000
-#endif
-
 #include <zen/sys_error.h>
 #include <zen/thread.h>
 #include <zen/globals.h>
@@ -27,6 +18,15 @@
 #include "ftp_common.h"
 #include "abstract_impl.h"
     #include <poll.h>
+
+//stock libssh2 keeps these in src/sftp.h; Bugs.txt moves them to libssh2_sftp.h => fall back to libssh2's values for unpatched builds
+#ifndef MAX_SFTP_READ_SIZE
+    #define MAX_SFTP_READ_SIZE 30000
+#endif
+#ifndef MAX_SFTP_OUTGOING_SIZE
+    #define MAX_SFTP_OUTGOING_SIZE 30000
+#endif
+
 
 using namespace zen;
 using namespace fff;
