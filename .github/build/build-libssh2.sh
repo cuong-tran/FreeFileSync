@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Build libssh2 against the OpenSSL in $FFS_DEPS_PREFIX, with the Bugs.txt fix applied.
 # FreeFileSync 14.13 needs libssh2 1.11.2_DEV (e.g. LIBSSH2_ERROR_STORE_OVERFLOW is not in
 # the 1.11.1 release), so this builds a pinned commit of libssh2's master branch.
@@ -21,6 +21,13 @@ fetch_source "$NAME" "$NAME.tar.gz" "https://github.com/libssh2/libssh2/archive/
 
 # A source snapshot has no configure script, so use libssh2's CMake build.
 BUILD="$(fresh_build_dir libssh2)"
+if [ "$FFS_TARGET" = linux ]; then
+    TARGET_OPTIONS=(-DBUILD_SHARED_LIBS=ON -DBUILD_STATIC_LIBS=OFF)
+else
+    # macOS: a static library for one architecture, against the static OpenSSL in the prefix and the SDK's zlib
+    TARGET_OPTIONS=(-DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON -DOPENSSL_USE_STATIC_LIBS=ON
+                    -DCMAKE_OSX_ARCHITECTURES="$TARGET_ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET")
+fi
 cmake -S "$SOURCE_DIR/$NAME" -B "$BUILD" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="$INSTALL_DIR" \
@@ -29,11 +36,11 @@ cmake -S "$SOURCE_DIR/$NAME" -B "$BUILD" \
     -DCRYPTO_BACKEND=OpenSSL \
     -DOPENSSL_ROOT_DIR="$INSTALL_DIR" \
     -DENABLE_ZLIB_COMPRESSION=ON \
-    -DBUILD_SHARED_LIBS=ON \
-    -DBUILD_STATIC_LIBS=OFF \
+    "${TARGET_OPTIONS[@]}" \
     -DBUILD_EXAMPLES=OFF \
     -DBUILD_TESTING=OFF \
     -DLIBSSH2_BUILD_DOCS=OFF
 cmake --build "$BUILD" -j "$JOBS"
 cmake --install "$BUILD"
+[ "$FFS_TARGET" = linux ] || verify_target_arch "$INSTALL_DIR/lib/libssh2.a"
 mark_installed "$NAME" openssl
