@@ -3,7 +3,8 @@
 # Linux build environment for FreeFileSync and RealTimeSync.
 # Builds libcurl and wxWidgets at the versions named in Bugs.txt from source, and libssh2 from a pinned development
 # commit (Bugs.txt: "1.11.2_DEV"; libssh2/libssh2_wrap.h needs LIBSSH2_ERROR_STORE_OVERFLOW, which 1.11.1 lacks).
-# wxWidgets gets the wx/settings.h color hook patch FreeFileSync needs to compile. libssh2 is not patched: afs/sftp.cpp
+# wxWidgets gets the wx/settings.h color hook patch (without it the makefiles fall back to -DZEN_WX_NO_COLOR_HOOK and dark mode
+# loses its higher-contrast gray text). libssh2 is not patched: afs/sftp.cpp
 # falls back to libssh2's MAX_SFTP_* values. The other Bugs.txt patches only fix runtime behavior and are not applied.
 #
 # Build the image once, then compile the mounted source tree (binaries land in FreeFileSync/Build/):
