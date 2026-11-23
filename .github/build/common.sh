@@ -87,6 +87,9 @@ if [ "$FFS_TARGET" != linux ]; then
     export CC="${CC:-clang}" CXX="${CXX:-clang++}"
     export CFLAGS="-O2 -arch $TARGET_ARCH${CFLAGS:+ $CFLAGS}"
     export CXXFLAGS="-O2 -arch $TARGET_ARCH${CXXFLAGS:+ $CXXFLAGS}"
+    # Objective-C(++) sources (wxOSX's *.mm files) are compiled with these, not with CFLAGS/CXXFLAGS
+    export OBJCFLAGS="-O2 -arch $TARGET_ARCH${OBJCFLAGS:+ $OBJCFLAGS}"
+    export OBJCXXFLAGS="-O2 -arch $TARGET_ARCH${OBJCXXFLAGS:+ $OBJCXXFLAGS}"
     export LDFLAGS="-arch $TARGET_ARCH $LDFLAGS"
     export PKG_CONFIG_LIBDIR="$INSTALL_DIR/lib/pkgconfig"
 fi
