@@ -5,6 +5,8 @@
 #   FFS_BUILD_DIR     work area for downloads, sources and build trees (default: <repo>/.build)
 #   FFS_DEPS_PREFIX   install prefix for the libraries (default: $FFS_BUILD_DIR/deps)
 #   FFS_SKIP_PATCHES  set to 1 to build a library version that has no patch in patches/
+#   FFS_UNPATCHED     set to 1 to build every library without its patch, even if patches/ has one (CI uses it
+#                     to check that FreeFileSync still compiles against stock libraries)
 #   JOBS              parallel make jobs (default: nproc)
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." &>/dev/null && pwd)"
@@ -73,7 +75,7 @@ mark_installed() {
 install_id() {
     local name="$1" dep stamp
     shift
-    if [ -f "$PATCH_DIR/$name.patch" ]; then sha256sum "$PATCH_DIR/$name.patch" | cut -d' ' -f1; else echo unpatched; fi
+    if [ -f "$PATCH_DIR/$name.patch" ] && [ "${FFS_UNPATCHED:-0}" != 1 ]; then sha256sum "$PATCH_DIR/$name.patch" | cut -d' ' -f1; else echo unpatched; fi
     sha256sum "$CALLER_SCRIPT" | cut -d' ' -f1 # the calling build-<lib>.sh, for its configure options
     sha256sum "$COMMON_SCRIPT" | cut -d' ' -f1 # this file, for the shared settings above
     # the compilers and flags the library is built with
@@ -99,6 +101,7 @@ fetch_source() {
     rm -f "$STAMP_DIR/${name%-*}"-*
     local archive="$ARCHIVE_DIR/$file"
     local patch="$PATCH_DIR/$name.patch"
+    [ "${FFS_UNPATCHED:-0}" = 1 ] && patchMode=nopatch
 
     if [ "$patchMode" != nopatch ] && [ ! -f "$patch" ] && [ "${FFS_SKIP_PATCHES:-0}" != 1 ]; then
         die "no patch for $name in $PATCH_DIR: port the $name fixes from Bugs.txt first, or set FFS_SKIP_PATCHES=1 to build it unpatched"

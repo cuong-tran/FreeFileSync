@@ -9,8 +9,20 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 command -v wx-config >/dev/null && [ "$(command -v wx-config)" = "$INSTALL_DIR/bin/wx-config" ] ||
     die "wx-config not found in $INSTALL_DIR/bin, run build.sh first"
 # pkg-config falls back to the system's .pc files for anything missing from the prefix, which would
-# link an unpatched system library without a word
+# link an unpatched system library without a word. FFS_SYSTEM_LIBS lists the ones that may come from the
+# system on purpose (e.g. "openssl libcurl" to build against the distribution's packages). Those must not
+# be in the prefix at all: its pkgconfig folder, -I and -L come first (common.sh), so a copy left there by
+# an earlier build would still be used.
+declare -A HEADERS=([openssl]=openssl [libssh2]=libssh2.h [libcurl]=curl)
 for pc in openssl libssh2 libcurl; do
+    if [[ " ${FFS_SYSTEM_LIBS:-} " == *" $pc "* ]]; then
+        if [ -e "$INSTALL_DIR/lib/pkgconfig/$pc.pc" ] || [ -e "$INSTALL_DIR/include/${HEADERS[$pc]}" ] ||
+           [ "$(pkg-config --variable=prefix "$pc" 2>/dev/null)" = "$INSTALL_DIR" ]; then
+            die "FFS_SYSTEM_LIBS names $pc, but it is installed in $INSTALL_DIR and would be used instead of the system's: use another FFS_DEPS_PREFIX or remove it"
+        fi
+        pkg-config --exists "$pc" || die "FFS_SYSTEM_LIBS names $pc, but pkg-config finds no system $pc"
+        continue
+    fi
     [ "$(pkg-config --variable=prefix "$pc" 2>/dev/null)" = "$INSTALL_DIR" ] ||
         die "$pc is not installed in $INSTALL_DIR (pkg-config would use the system's), run build.sh first"
 done

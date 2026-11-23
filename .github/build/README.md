@@ -35,14 +35,31 @@ Each library has its own script (`build-openssl.sh`, `build-libssh2.sh`, `build-
 | `FFS_BUILD_DIR` | `<repo>/.build` | Downloads, unpacked sources and build trees |
 | `FFS_DEPS_PREFIX` | `$FFS_BUILD_DIR/deps` | Install prefix of the libraries |
 | `FFS_SKIP_PATCHES` | unset | Set to `1` to build a version that has no patch in `patches/`. An unpatched wxWidgets still compiles: the makefiles detect the missing `wxColorHook`, warn, and build without the dark mode contrast fix |
+| `FFS_UNPATCHED` | unset | Set to `1` to build every library without its patch, even when `patches/` has one. CI uses it to check that FreeFileSync still compiles against stock libraries |
+| `FFS_SYSTEM_LIBS` | unset | `build-free-file-sync.sh` only: space-separated pkg-config names (`openssl`, `libssh2`, `libcurl`) that may come from the system instead of the prefix, e.g. `"openssl libcurl"` to build against the distribution's packages. The script refuses to build if one of them is also installed in the prefix, since the prefix's copy would be used |
 | `JOBS` | `nproc` | Parallel make jobs |
 
 wxWidgets is linked statically. OpenSSL, libssh2 and libcurl are shared libraries found through an rpath to `.build/deps/lib`, so the binaries only run on the machine that built them unless those libraries are copied along.
+
+## Packaging
+
+`package.sh` turns the build into a portable `FreeFileSync_<version>_Linux_<arch>.tar.gz` and a `freefilesync_<version>_<arch>.deb` in `.build/dist` (it needs `patchelf`, `dpkg-dev` and `unzip`):
+
+```bash
+.github/build/package.sh
+```
+
+It copies the libraries the binaries load from `.build/deps` next to them in `Bin/`, sets an `$ORIGIN` rpath on the binaries and those libraries, and checks that nothing is still loaded from `.build/deps`. The `.deb` installs to `/opt/FreeFileSync` with `freefilesync` and `realtimesync` launchers and desktop entries; its other dependencies come from `dpkg-shlibdeps`, so it installs on the distribution release it was built on and newer ones. `DEB_VERSION_SUFFIX` is appended to the `.deb` version. The `.deb` names the GitHub repository of the `origin` remote as its homepage; set `GITHUB_REPOSITORY=<owner>/<name>` to name another.
 
 ## Updating for a new release
 
 When an upstream release changes the library versions in `Bugs.txt`, update the defaults in the scripts and the checksums in `common.sh`, and port the `Bugs.txt` fixes to the new sources as `patches/<name>-<version>.patch` (a unified diff applied with `patch -p1` in the unpacked source tree). The scripts refuse to build a version without a patch, so a forgotten patch shows up as an error rather than a subtly broken build.
 
-The [Linux CI workflow](../workflows/linux-patched-libs.yml) runs these scripts on Ubuntu 24.04.
+## CI
 
-The other Linux workflows don't use these scripts. [linux-multiarch-build.yml](../workflows/linux-multiarch-build.yml) builds its libraries inline, and [build-arm64.yml](../workflows/build-arm64.yml) uses its own [.github/scripts/build-wxwidgets.sh](../scripts/build-wxwidgets.sh), which is not the `build-wxwidgets.sh` here. Each carries its own copy of the wxWidgets color hook patch and the libssh2 commit pin, so update all three when a new release changes them.
+The [Linux build workflow](../workflows/linux-build.yml) runs these scripts in two jobs:
+
+- **Packages**: x86_64 and aarch64 on native Ubuntu 24.04 runners with g++ 14, against all the patched libraries, then `package.sh`. The `.deb` and tar.gz of each architecture are uploaded as workflow artifacts for 30 days.
+- **Stock libraries**: an Ubuntu 26.04 container that builds libssh2 and wxWidgets with `FFS_UNPATCHED=1` and takes OpenSSL and libcurl from the distribution (`FFS_SYSTEM_LIBS="openssl libcurl"`). It only compiles, to keep the fallbacks for unpatched libraries working: the `wxColorHook` declaration in `wx+/darkmode.cpp`, the `MAX_SFTP_*` values in `afs/sftp.cpp` and the libcurl version checks in `libcurl/curl_wrap.cpp`.
+
+These scripts are the only place the CI pins library versions. The root `Dockerfile` has its own copy of the libssh2 commit and the libcurl and wxWidgets versions, so update it as well when a new release changes them.
