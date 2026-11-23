@@ -14,12 +14,17 @@ Entries are grouped by the upstream release they were made against.
 - Expanded the Linux build instructions in `CONTRIBUTING.md`: Debian/Ubuntu packages, building libssh2 from a development commit and wxWidgets 3.3 with `--disable-exceptions` from source with the `Bugs.txt` patches, building FreeFileSync and RealTimeSync (with the glib 2.76 API cap needed on glib 2.78 and later), and choosing a compiler through `CXX` in the environment.
 - Corrected the build requirements in `CLAUDE.md`: 14.13 builds with `-std=c++26` (GCC 14 or newer), wxWidgets 3.3 and a development libssh2.
 - The FreeFileSync and RealTimeSync Makefiles check `wx/settings.h` for the `wxColorHook` patch from `Bugs.txt` and define `ZEN_WX_NO_COLOR_HOOK` only if the check succeeds and finds no hook, so `wx+/darkmode.cpp` declares the hook itself only for a stock wxWidgets (e.g. the 3.3 release tarball or distro packages). A failed check defines nothing, so the compiler reports the real error. Builds against a patched wxWidgets are unchanged; with a stock wxWidgets the makefiles print a warning naming `Bugs.txt` and the higher-contrast gray text in dark mode is lost. `CONTRIBUTING.md` notes that the color hook is the only wxWidgets patch the build needs.
+- Updated the `Dockerfile` for 14.13: Ubuntu 26.04 with GCC 15 (C++26), libssh2 from a pinned 1.11.2 development commit (14.13 needs `LIBSSH2_ERROR_STORE_OVERFLOW`), libcurl 8.21.0 and wxWidgets 3.3.4 built with `--disable-exceptions` and the `Bugs.txt` `wx/settings.h` patch (as a unified diff that also includes `<memory>`), with the glib API capped at 2.76 so upstream's `::g_free(...)` calls compile. By default it builds FreeFileSync and RealTimeSync from the mounted source tree.
+- `FreeFileSync/Source/Makefile`: the default `make` again writes `FreeFileSync/Build/Bin/` with objects in the temp folder like upstream; `make BUILD=debug` builds into `FreeFileSync/Build/Debug/` with separate objects, refreshes its `Resources` copy on every build and keeps `NDEBUG`; an unknown `BUILD` value is an error.
+- Added a `.gitignore` for the build output folders.
 
 ## FreeFileSync 14.9
 
 - Added a GitHub Actions workflow (`.github/workflows/build-arm64.yml`) that builds FreeFileSync and RealTimeSync for Linux ARM64 on every push and pull request to `main` and `dev`, in an Ubuntu 26.04 container on a native arm64 runner. It builds wxWidgets 3.3.4 with the `wxColorHook` patch from `Bugs.txt` and `--disable-exceptions` (`.github/scripts/build-wxwidgets.sh`, cached) and an unpatched libssh2 from a pinned development commit, and packages the result as a `.deb` that installs `Bin/` (with the bundled libssh2), `Resources/` and launchers under `/opt/FreeFileSync`, plus a portable `tar.gz`.
 - `libcurl/curl_wrap.cpp` builds against libcurl older than 8.11.1 (checked down to 8.5): `LIBCURL_VERSION_NUM` checks guard `CURLE_TOO_LARGE` (8.6.0), `CURLE_ECH_REQUIRED` (8.8.0) and `CURLE_OBSOLETE34`/`41` (8.11.1, with the older names used before that).
 - `afs/sftp.cpp` falls back to libssh2's value of 30000 for `MAX_SFTP_READ_SIZE` and `MAX_SFTP_OUTGOING_SIZE` when stock libssh2 headers lack them. A libssh2 patched as described in `Bugs.txt` still uses its own definitions.
+- Added a `Dockerfile` with a Linux build environment that builds libssh2, libcurl and a static wxWidgets with the `Bugs.txt` `wx/settings.h` patch from source.
+- `FreeFileSync/Source/Makefile`: added a debug build mode (`make BUILD=debug` / `make debug`, `-g3 -O0`) and header dependency tracking (`-MMD -MP`).
 
 ## FreeFileSync 14.8
 
