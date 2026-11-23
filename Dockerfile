@@ -21,7 +21,9 @@ FROM ubuntu:26.04
 ARG LIBSSH2_COMMIT=83284a05a1add34722c1fa36fa706fe7aced87b6
 ARG LIBSSH2_SHA256=03e70390ceafcde9ceb98654d9e55f05c705c2e62c05863d5284e4e11f51b8a7
 ARG CURL_VERSION=8.21.0
+ARG CURL_SHA256=d9b327997999045a24cda50f3983e69e51c516bd8be6ef9842fc7f99135e33bb
 ARG WX_VERSION=3.3.4
+ARG WX_SHA256=815c16cafa4fcbfcf25c5c0a3418309c62257b8a3b6f91d85a1367a134f98c98
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -58,6 +60,7 @@ RUN wget -q -O libssh2.tar.gz https://github.com/libssh2/libssh2/archive/${LIBSS
 
 # --- libcurl ---
 RUN wget -q https://curl.se/download/curl-${CURL_VERSION}.tar.gz \
+	&& echo "${CURL_SHA256}  curl-${CURL_VERSION}.tar.gz" | sha256sum -c - \
 	&& tar xf curl-${CURL_VERSION}.tar.gz \
 	&& cd curl-${CURL_VERSION} \
 	&& ./configure --quiet --with-openssl --with-libssh2 --disable-static --disable-manual --disable-docs --enable-versioned-symbols \
@@ -115,6 +118,7 @@ EOF
 # FreeFileSync refuses to compile against a wxWidgets with C++ exception handling enabled (see application.cpp),
 # so build it with --disable-exceptions.
 RUN wget -q https://github.com/wxWidgets/wxWidgets/releases/download/v${WX_VERSION}/wxWidgets-${WX_VERSION}.tar.bz2 \
+	&& echo "${WX_SHA256}  wxWidgets-${WX_VERSION}.tar.bz2" | sha256sum -c - \
 	&& tar xf wxWidgets-${WX_VERSION}.tar.bz2 \
 	&& cd wxWidgets-${WX_VERSION} \
 	&& patch -p1 < /build/wx-settings.patch \
