@@ -281,7 +281,7 @@ HttpSession::Result HttpSession::perform(const std::string& serverRelPath,
 
 std::wstring zen::formatCurlStatusCode(CURLcode sc)
 {
-    //CURLcode values are enum constants, not macros => check LIBCURL_VERSION_NUM to build against older libcurl (e.g. 8.5 on Ubuntu 24.04)
+    //CURLcode values are enum constants, not macros => check LIBCURL_VERSION_NUM to build against older libcurl (e.g. 8.5)
     switch (sc)
     {
             ZEN_CASE_RETURN_STRING(CURLE_OK);
