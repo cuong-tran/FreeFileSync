@@ -91,7 +91,7 @@ jobs:
         if: steps.wx-cache.outputs.cache-hit != 'true'
         working-directory: ${{ runner.temp }}
         run: |
-          curl -fsSL -o wx.tar.bz2 "https://github.com/wxWidgets/wxWidgets/releases/download/v${WX_VERSION}/wxWidgets-${WX_VERSION}.tar.bz2"
+          curl -fsSL --retry 3 --retry-all-errors -o wx.tar.bz2 "https://github.com/wxWidgets/wxWidgets/releases/download/v${WX_VERSION}/wxWidgets-${WX_VERSION}.tar.bz2"
           echo "${WX_SHA256}  wx.tar.bz2" | sha256sum -c -
           tar -xjf wx.tar.bz2
           cd "wxWidgets-${WX_VERSION}"
