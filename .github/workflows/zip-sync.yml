@@ -21,13 +21,36 @@ concurrency: #like the Linux build workflows: a newer push cancels the run it su
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   zip-afs-test:
+    name: ZIP AFS test (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: g++
+            container: gcc:15 #FreeFileSync 14.13 is built with -std=c++26
+            cxx: g++
+            stdlib: ''
+          - name: clang + libc++ #the compiler and C++ library of the macOS and Windows ports
+            container: ''
+            cxx: clang++-20
+            stdlib: libc++
     runs-on: ubuntu-24.04
-    container: gcc:15 #FreeFileSync 14.13 is built with -std=c++26
+    container: ${{ matrix.container }} #entries without a container run directly on the runner
+    env:
+      CXX: ${{ matrix.cxx }}
+      STDLIB: ${{ matrix.stdlib }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install dependencies
+      - name: Install dependencies (gcc container)
+        if: matrix.container != ''
         run: apt-get update && apt-get install -y --no-install-recommends zlib1g-dev libglib2.0-dev pkg-config zip python3
+      - name: Install dependencies (runner)
+        if: matrix.container == ''
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-20 libc++-20-dev libc++abi-20-dev zlib1g-dev libglib2.0-dev pkg-config zip python3
       - name: Build and run ZIP tests
         run: bash Tests/zip_afs/run.sh

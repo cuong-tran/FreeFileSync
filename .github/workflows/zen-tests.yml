@@ -25,21 +25,36 @@ permissions:
 
 jobs:
   zen-tests:
-    name: zen tests (${{ matrix.platform }})
+    name: zen tests (${{ matrix.name }})
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: ubuntu
+          - name: ubuntu, g++
+            platform: ubuntu
             runner: ubuntu-24.04
             container: gcc:15 #FreeFileSync 14.13 is built with -std=c++26
+            cxx: g++
+            stdlib: ''
+          - name: ubuntu, clang + libc++ #the compiler and C++ library of the macOS and Windows ports
+            platform: ubuntu
+            runner: ubuntu-24.04
+            container: ''
+            cxx: clang++-20
+            stdlib: libc++
     runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container }} #entries without a container run directly on the runner
     timeout-minutes: 30
+    env:
+      CXX: ${{ matrix.cxx }}
+      STDLIB: ${{ matrix.stdlib }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install dependencies
-        if: matrix.platform == 'ubuntu'
+      - name: Install dependencies (gcc container)
+        if: matrix.platform == 'ubuntu' && matrix.container != ''
         run: apt-get update && apt-get install -y --no-install-recommends libglib2.0-dev pkg-config
+      - name: Install dependencies (runner)
+        if: matrix.platform == 'ubuntu' && matrix.container == ''
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-20 libc++-20-dev libc++abi-20-dev libglib2.0-dev pkg-config
       - name: Build and run zen tests
         run: bash Tests/zen/run.sh
