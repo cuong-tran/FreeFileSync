@@ -14,6 +14,12 @@ Entries are grouped by the upstream release they were made against.
 - Expanded the Linux build instructions in `CONTRIBUTING.md`: Debian/Ubuntu packages, building libssh2 from a development commit and wxWidgets 3.3 with `--disable-exceptions` from source with the `Bugs.txt` patches, building FreeFileSync and RealTimeSync (with the glib 2.76 API cap needed on glib 2.78 and later), and choosing a compiler through `CXX` in the environment.
 - Corrected the build requirements in `CLAUDE.md`: 14.13 builds with `-std=c++26` (GCC 14 or newer), wxWidgets 3.3 and a development libssh2.
 
+## FreeFileSync 14.9
+
+- Added a GitHub Actions workflow (`.github/workflows/build-arm64.yml`) that builds FreeFileSync and RealTimeSync for Linux ARM64 on every push and pull request to `main` and `dev`, in an Ubuntu 26.04 container on a native arm64 runner. It builds wxWidgets 3.3.4 with the `wxColorHook` patch from `Bugs.txt` and `--disable-exceptions` (`.github/scripts/build-wxwidgets.sh`, cached) and an unpatched libssh2 from a pinned development commit, and packages the result as a `.deb` that installs `Bin/` (with the bundled libssh2), `Resources/` and launchers under `/opt/FreeFileSync`, plus a portable `tar.gz`.
+- `libcurl/curl_wrap.cpp` builds against libcurl older than 8.11.1 (checked down to 8.5): `LIBCURL_VERSION_NUM` checks guard `CURLE_TOO_LARGE` (8.6.0), `CURLE_ECH_REQUIRED` (8.8.0) and `CURLE_OBSOLETE34`/`41` (8.11.1, with the older names used before that).
+- `afs/sftp.cpp` falls back to libssh2's value of 30000 for `MAX_SFTP_READ_SIZE` and `MAX_SFTP_OUTGOING_SIZE` when stock libssh2 headers lack them. A libssh2 patched as described in `Bugs.txt` still uses its own definitions.
+
 ## FreeFileSync 14.8
 
 - Added `.github/workflows/linux-multiarch-build.yml`, a manually run Linux build of FreeFileSync for a chosen architecture that builds libssh2, libcurl and wxWidgets from source and uploads the binary as a workflow artifact.
