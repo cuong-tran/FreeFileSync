@@ -9,7 +9,8 @@
 # and OpenSSL of Ubuntu 26.04 and against a libssh2 built here, and may not start on other systems.
 #
 # Library setup follows Bugs.txt: wxWidgets is built from source with the settings.h color hook
-# that wx+/darkmode.cpp needs and without exception handling (application.cpp has an #error for that).
+# that wx+/darkmode.cpp uses for full dark mode support (without it the makefiles build a fallback
+# and warn) and without exception handling (application.cpp has an #error for that).
 # libssh2 is built from a pinned development commit ("1.11.2_DEV", which libssh2/libssh2_wrap.h needs for
 # LIBSSH2_ERROR_STORE_OVERFLOW) with the MAX_SFTP_* constants that afs/sftp.cpp expects added to libssh2_sftp.h.
 # The other Bugs.txt patches only change runtime behavior and are not applied.

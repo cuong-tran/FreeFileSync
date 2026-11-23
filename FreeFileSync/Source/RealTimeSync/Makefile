@@ -23,6 +23,14 @@ CXXFLAGS += $(shell pkg-config --cflags gtk+-3.0)
 #treat as system headers so that warnings are hidden:
 CXXFLAGS += -isystem/usr/include/gtk-3.0
 
+#wxWidgets without the wxColorHook patch from Bugs.txt (e.g. stock release or distro packages): let wx+/darkmode.cpp declare the hook itself
+#(YES/NO, or empty if the preprocessor run itself fails => leave it to the real compile to report the error)
+haveWxColorHook := $(shell if wxSettings=$$($(CXX) $(CXXFLAGS) -E -x c++ -include wx/settings.h /dev/null 2>/dev/null); then grep -q refGlobalColorHook <<< "$$wxSettings" && echo YES || echo NO; fi)
+ifeq ($(haveWxColorHook),NO)
+    $(warning wxWidgets lacks the wxColorHook patch from Bugs.txt => building without the enhanced dark mode text contrast)
+    CXXFLAGS += -DZEN_WX_NO_COLOR_HOOK
+endif
+
 cppFiles :=
 cppFiles += application.cpp
 cppFiles += config.cpp
@@ -73,6 +81,18 @@ all: ../../Build/Bin/$(exeName)
 $(tmpPath)/ffs/src/rts/%.o : %
 	mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+#recompile wx+/darkmode.cpp when the wxColorHook check above changes its result (e.g. after switching between a patched and a stock wxWidgets):
+#make doesn't track compiler flags, so keep the result in a stamp file that is rewritten only when the result changes
+wxColorHookStamp := $(tmpPath)/wxColorHook.stamp
+
+$(filter %/wx+/darkmode.cpp.o,$(objFiles)): $(wxColorHookStamp)
+
+$(wxColorHookStamp): FORCE
+	mkdir -p $(dir $@)
+	echo '$(haveWxColorHook)' | cmp -s - $@ || echo '$(haveWxColorHook)' > $@
+
+.PHONY: FORCE
 
 clean:
 	rm -rf $(tmpPath)
