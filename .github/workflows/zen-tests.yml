@@ -1,0 +1,45 @@
+name: zen tests
+
+#builds the zen platform layer (zen/*.cpp) with the unit tests in Tests/zen and runs them
+#matrix with one entry per platform: macOS and Windows runners get their own entries once zen builds there (see docs/PORTING_PLAN.md)
+on:
+  push:
+    branches: [dev, main] #other branches: through their pull request (or run by hand), so a PR push doesn't test the same commit twice
+    paths:
+      - 'zen/**'
+      - 'Tests/zen/**'
+      - '.github/workflows/zen-tests.yml'
+  pull_request:
+    paths:
+      - 'zen/**'
+      - 'Tests/zen/**'
+      - '.github/workflows/zen-tests.yml'
+  workflow_dispatch:
+
+concurrency: #like the other workflows: a newer push cancels the run it supersedes
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  zen-tests:
+    name: zen tests (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu
+            runner: ubuntu-24.04
+            container: gcc:15 #FreeFileSync 14.13 is built with -std=c++26
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }} #entries without a container run directly on the runner
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        if: matrix.platform == 'ubuntu'
+        run: apt-get update && apt-get install -y --no-install-recommends libglib2.0-dev pkg-config
+      - name: Build and run zen tests
+        run: bash Tests/zen/run.sh
