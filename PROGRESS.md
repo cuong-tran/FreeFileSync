@@ -7,7 +7,7 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | Milestone | Step | State | Commits | Review |
 |---|---|---|---|---|
 | M1 Foundation | Plan and architecture | done | | n/a (docs) |
-| M1 Foundation | 1. Platform macros, `Tests/zen` | done, review fixes in progress | `d1e9037^..128099a` | 8 findings, see below |
+| M1 Foundation | 1. Platform macros, `Tests/zen` | done | `d1e9037^..128099a`, fixes `584a353^..90c338a` | 8 findings: 7 fixed, 1 kept |
 | M1 Foundation | 2. Clang + libc++ on Linux | in progress | | |
 | M1 Foundation | 3. macOS dependency builds in CI | | | |
 | M2 Sentry | | | | |
@@ -51,11 +51,11 @@ Marked `KNOWN_ISSUE` in `Tests/zen`, not fixed (upstream code):
 
 | # | Finding | Severity | Outcome |
 |---|---|---|---|
-| 1 | `Tests/zen/run.sh` drops the caller's `CXXFLAGS` and has no glib 2.76 cap; fails to compile with glib 2.78+ | important | sent for fixing |
-| 2 | `Tests/zen/run.sh` can miss a failed compile job and link stale objects | important | sent for fixing |
-| 3 | Running `zen_test` directly uses the real recycle bin (sandbox only in `run.sh`) | important | sent for fixing |
-| 4 | `test_paths.cpp` dereferences an empty optional when `HOME` is unset | important | sent for fixing |
-| 5 | `zen/build_info.h` `#error` on platforms other than Linux, macOS, Windows | important | kept on purpose; message to name the supported platforms |
-| 6 | Timeout test leaves a `sleep 10` process behind | nit | sent for fixing |
-| 7 | A `KNOWN_ISSUE` that no longer reproduces does not fail the run | nit | sent for fixing |
-| 8 | Test helpers lack the `//throw FileError` comment | nit | sent for fixing |
+| 1 | `Tests/zen/run.sh` drops the caller's `CXXFLAGS` and has no glib 2.76 cap; fails to compile with glib 2.78+ | important | fixed in `584a353` (also in `Tests/zip_afs/run.sh`) |
+| 2 | `Tests/zen/run.sh` can miss a failed compile job and link stale objects | important | fixed in `584a353` |
+| 3 | Running `zen_test` directly uses the real recycle bin (sandbox only in `run.sh`) | important | fixed in `50448c1`: those tests are skipped without `ZEN_TEST_SANDBOX` |
+| 4 | `test_paths.cpp` dereferences an empty optional when `HOME` is unset | important | fixed in `50448c1` |
+| 5 | `zen/build_info.h` `#error` on platforms other than Linux, macOS, Windows | important | no change needed: kept on purpose; the message now names the supported platforms (`90c338a`) |
+| 6 | Timeout test leaves a `sleep 10` process behind | nit | fixed in `c22d105` |
+| 7 | A `KNOWN_ISSUE` that no longer reproduces does not fail the run | nit | fixed in `50448c1` |
+| 8 | Test helpers lack the `//throw FileError` comment | nit | fixed in `c22d105` |
