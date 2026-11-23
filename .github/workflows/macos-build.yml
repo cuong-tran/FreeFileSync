@@ -86,20 +86,30 @@ jobs:
         shell: bash
     env:
       FFS_TARGET: macos-${{ matrix.arch }}
-      # Xcode's clang, from the newest Xcode on the runner image (decided from the toolchain report: it accepts C++26,
-      # its libc++ 20 has std::jthread, and only floating-point from_chars needs a fallback, so no C++ runtime has to
-      # ship with the app). The libraries are built with the compiler the apps will use; it is part of the cache key.
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      # Xcode's clang from the newest Xcode 26.x on the runner image, selected in the first step (decided from the
+      # toolchain report: it accepts C++26, its libc++ 20 has std::jthread, and only floating-point from_chars needs a
+      # fallback, so no C++ runtime has to ship with the app). The libraries are built with the compiler the apps will use;
+      # its version and SDK are part of the cache key.
       CC: clang
       CXX: clang++
     steps:
       - uses: actions/checkout@v4
 
+      - name: Select Xcode
+        run: |
+          xcode="$(ls -d /Applications/Xcode_26.*.app 2>/dev/null | sort -V | tail -n 1)"
+          if [ -z "$xcode" ]; then
+            echo "::error::no Xcode 26.x on this runner image; installed: $(ls -d /Applications/Xcode*.app | tr '\n' ' ')"
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
+          echo "using $xcode"
+
       # the build scripts need bash 4+ and GNU coreutils/flock (macOS has bash 3.2 and BSD tools)
       - name: Install build tools
         run: |
           brew install bash coreutils flock pkgconf
-          bash --version | head -n 1
+          bash --version | sed -n 1p
           echo "MACOSX_DEPLOYMENT_TARGET in common.sh: $(sed -nE 's/^FFS_MACOS_DEPLOYMENT_TARGET=([0-9.]+).*/\1/p' .github/build/common.sh)"
 
       - name: Identify the compiler
@@ -107,7 +117,7 @@ jobs:
         run: |
           xcodebuild -version
           clang++ --version
-          echo "id=$(clang++ --version | head -n 1 | tr -c 'A-Za-z0-9.\n' '-')-sdk$(xcrun --show-sdk-version)" >> "$GITHUB_OUTPUT"
+          echo "id=$(clang++ --version | sed -n 1p | tr -c 'A-Za-z0-9.\n' '-')-sdk$(xcrun --show-sdk-version)" >> "$GITHUB_OUTPUT"
 
       # restore and save are separate steps so the libraries are kept even when a later step fails
       - name: Restore libraries
@@ -136,7 +146,7 @@ jobs:
           target="$(sed -nE 's/^FFS_MACOS_DEPLOYMENT_TARGET=([0-9.]+).*/\1/p' .github/build/common.sh)"
           {
             echo "target: macos-${{ matrix.arch }}, deployment target $target"
-            echo "compiler: $(clang++ --version | head -n 1), SDK $(xcrun --show-sdk-version)"
+            echo "compiler: $(clang++ --version | sed -n 1p), SDK $(xcrun --show-sdk-version)"
             echo "installed (stamps):"
             ls "$prefix/.stamps" | sed 's/^/    /'
             echo "libraries:"
@@ -146,7 +156,8 @@ jobs:
           done
           for file in "$prefix"/lib/*.a; do
             archs="$(lipo -archs "$file")"
-            minos="$(otool -l "$file" | awk '/LC_BUILD_VERSION/ { found = 1 } found && $1 == "minos" { print $2; exit }')"
+            # awk reads all of otool's output: exiting early could kill otool with SIGPIPE, fatal under pipefail
+            minos="$(otool -l "$file" | awk '/LC_BUILD_VERSION/ { found = 1 } found && $1 == "minos" && !done { print $2; done = 1 }')"
             echo "    $(basename "$file"): $archs, minos $minos" >> manifest.txt
             [ "$archs" = "${{ matrix.arch }}" ] || { echo "::error::$file is built for $archs"; exit 1; }
             [ "$minos" = "$target" ] || { echo "::error::$file is built for macOS $minos, not $target"; exit 1; }

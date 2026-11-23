@@ -32,7 +32,7 @@ esac
 read -r -a CXXFLAGS_USER <<< "${CXXFLAGS:-}"
 read -r -a LDFLAGS_USER  <<< "${LDFLAGS:-}"
 
-echo "== build ($("$CXX" --version | head -n 1)${STDLIB:+, $STDLIB})"
+echo "== build ($("$CXX" --version | sed -n 1p)${STDLIB:+, $STDLIB})"
 #same language standard and warnings as FreeFileSync/Source/Makefile; zen/sys_error.cpp needs glib + gio (GError)
 # shellcheck disable=SC2046 # pkg-config output is meant to be split into words
 "$CXX" -std=c++26 -O1 -g -pthread -DNDEBUG -DWXINTL_NO_GETTEXT_MACRO -I"$ROOT" -I"$ROOT/zenXml" -include "zen/i18n.h" \

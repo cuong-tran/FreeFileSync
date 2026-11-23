@@ -112,7 +112,7 @@ int main() { std::shared_mutex m; m.lock_shared(); m.unlock_shared(); }'
         compilers+=("Homebrew LLVM|(not installed)|$SDK")
     fi
 
-    echo "macOS $(sw_vers -productVersion), SDK $(xcrun --show-sdk-version), Xcode $(xcodebuild -version 2>/dev/null | head -n 1)"
+    echo "macOS $(sw_vers -productVersion), SDK $(xcrun --show-sdk-version), Xcode $(xcodebuild -version 2>/dev/null | sed -n 1p)"
     echo "deployment target in common.sh: $DEPLOYMENT_TARGET"
     local entry name cxx std dt log file rest
     for entry in "${compilers[@]}"; do
@@ -123,7 +123,7 @@ int main() { std::shared_mutex m; m.lock_shared(); m.unlock_shared(); }'
         echo
         echo "== $name: $cxx (SDK $SDK)"
         [ -x "$cxx" ] || { echo "    not available"; continue; }
-        echo "    $("$cxx" --version | head -n 1)"
+        echo "    $("$cxx" --version | sed -n 1p)"
         echo "    libc++: $(echo '#include <version>' | "$cxx" -isysroot "$SDK" -std=c++2c -x c++ -dM -E - 2>/dev/null | awk '$2 == "_LIBCPP_VERSION" { print $3 }')"
         for std in c++26 c++2c; do
             if echo 'int main() {}' | "$cxx" -isysroot "$SDK" -std="$std" -x c++ -fsyntax-only - 2>/dev/null; then
@@ -168,7 +168,7 @@ port_todo() {
     std="$(std_flag "$cxx")"
     local flags=("$std" -isysroot "$SDK" -arch "$arch" -mmacosx-version-min="$DEPLOYMENT_TARGET" "${BASE_FLAGS[@]}")
     [ -n "$prefix" ] && flags+=(-I"$prefix/include")
-    echo "zen/*.cpp on macOS $arch: $("$cxx" --version | head -n 1), $std, deployment target $DEPLOYMENT_TARGET${prefix:+, libraries from $prefix}"
+    echo "zen/*.cpp on macOS $arch: $("$cxx" --version | sed -n 1p), $std, deployment target $DEPLOYMENT_TARGET${prefix:+, libraries from $prefix}"
     local ok=0 failed=0 out
     for file in "$ROOT"/zen/*.cpp; do
         out="$(check_file "$cxx" "zen/$(basename "$file")" "${flags[@]}")"

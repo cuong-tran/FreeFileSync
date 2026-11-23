@@ -59,7 +59,7 @@ read -r -a LDFLAGS_USER  <<< "${LDFLAGS:-}"
 
 ZEN_SOURCES=(file_access file_io file_traverser file_path resolve_path zstring dir_watcher recycler sys_info sys_version process_exec thread sys_error format_unit legacy_compiler)
 
-echo "== build ($("$CXX" --version | head -n 1)${STDLIB:+, $STDLIB})"
+echo "== build ($("$CXX" --version | sed -n 1p)${STDLIB:+, $STDLIB})"
 FAILED_LIST="$WORK/failed-compiles"
 : > "$FAILED_LIST"
 OBJECTS=()

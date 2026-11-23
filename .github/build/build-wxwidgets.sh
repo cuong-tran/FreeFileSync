@@ -54,5 +54,5 @@ else
 fi
 make -j "$JOBS"
 make install
-[ "$FFS_TARGET" = linux ] || verify_target_arch "$(find "$INSTALL_DIR/lib" -maxdepth 1 -name 'libwx_*core*.a' | head -n 1)"
+[ "$FFS_TARGET" = linux ] || verify_target_arch "$(find "$INSTALL_DIR/lib" -maxdepth 1 -name 'libwx_*core*.a' -print -quit)"
 mark_installed "$NAME"
