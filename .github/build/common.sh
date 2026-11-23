@@ -135,8 +135,8 @@ install_id() {
     sha256sum "$CALLER_SCRIPT" | cut -d' ' -f1 # the calling build-<lib>.sh, for its configure options
     sha256sum "$COMMON_SCRIPT" | cut -d' ' -f1 # this file, for the shared settings above
     # the compilers and flags the library is built with
-    echo "CC=${CC:-cc}: $("${CC:-cc}" --version 2>/dev/null | head -n 1)"
-    echo "CXX=${CXX:-c++}: $("${CXX:-c++}" --version 2>/dev/null | head -n 1)"
+    echo "CC=${CC:-cc}: $("${CC:-cc}" --version 2>/dev/null | sed -n 1p)"
+    echo "CXX=${CXX:-c++}: $("${CXX:-c++}" --version 2>/dev/null | sed -n 1p)"
     echo "CFLAGS=${CFLAGS:-} CXXFLAGS=${CXXFLAGS:-}"
     for dep in "$@"; do
         for stamp in "$STAMP_DIR/$dep"-*; do
@@ -206,8 +206,21 @@ verify_target_arch() {
         archs="$(lipo -archs "$file" 2>/dev/null)" || die "verify_target_arch: lipo cannot read $file"
         [ "$archs" = "$TARGET_ARCH" ] || die "$file is built for '$archs', not $TARGET_ARCH"
         # the minimum macOS version of the first object file (LC_BUILD_VERSION) must be the deployment target
-        minos="$(otool -l "$file" | awk '/LC_BUILD_VERSION/ { found = 1 } found && $1 == "minos" { print $2; exit }')"
+        # (awk reads all of otool's output: exiting early could kill otool with SIGPIPE, fatal under pipefail)
+        minos="$(otool -l "$file" | awk '/LC_BUILD_VERSION/ { found = 1 } found && $1 == "minos" && !done { print $2; done = 1 }')"
         [ "$minos" = "$MACOSX_DEPLOYMENT_TARGET" ] || die "$file is built for macOS ${minos:-?}, not $MACOSX_DEPLOYMENT_TARGET"
         log "$(basename "$file"): $archs, macOS $minos"
     done
+}
+
+# toolchain_suffix: the suffix the makefiles add to the binary and object folder names of a toolchain other than g++
+# with libstdc++ (see FreeFileSync/Source/Makefile): "-clang" for clang, "-<STDLIB>" for STDLIB=libc++, empty for the
+# default, e.g. FreeFileSync_x86_64-clang-libc++. Detected like the makefiles do, from the compiler's predefined macros
+# (captured first: "| grep -q" could kill the compiler with SIGPIPE, which pipefail turns into a wrong answer).
+toolchain_suffix() {
+    local macros suffix=""
+    macros="$("${CXX:-g++}" -dM -E -x c++ /dev/null 2>/dev/null || true)"
+    if grep -q __clang__ <<<"$macros"; then suffix="-clang"; fi
+    if [ -n "${STDLIB:-}" ]; then suffix="$suffix-$STDLIB"; fi
+    echo "$suffix"
 }

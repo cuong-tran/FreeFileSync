@@ -14,11 +14,16 @@ set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 
 ARCH="$(arch)"
+# binaries of a toolchain other than g++ + libstdc++ carry its suffix (build-free-file-sync.sh, the makefiles), and so
+# do the package file names; the default g++ build's names are unchanged
+TOOLCHAIN_SUFFIX="$(toolchain_suffix)"
+FFS_EXE="FreeFileSync_$ARCH$TOOLCHAIN_SUFFIX"
+RTS_EXE="RealTimeSync_$ARCH$TOOLCHAIN_SUFFIX"
 BIN_DIR="$REPO_ROOT/FreeFileSync/Build/Bin"
 RES_DIR="$REPO_ROOT/FreeFileSync/Build/Resources"
 # under the build work area: ignored by git, owned by these scripts, and a real path (BUILD_DIR is resolved)
 DIST_DIR="$BUILD_DIR/dist"
-for bin in "$BIN_DIR/FreeFileSync_$ARCH" "$BIN_DIR/RealTimeSync_$ARCH"; do
+for bin in "$BIN_DIR/$FFS_EXE" "$BIN_DIR/$RTS_EXE"; do
     [ -x "$bin" ] || die "$bin not found, run build-free-file-sync.sh first"
 done
 
@@ -36,7 +41,7 @@ stage="$DIST_DIR/FreeFileSync"
 mkdir -p "$stage/Bin"
 # same layout as upstream's Linux package: FreeFileSync looks for Resources next to the Bin folder of the
 # executable, and RealTimeSync starts batch jobs with "<install dir>/FreeFileSync" (getFreeFileSyncLauncherPath())
-cp -a "$BIN_DIR/FreeFileSync_$ARCH" "$BIN_DIR/RealTimeSync_$ARCH" "$stage/Bin/"
+cp -a "$BIN_DIR/$FFS_EXE" "$BIN_DIR/$RTS_EXE" "$stage/Bin/"
 cp -a "$RES_DIR" "$stage/"
 
 # bundle every library the binaries resolve from the prefix (ldd lists indirect dependencies too), under its soname
@@ -44,7 +49,7 @@ log "Bundling the libraries from $INSTALL_DIR/lib"
 while read -r soname path; do
     cp -L "$path" "$stage/Bin/$soname"
     echo "$soname <= $path"
-done < <(for bin in "$stage"/Bin/*_"$ARCH"; do ldd "$bin"; done |
+done < <(for bin in "$stage/Bin/$FFS_EXE" "$stage/Bin/$RTS_EXE"; do ldd "$bin"; done |
              awk -v prefix="$INSTALL_DIR/lib/" '$2 == "=>" && index($3, prefix) == 1 {print $1, $3}' | sort -u)
 
 # $ORIGIN for the libraries as well: a RUNPATH only applies to an object's own dependencies, so libcurl
@@ -64,14 +69,14 @@ for obj in "$stage"/Bin/*; do
     if grep 'not found' <<<"$deps"; then die "$obj has unresolved shared libraries"; fi
     if grep -F "$INSTALL_DIR/" <<<"$deps"; then die "$obj still loads libraries from $INSTALL_DIR"; fi
 done
-LD_LIBRARY_PATH='' ldd "$stage/Bin/FreeFileSync_$ARCH" | grep -F " => $stage/Bin/" ||
-    die "FreeFileSync_$ARCH does not load any bundled library"
+LD_LIBRARY_PATH='' ldd "$stage/Bin/$FFS_EXE" | grep -F " => $stage/Bin/" ||
+    die "$FFS_EXE does not load any bundled library"
 
-ln -s "Bin/FreeFileSync_$ARCH" "$stage/FreeFileSync"
-ln -s "Bin/RealTimeSync_$ARCH" "$stage/RealTimeSync"
+ln -s "Bin/$FFS_EXE" "$stage/FreeFileSync"
+ln -s "Bin/$RTS_EXE" "$stage/RealTimeSync"
 
 log "Creating the portable archive"
-tar -C "$DIST_DIR" -czf "$DIST_DIR/FreeFileSync_${ffsVersion}_Linux_$ARCH.tar.gz" FreeFileSync
+tar -C "$DIST_DIR" -czf "$DIST_DIR/FreeFileSync_${ffsVersion}_Linux_$ARCH$TOOLCHAIN_SUFFIX.tar.gz" FreeFileSync
 
 log "Creating the .deb"
 pkg="$WORK_DIR/deb"
@@ -116,6 +121,6 @@ Description: Folder comparison and synchronization (unofficial build)
 EOF
 cat "$pkg/DEBIAN/control"
 
-dpkg-deb --build --root-owner-group "$pkg" "$DIST_DIR/freefilesync_${debVersion}_$debArch.deb"
+dpkg-deb --build --root-owner-group "$pkg" "$DIST_DIR/freefilesync_${debVersion}_$debArch$TOOLCHAIN_SUFFIX.deb"
 rm -rf "$stage"
 ls -l "$DIST_DIR"
