@@ -83,7 +83,7 @@ libssh2 and libcurl are shared libraries inside the image, so the binaries run t
 
 ### Requirements
 
-- A g++ that accepts `-std=c++26`, which means GCC 14 or newer (GCC 14 is the oldest that takes the flag; whether all of 14.13 compiles with it is untested here). The makefiles also pass GCC-only warning flags such as `-Wlogical-op`.
+- A compiler that accepts `-std=c++26`: GCC 14 or newer (GCC 14 is the oldest that takes the flag), or clang 20 or newer (see [Building with clang and libc++](#building-with-clang-and-libc)). The makefiles detect the compiler from its predefined macros and pass GCC-only warning flags such as `-Wlogical-op` only to GCC.
 - `pkg-config` and the development packages for GTK 3, OpenSSL, libcurl, libidn2 and zlib. libselinux is optional: the makefile enables SELinux support when `pkg-config` finds it.
 - libssh2 built from a recent development commit, as below. The released 1.11.x versions that distributions package are not enough.
 - wxWidgets 3.3 built for GTK 3 with `--disable-exceptions`, as below, with `wx-config` on the `PATH`.
@@ -162,7 +162,7 @@ To use a compiler other than the default `g++`, set `CXX` in the environment the
 
 ### Building with clang and libc++
 
-The macOS and Windows ports are built with clang and LLVM's libc++, so the sources must also compile with them; on Linux this is checked with clang 20 (Ubuntu 24.04: `sudo apt-get install clang-20 libc++-20-dev libc++abi-20-dev`). The makefiles look at `$(CXX) --version`: for g++ they pass the GCC-only warning flags as before, for clang `-Wtautological-overlap-compare` instead, plus `-Wno-potentially-evaluated-expression`, `-Wno-unused-const-variable` and `-Wno-unused-lambda-capture` for three clang-only style warnings on valid upstream code (`typeid` operands evaluated on purpose, constants of features this edition doesn't compile in, captures of constants). `STDLIB=libc++` adds `-stdlib=libc++` to compiling and linking:
+The macOS and Windows ports are built with clang and LLVM's libc++, so the sources must also compile with them; on Linux this is checked with clang 20 (Ubuntu 24.04: `sudo apt-get install clang-20 libc++-20-dev libc++abi-20-dev`). The makefiles detect the compiler from its predefined macros (`$(CXX) -dM -E`): for GCC they pass the GCC-only warning flags as before, for clang `-Wtautological-overlap-compare` instead (neither set for an unknown compiler), plus `-Wno-potentially-evaluated-expression`, `-Wno-unused-const-variable` and `-Wno-unused-lambda-capture` for three clang-only style warnings on valid upstream code (`typeid` operands evaluated on purpose, constants of features this edition doesn't compile in, captures of constants). `STDLIB=libc++` adds `-stdlib=libc++` to compiling and linking. A toolchain other than g++ with libstdc++ gets its own binary and object folder names, e.g. `FreeFileSync_x86_64-clang-libc++` and `Build/Obj/FreeFileSync_x86_64-clang-libc++`, so one checkout can switch between toolchains without mixing objects or keeping a stale binary:
 
 ```bash
 export CXX=clang++-20
@@ -170,7 +170,7 @@ make -C FreeFileSync/Source -j"$(nproc)" STDLIB=libc++
 make -C FreeFileSync/Source/RealTimeSync -j"$(nproc)" STDLIB=libc++
 ```
 
-wxWidgets is C++, so it has to be built against the same C++ library: with the scripts in `.github/build`, `CC=clang-20 CXX=clang++-20 CXXFLAGS=-stdlib=libc++ LDFLAGS=-stdlib=libc++ .github/build/build-wxwidgets.sh`, then `CXX=clang++-20 STDLIB=libc++ .github/build/build-free-file-sync.sh` (use a separate `FFS_BUILD_DIR` if you also build with g++; OpenSSL, libssh2 and libcurl are C libraries and work with either). The `clang + libc++` job of the Linux build workflow does exactly this, links both apps, checks that they use libc++ and starts them under Xvfb. Both test scripts take the same `CXX` and `STDLIB` variables (`CXX=clang++-20 STDLIB=libc++ bash Tests/zen/run.sh`), and both test workflows run a clang + libc++ entry next to the g++ one.
+wxWidgets is C++, so it has to be built against the same C++ library: with the scripts in `.github/build`, `CC=clang-20 CXX=clang++-20 CXXFLAGS=-stdlib=libc++ LDFLAGS=-stdlib=libc++ .github/build/build-wxwidgets.sh`, then `CXX=clang++-20 STDLIB=libc++ .github/build/build-free-file-sync.sh` (use a separate `FFS_BUILD_DIR` if you also build with g++; OpenSSL, libssh2 and libcurl are C libraries and work with either). The `clang + libc++` job of the Linux build workflow does exactly this, links both apps, checks that they use libc++ and starts each one with `.github/build/check-app-starts.sh <binary> <title regex>` (needs `xvfb` and `xdotool`), which fails unless the main window shows up without an error popup or error output. Both test scripts take the same `CXX` and `STDLIB` variables (`CXX=clang++-20 STDLIB=libc++ bash Tests/zen/run.sh`), and both test workflows run a clang + libc++ entry next to the g++ one.
 
 When something compiles with libstdc++ but not with libc++, the usual causes are a missing `#include` that libstdc++ happened to provide transitively, and integer types that differ between the libraries (`std::chrono` durations use `long long` in libc++ and `long` in libstdc++). Fix the source in standard form; for a library feature libc++ lacks, add a fallback to `zen/legacy_compiler.h` keyed on its `__cpp_lib_*` macro rather than on the compiler name.
 

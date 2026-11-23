@@ -6,7 +6,7 @@ The scripts here download OpenSSL, libssh2, libcurl and wxWidgets, apply the `Bu
 
 ## Usage
 
-Install a C++26 compiler (g++ 14 or newer) and the system packages they still use. On Debian or Ubuntu:
+Install a C++26 compiler (g++ 14 or newer; clang 20 or newer also works, see [Building with clang and libc++](../../CONTRIBUTING.md#building-with-clang-and-libc)) and the system packages they still use. On Debian or Ubuntu:
 
 ```bash
 sudo apt-get install build-essential g++-14 cmake pkg-config perl patch curl xz-utils bzip2 libgtk-3-dev libxtst-dev libidn2-dev zlib1g-dev
@@ -57,9 +57,12 @@ When an upstream release changes the library versions in `Bugs.txt`, update the 
 
 ## CI
 
-The [Linux build workflow](../workflows/linux-build.yml) runs these scripts in two jobs:
+The [Linux build workflow](../workflows/linux-build.yml) runs these scripts in three jobs:
 
 - **Packages**: x86_64 and aarch64 on native Ubuntu 24.04 runners with g++ 14, against all the patched libraries, then `package.sh`. The `.deb` and tar.gz of each architecture are uploaded as workflow artifacts for 30 days.
 - **Stock libraries**: an Ubuntu 26.04 container that builds libssh2 and wxWidgets with `FFS_UNPATCHED=1` and takes OpenSSL and libcurl from the distribution (`FFS_SYSTEM_LIBS="openssl libcurl"`). It only compiles, to keep the fallbacks for unpatched libraries working: the `wxColorHook` declaration in `wx+/darkmode.cpp`, the `MAX_SFTP_*` values in `afs/sftp.cpp` and the libcurl version checks in `libcurl/curl_wrap.cpp`.
+- **clang + libc++**: Ubuntu 24.04 with clang 20 and `STDLIB=libc++`, against the patched libssh2 and a wxWidgets built with `CXXFLAGS=LDFLAGS=-stdlib=libc++` (cached under a key that includes the compiler and those flags), and the distribution's OpenSSL and libcurl. It links both apps as `<app>_x86_64-clang-libc++`, checks that they use libc++ and runs `check-app-starts.sh` on each: under Xvfb with an empty `HOME`, the main window must appear, no window may be titled like an error or warning, and stderr must not report an error.
+
+With `CXX` set to clang or `STDLIB` set, `build-free-file-sync.sh` uses the same name suffix as the makefiles (`-clang`, `-libc++`) for the binaries and object folders. Use a separate `FFS_BUILD_DIR` per toolchain anyway: wxWidgets in `.build/deps` is built for one C++ library.
 
 These scripts are the only place the CI pins library versions. The root `Dockerfile` has its own copy of the libssh2 commit and the libcurl and wxWidgets versions, so update it as well when a new release changes them.
