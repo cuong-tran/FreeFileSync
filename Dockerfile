@@ -1,84 +1,111 @@
-# syntax=docker/dockerfile:1.4
+# syntax=docker/dockerfile:1
 
-FROM ubuntu:24.04
+# Linux build environment for FreeFileSync and RealTimeSync.
+# Builds the library versions named in Bugs.txt from source; wxWidgets gets the wx/settings.h color hook patch
+# FreeFileSync needs to compile. The other Bugs.txt patches only fix runtime behavior and are not applied.
+#
+# Build the image once, then compile the mounted source tree (binaries land in FreeFileSync/Build/):
+#   docker build -t freefilesync-build .
+#   docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/src" freefilesync-build
+#   docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/src" freefilesync-build make -C FreeFileSync/Source BUILD=debug -j"$(nproc)"
+#
+# The makefiles keep object files in /tmp. Add "-v freefilesync-objs:/tmp" to keep them between runs for incremental builds.
+#
+# libssh2 and libcurl are installed as shared libraries under /usr/local, so the binaries run inside this image.
+
+FROM ubuntu:26.04
+
+ARG LIBSSH2_VERSION=1.11.1
+ARG CURL_VERSION=8.21.0
+ARG WX_VERSION=3.3.4
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# --- Системные зависимости ---
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
 	build-essential \
-	wget \
-	unzip \
 	pkg-config \
+	ca-certificates \
+	wget \
+	bzip2 \
+	patch \
 	libgtk-3-dev \
 	libssl-dev \
+	zlib1g-dev \
 	libpsl-dev \
 	libidn2-dev \
-	clang-20 \
-	g++-14 \
+	libselinux1-dev \
 	&& rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
 # --- libssh2 ---
-RUN wget -q https://libssh2.org/download/libssh2-1.11.1.tar.gz \
-	&& tar xf libssh2-1.11.1.tar.gz \
-	&& cd libssh2-1.11.1 \
-	&& mkdir build && cd build \
-	&& ../configure --quiet \
-	&& make -j$(nproc) \
+RUN wget -q https://libssh2.org/download/libssh2-${LIBSSH2_VERSION}.tar.gz \
+	&& tar xf libssh2-${LIBSSH2_VERSION}.tar.gz \
+	&& cd libssh2-${LIBSSH2_VERSION} \
+	&& ./configure --quiet --with-crypto=openssl --disable-static --disable-examples-build \
+	&& make -j"$(nproc)" \
 	&& make install \
 	&& ldconfig \
-	&& cd /build && rm -rf libssh2-1.11.1*
+	&& cd /build && rm -rf libssh2-${LIBSSH2_VERSION}*
 
 # --- libcurl ---
-RUN wget -q https://curl.se/download/curl-8.15.0.tar.gz \
-	&& tar xf curl-8.15.0.tar.gz \
-	&& cd curl-8.15.0 \
-	&& mkdir build && cd build \
-	&& ../configure --quiet --with-openssl --with-libssh2 --enable-versioned-symbols \
-	&& make -j$(nproc) \
+RUN wget -q https://curl.se/download/curl-${CURL_VERSION}.tar.gz \
+	&& tar xf curl-${CURL_VERSION}.tar.gz \
+	&& cd curl-${CURL_VERSION} \
+	&& ./configure --quiet --with-openssl --with-libssh2 --disable-static --disable-manual --disable-docs --enable-versioned-symbols \
+	&& make -j"$(nproc)" \
 	&& make install \
 	&& ldconfig \
-	&& cd /build && rm -rf curl-8.15.0*
+	&& cd /build && rm -rf curl-${CURL_VERSION}*
 
 # --- wxWidgets ---
-RUN <<'EOF' sh
-	wget -q https://github.com/wxWidgets/wxWidgets/releases/download/v3.3.2/wxWidgets-3.3.2.tar.bz2 \
-	&& tar xf wxWidgets-3.3.2.tar.bz2 \
-	&& cd wxWidgets-3.3.2 \
-	&& mkdir gtk-build && cd gtk-build \
-	&& ../configure --quiet --disable-shared \
-	&& make -j$(nproc) \
-	&& make install \
-	&& ldconfig \
-	&& cd /build && rm -rf wxWidgets-3.3.2* \
-	&& cp /usr/local/include/wx-3.3/wx/settings.h /usr/local/include/wx-3.3/wx/settings.h.bak \
-	&& patch /usr/local/include/wx-3.3/wx/settings.h << END_PATCH
-246a247,257
-> struct wxColorHook
-> {
->     virtual ~wxColorHook() {}
->     virtual wxColor getColor(wxSystemColour index) const = 0;
-> };
-> WXDLLIMPEXP_CORE inline std::unique_ptr<wxColorHook>& refGlobalColorHook()
-> {
->     static std::unique_ptr<wxColorHook> globalColorHook;
->     return globalColorHook;
-> }
-> 
-258c269
-<     static int GetMetric(wxSystemMetric index, const wxWindow* win = nullptr);
----
->     //static int GetMetric(wxSystemMetric index, const wxWindow* win = nullptr);
-259a271,278
-> 
->     static wxColour GetColour(wxSystemColour index)
->     {
->         if (refGlobalColorHook())
->             return refGlobalColorHook()->getColor(index);
-> 
->         return wxSystemSettingsNative::GetColour(index);
->     }
-END_PATCH
+# Bugs.txt: support changing system colors for proper dark mode support
+COPY <<'EOF' /build/wx-settings.patch
+--- a/include/wx/settings.h
++++ b/include/wx/settings.h
+@@ -249,9 +249,28 @@
+ // include the declaration of the real platform-dependent class
+ // ----------------------------------------------------------------------------
+
++struct wxColorHook
++{
++    virtual ~wxColorHook() {}
++    virtual wxColor getColor(wxSystemColour index) const = 0;
++};
++WXDLLIMPEXP_CORE inline std::unique_ptr<wxColorHook>& refGlobalColorHook()
++{
++    static std::unique_ptr<wxColorHook> globalColorHook;
++    return globalColorHook;
++}
++
+ class WXDLLIMPEXP_CORE wxSystemSettings : public wxSystemSettingsNative
+ {
+ public:
++    static wxColour GetColour(wxSystemColour index)
++    {
++        if (refGlobalColorHook())
++            return refGlobalColorHook()->getColor(index);
++
++        return wxSystemSettingsNative::GetColour(index);
++    }
++
+ #ifdef __WXUNIVERSAL__
+     // in wxUniversal we want to use the theme standard colours instead of the
+     // system ones, otherwise wxSystemSettings is just the same as
 EOF
+
+# FreeFileSync refuses to compile against a wxWidgets with C++ exception handling enabled (see application.cpp),
+# so build it with --disable-exceptions.
+RUN wget -q https://github.com/wxWidgets/wxWidgets/releases/download/v${WX_VERSION}/wxWidgets-${WX_VERSION}.tar.bz2 \
+	&& tar xf wxWidgets-${WX_VERSION}.tar.bz2 \
+	&& cd wxWidgets-${WX_VERSION} \
+	&& patch -p1 < /build/wx-settings.patch \
+	&& mkdir gtk-build && cd gtk-build \
+	&& ../configure --quiet --with-gtk=3 --disable-shared --disable-exceptions \
+	&& make -j"$(nproc)" \
+	&& make install \
+	&& cd /build && rm -rf wxWidgets-${WX_VERSION}* wx-settings.patch
+
+WORKDIR /src
+
+CMD ["sh", "-c", "make -C FreeFileSync/Source -j\"$(nproc)\" && make -C FreeFileSync/Source/RealTimeSync -j\"$(nproc)\""]
