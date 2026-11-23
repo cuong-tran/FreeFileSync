@@ -61,13 +61,23 @@ RUN wget -q https://curl.se/download/curl-${CURL_VERSION}.tar.gz \
 
 # --- wxWidgets ---
 # Bugs.txt: support changing system colors for proper dark mode support
+# (plus the <memory> include the patched header needs when wxWidgets itself is compiled)
 COPY <<'EOF' /build/wx-settings.patch
 --- a/include/wx/settings.h
 +++ b/include/wx/settings.h
-@@ -249,9 +249,28 @@
+@@ -12,6 +12,7 @@
+ 
+ #include "wx/colour.h"
+ #include "wx/font.h"
++#include <memory>
+ 
+ class WXDLLIMPEXP_FWD_CORE wxWindow;
+ 
+@@ -248,10 +249,29 @@
+ // ----------------------------------------------------------------------------
  // include the declaration of the real platform-dependent class
  // ----------------------------------------------------------------------------
-
++
 +struct wxColorHook
 +{
 +    virtual ~wxColorHook() {}
@@ -78,7 +88,7 @@ COPY <<'EOF' /build/wx-settings.patch
 +    static std::unique_ptr<wxColorHook> globalColorHook;
 +    return globalColorHook;
 +}
-+
+ 
  class WXDLLIMPEXP_CORE wxSystemSettings : public wxSystemSettingsNative
  {
  public:
