@@ -5,6 +5,17 @@
 // *****************************************************************************
 #pragma once
 
+//target platform: exactly one of ZEN_LINUX, ZEN_MAC, ZEN_WIN (test these, not the compiler's macros)
+#if defined __linux__
+    #define ZEN_LINUX
+#elif defined __APPLE__
+    #define ZEN_MAC
+#elif defined _WIN32
+    #define ZEN_WIN
+#else
+    #error unsupported platform
+#endif
+
 
 namespace zen
 {
