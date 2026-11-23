@@ -39,7 +39,7 @@ Drop `--dry-run` to publish. It needs an authenticated `gh` CLI, skips releases 
 | --- | --- |
 | `FreeFileSync/Source/` | The FreeFileSync application: entry point, config, logging, localization |
 | `FreeFileSync/Source/base/` | Core engine: folder comparison, sync algorithm, database files, filters, versioning, parallel scanning |
-| `FreeFileSync/Source/afs/` | Abstract file system with local, FTP, SFTP and Google Drive back ends |
+| `FreeFileSync/Source/afs/` | Abstract file system with local, FTP, SFTP, Google Drive and read-only ZIP archive back ends |
 | `FreeFileSync/Source/ui/` | wxWidgets GUI: main dialog, grids, config dialogs, progress and batch handling |
 | `FreeFileSync/Source/RealTimeSync/` | RealTimeSync, the companion tool that watches folders and triggers syncs |
 | `FreeFileSync/Build/Resources/` | Runtime resources: icons, languages, sounds, GTK styles, CA certificates |
@@ -53,7 +53,7 @@ Drop `--dry-run` to publish. It needs an authenticated `gh` CLI, skips releases 
 
 ## Building
 
-The source ships Linux makefiles only (`FreeFileSync/Source/Makefile` and `FreeFileSync/Source/RealTimeSync/Makefile`); there are no Windows or macOS project files and no test suite. Upstream recommends building against current library versions with the patches from `Bugs.txt` applied, and that file names the versions it was written for (for 14.13: wxWidgets 3.3.4, libcurl 8.21.0, a libssh2 1.11.2 development snapshot).
+The source ships Linux makefiles only (`FreeFileSync/Source/Makefile` and `FreeFileSync/Source/RealTimeSync/Makefile`); there are no Windows or macOS project files. The only automated test is the standalone ZIP test described at the end of this section. Upstream recommends building against current library versions with the patches from `Bugs.txt` applied, and that file names the versions it was written for (for 14.13: wxWidgets 3.3.4, libcurl 8.21.0, a libssh2 1.11.2 development snapshot).
 
 ### Build with the scripts in .github/build
 
@@ -157,3 +157,13 @@ The binaries are written to `FreeFileSync/Build/Bin/FreeFileSync_<arch>` and `Fr
 For a debug build of FreeFileSync, run `make -C FreeFileSync/Source BUILD=debug -j"$(nproc)"` (or `make -C FreeFileSync/Source debug`). It compiles with `-g3 -O0` (keeping `NDEBUG`, so `assert()` stays off) into `FreeFileSync/Build/Debug/Bin/`, keeps its objects in `FreeFileSync/Build/Debug/Obj/<exe>`, and copies `Build/Resources` next to it on every run; `make clean BUILD=debug` removes only the debug build. Objects are compiled with `-MMD -MP`, so editing a header rebuilds the files that include it. RealTimeSync's makefile has no debug mode.
 
 To use a compiler other than the default `g++`, set `CXX` in the environment the same way, for example `export CXX=g++-14` before running make. Don't pass it as a make argument (`make CXX=g++-14`): a command-line variable overrides the makefiles' `CXX += -pthread`.
+
+### ZIP archive test
+
+`Tests/zip_afs/run.sh` builds the read-only ZIP file system (`afs/zip.cpp`) with the zen sources it needs, without wxWidgets, and checks it against archives it generates with Python's `zipfile` and Info-ZIP `zip`: listing, sizes, timestamps and content, the `zip:<archive>|<folder>` syntax, read-only behavior, a missing archive, a corrupted entry and an archive with more than 65535 entries. It needs a C++26 g++, the zlib and glib dev packages, `python3` and `zip`; set `CXX` to pick the compiler:
+
+```bash
+bash Tests/zip_afs/run.sh
+```
+
+The `ZIP AFS test` workflow runs it in a `gcc:15` container on pull requests and pushes to `dev` and `main` that touch `afs/`, `zen/` or the test.
