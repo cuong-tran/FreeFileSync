@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1
 
 # Linux build environment for FreeFileSync and RealTimeSync.
-# Builds the library versions named in Bugs.txt from source; wxWidgets gets the wx/settings.h color hook patch
-# FreeFileSync needs to compile. The other Bugs.txt patches only fix runtime behavior and are not applied.
+# Builds libcurl and wxWidgets at the versions named in Bugs.txt and the latest libssh2 release from source.
+# wxWidgets gets the wx/settings.h color hook patch FreeFileSync needs to compile. libssh2 is not patched: afs/sftp.cpp
+# falls back to libssh2's MAX_SFTP_* values. The other Bugs.txt patches only fix runtime behavior and are not applied.
 #
 # Build the image once, then compile the mounted source tree (binaries land in FreeFileSync/Build/):
 #   docker build -t freefilesync-build .
