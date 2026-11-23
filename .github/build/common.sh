@@ -37,11 +37,18 @@ declare -A KNOWN_SHA256=(
 log() { printf '\n==> %s\n' "$*" >&2; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
+# check_name <name-version>: versions and commits come from arguments and environment variables and
+# end up in file paths (rm -rf, tar, stamps), so allow only <letters/digits>-<letters/digits/dots/underscores>
+check_name() {
+    [[ "$1" =~ ^[A-Za-z0-9]+-[A-Za-z0-9._]+$ ]] || die "invalid library version or commit in '$1'"
+}
+
 # is_installed <name-version> [dependency name...]: true if this version was installed with the
 # current patch and build script, and against the dependency versions installed now (e.g.
 # "openssl" matches the stamp of whichever openssl-<version> was built), so changing any of
 # them rebuilds it.
 is_installed() {
+    check_name "$1"
     [ -f "$STAMP_DIR/$1" ] && [ "$(cat "$STAMP_DIR/$1")" = "$(install_id "$@")" ]
 }
 
@@ -69,6 +76,7 @@ install_id() {
 # and applies patches/<name-version>.patch (the fixes listed in Bugs.txt).
 fetch_source() {
     local name="$1" file="$2" url="$3" patchMode="${4:-}"
+    check_name "$name"
     local archive="$ARCHIVE_DIR/$file"
     local patch="$PATCH_DIR/$name.patch"
 
