@@ -5,18 +5,25 @@ SHELL := /bin/bash
 #-o pipefail  consider all individual calls when using pipes
 #-c  execute the subsequent command string passed by Make
 CXX ?= g++
-exeName := FreeFileSync_$(shell arch)
+
+#compiler family, detected positively from the compiler's predefined macros: "gcc", "clang" or empty (unknown: no family-specific flags)
+compilerMacros := $(shell $(CXX) -dM -E -x c++ /dev/null 2>/dev/null)
+compilerFamily := $(if $(findstring __clang__,$(compilerMacros)),clang,$(if $(findstring __GNUC__,$(compilerMacros)),gcc))
+
+#toolchains other than the default g++ + libstdc++ get their own binary name and object folder (exeName is part of both),
+#so switching a checkout between toolchains never links objects of another C++ library or keeps another toolchain's binary
+toolchainSuffix := $(if $(filter clang,$(compilerFamily)),-clang)$(if $(STDLIB),-$(STDLIB))
+exeName := FreeFileSync_$(shell arch)$(toolchainSuffix)
 
 CXXFLAGS += -std=c++26 -pipe -I../.. -I../../zenXml -include "zen/i18n.h" \
            -DWXINTL_NO_GETTEXT_MACRO -DwxNO_IMPLICIT_WXSTRING_ENCODING -DwxNO_IMPLICIT_WXSTRING_CONV_TO_PTR \
            -Wall -Wfatal-errors -Wshadow -Wmissing-include-dirs -Wswitch-enum -Wcast-align -Wnon-virtual-dtor -Wimplicit-fallthrough -Wundef -Wpedantic -Wredundant-decls \
            -Wno-unused-function -Wno-deprecated-enum-enum-conversion \
            -O3 -DNDEBUG
-#compiler family from "$(CXX) --version": GCC-only warning flags for g++, their closest clang counterparts otherwise
-compilerFamily := $(if $(findstring clang,$(shell $(CXX) --version 2>/dev/null)),clang,gcc)
+#GCC-only warning flags for g++, their closest clang counterparts for clang
 ifeq ($(compilerFamily),gcc)
 CXXFLAGS += -Wno-maybe-uninitialized -Wno-free-nonheap-object -Wno-restrict -Wduplicated-cond -Wlogical-op
-else
+else ifeq ($(compilerFamily),clang)
 #-Wlogical-op, -Wduplicated-cond: clang has no direct equivalent; -Wtautological-overlap-compare catches contradictory or redundant comparisons
 #-Wno-potentially-evaluated-expression: "typeid(path.afsDevice.ref())" evaluates its operand on purpose, to get the dynamic type
 #-Wno-unused-const-variable: constants kept for features this edition doesn't compile in (e.g. the EMAIL_* limits in log_file.cpp)

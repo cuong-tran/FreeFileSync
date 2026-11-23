@@ -44,8 +44,13 @@ OBJ_DIR="$BUILD_DIR/obj/$BUILD_MODE"
 BIN_DIR="$REPO_ROOT/FreeFileSync/Build/Bin"
 FFS_BIN_DIR="$BIN_DIR"
 [ "$BUILD_MODE" = debug ] && FFS_BIN_DIR="$REPO_ROOT/FreeFileSync/Build/Debug/Bin"
-rm -f "$FFS_BIN_DIR/FreeFileSync_$ARCH" "$BIN_DIR/RealTimeSync_$ARCH"
+# Toolchains other than g++ + libstdc++ get a suffix on the binary and object folder names, derived like the makefiles do
+# (e.g. FreeFileSync_x86_64-clang-libc++ for CXX=clang++-20 STDLIB=libc++); empty for the default g++ build.
+TOOLCHAIN_SUFFIX=""
+if "${CXX:-g++}" -dM -E -x c++ /dev/null 2>/dev/null | grep -q __clang__; then TOOLCHAIN_SUFFIX="-clang"; fi
+if [ -n "${STDLIB:-}" ]; then TOOLCHAIN_SUFFIX="$TOOLCHAIN_SUFFIX-$STDLIB"; fi
+rm -f "$FFS_BIN_DIR/FreeFileSync_$ARCH$TOOLCHAIN_SUFFIX" "$BIN_DIR/RealTimeSync_$ARCH$TOOLCHAIN_SUFFIX"
 
 # The makefiles append to CXXFLAGS/LDFLAGS from the environment, which carries the rpath to $INSTALL_DIR/lib.
-make -C "$REPO_ROOT/FreeFileSync/Source" -j "$JOBS" objPath="$OBJ_DIR/FreeFileSync_$ARCH"
-make -C "$REPO_ROOT/FreeFileSync/Source/RealTimeSync" -j "$JOBS" objPath="$OBJ_DIR/RealTimeSync_$ARCH"
+make -C "$REPO_ROOT/FreeFileSync/Source" -j "$JOBS" objPath="$OBJ_DIR/FreeFileSync_$ARCH$TOOLCHAIN_SUFFIX"
+make -C "$REPO_ROOT/FreeFileSync/Source/RealTimeSync" -j "$JOBS" objPath="$OBJ_DIR/RealTimeSync_$ARCH$TOOLCHAIN_SUFFIX"
