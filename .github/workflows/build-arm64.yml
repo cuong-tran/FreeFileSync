@@ -25,8 +25,9 @@ env:
   WX_VERSION: 3.3.4
   WX_SHA256: 815c16cafa4fcbfcf25c5c0a3418309c62257b8a3b6f91d85a1367a134f98c98
   WX_PREFIX: /opt/wx-install
-  # last libssh2 master commit before the FreeFileSync 14.13 release; libssh2/libssh2_wrap.h needs error codes
-  # (e.g. LIBSSH2_ERROR_MAC_FAILURE, LIBSSH2_ERROR_STORE_OVERFLOW) that released libssh2 versions lack
+  # last libssh2 master commit before the FreeFileSync 14.13 release ("1.11.2_DEV" in Bugs.txt): libssh2/libssh2_wrap.h
+  # needs LIBSSH2_ERROR_STORE_OVERFLOW from it, and distribution releases such as Ubuntu 24.04's 1.11.0 also lack
+  # LIBSSH2_ERROR_MAC_FAILURE. Keep in sync with LIBSSH2_COMMIT/LIBSSH2_SHA256 in linux-multiarch-build.yml.
   LIBSSH2_COMMIT: 83284a05a1add34722c1fa36fa706fe7aced87b6
   LIBSSH2_SHA256: 03e70390ceafcde9ceb98654d9e55f05c705c2e62c05863d5284e4e11f51b8a7
   # glib >= 2.78 makes g_free() a function-like macro, which breaks FreeFileSync's "::g_free(ptr)" calls.
