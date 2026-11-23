@@ -13,7 +13,8 @@
 #   docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/src" freefilesync-build sh -c 'make -C FreeFileSync/Source BUILD=debug -j"$(nproc)"'
 # (single quotes, so $(nproc) runs in the container: macOS has no nproc, and a bare -j means unlimited jobs)
 #
-# The makefiles keep object files in /tmp. Add "-v freefilesync-objs:/tmp" to keep them between runs for incremental builds.
+# Object files stay in FreeFileSync/Build/Obj (FreeFileSync/Build/Debug/Obj for the debug build) of the mounted tree,
+# so later runs build incrementally.
 #
 # libssh2 and libcurl are installed as shared libraries under /usr/local, so the binaries run inside this image.
 

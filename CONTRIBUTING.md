@@ -67,7 +67,7 @@ docker build -t freefilesync-build .
 docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/src" freefilesync-build
 ```
 
-Add `-v freefilesync-objs:/tmp` to keep the object files between runs, or append a command to run something else, quoted so the container's shell expands `$(nproc)` (macOS has no `nproc`, and a bare `-j` runs unlimited jobs):
+Object files stay in the mounted tree, so later runs only rebuild what changed. To run something else, append a command, quoted so the container's shell expands `$(nproc)` (macOS has no `nproc`, and a bare `-j` runs unlimited jobs):
 
 ```bash
 docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/src" freefilesync-build sh -c 'make -C FreeFileSync/Source BUILD=debug -j"$(nproc)"'
@@ -148,8 +148,8 @@ make -C FreeFileSync/Source -j"$(nproc)"
 make -C FreeFileSync/Source/RealTimeSync -j"$(nproc)"
 ```
 
-The binaries are written to `FreeFileSync/Build/Bin/FreeFileSync_<arch>` and `FreeFileSync/Build/Bin/RealTimeSync_<arch>`, and object files go to a `<exe>_Make` folder in the system temp directory (`make clean` removes both).
+The binaries are written to `FreeFileSync/Build/Bin/FreeFileSync_<arch>` and `FreeFileSync/Build/Bin/RealTimeSync_<arch>`, and object files go to `FreeFileSync/Build/Obj/<exe>` in the checkout, not to the shared temp directory, so separate checkouts never mix their objects (`make clean` removes both).
 
-For a debug build of FreeFileSync, run `make -C FreeFileSync/Source BUILD=debug -j"$(nproc)"` (or `make -C FreeFileSync/Source debug`). It compiles with `-g3 -O0` (keeping `NDEBUG`, so `assert()` stays off) into `FreeFileSync/Build/Debug/Bin/`, keeps its objects in a separate `<exe>_Debug_Make` temp folder, and copies `Build/Resources` next to it on every run; `make clean BUILD=debug` removes only the debug build. Objects are compiled with `-MMD -MP`, so editing a header rebuilds the files that include it. RealTimeSync's makefile has no debug mode.
+For a debug build of FreeFileSync, run `make -C FreeFileSync/Source BUILD=debug -j"$(nproc)"` (or `make -C FreeFileSync/Source debug`). It compiles with `-g3 -O0` (keeping `NDEBUG`, so `assert()` stays off) into `FreeFileSync/Build/Debug/Bin/`, keeps its objects in `FreeFileSync/Build/Debug/Obj/<exe>`, and copies `Build/Resources` next to it on every run; `make clean BUILD=debug` removes only the debug build. Objects are compiled with `-MMD -MP`, so editing a header rebuilds the files that include it. RealTimeSync's makefile has no debug mode.
 
 To use a compiler other than the default `g++`, set `CXX` in the environment the same way, for example `export CXX=g++-14` before running make. Don't pass it as a make argument (`make CXX=g++-14`): a command-line variable overrides the makefiles' `CXX += -pthread`.
