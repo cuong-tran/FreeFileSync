@@ -55,6 +55,18 @@ EOF
   --disable-stc \
   --disable-webview \
   --disable-mediactrl \
-  --without-opengl
+  --without-opengl \
+  --without-libnotify \
+  --with-libpng=builtin \
+  --with-libjpeg=builtin \
+  --with-libtiff=builtin \
+  --with-libwebp=builtin \
+  --with-zlib=builtin \
+  --with-expat=builtin \
+  --with-regex=builtin
 make -j"$(nproc)"
 make install
+
+# FreeFileSync needs the color hook and no wxWidgets exception handling (application.cpp has an #error for it)
+grep -rq 'refGlobalColorHook' "${WX_PREFIX}/include"
+grep -rqE '#define wxUSE_EXCEPTIONS +0' "${WX_PREFIX}/lib/wx/include"
