@@ -36,7 +36,7 @@ Each library has its own script (`build-openssl.sh`, `build-libssh2.sh`, `build-
 | `FFS_DEPS_PREFIX` | `$FFS_BUILD_DIR/deps` | Install prefix of the libraries |
 | `FFS_SKIP_PATCHES` | unset | Set to `1` to build a version that has no patch in `patches/`. An unpatched wxWidgets still compiles: the makefiles detect the missing `wxColorHook`, warn, and build without the dark mode contrast fix |
 | `FFS_UNPATCHED` | unset | Set to `1` to build every library without its patch, even when `patches/` has one. CI uses it to check that FreeFileSync still compiles against stock libraries |
-| `FFS_SYSTEM_LIBS` | unset | `build-free-file-sync.sh` only: space-separated pkg-config names (`openssl`, `libssh2`, `libcurl`) that may come from the system instead of the prefix, e.g. `"openssl libcurl"` to build against the distribution's packages |
+| `FFS_SYSTEM_LIBS` | unset | `build-free-file-sync.sh` only: space-separated pkg-config names (`openssl`, `libssh2`, `libcurl`) that may come from the system instead of the prefix, e.g. `"openssl libcurl"` to build against the distribution's packages. The script refuses to build if one of them is also installed in the prefix, since the prefix's copy would be used |
 | `JOBS` | `nproc` | Parallel make jobs |
 
 wxWidgets is linked statically. OpenSSL, libssh2 and libcurl are shared libraries found through an rpath to `.build/deps/lib`, so the binaries only run on the machine that built them unless those libraries are copied along.
