@@ -121,7 +121,13 @@ jobs:
         # ship the libssh2 built above (not packaged by the distribution) next to the binaries
         cp -L "$(ldd FreeFileSync/Build/Bin/FreeFileSync_${arch} | awk '/libssh2/ {print $3}')" dist/FreeFileSync/Bin/
         patchelf --set-rpath '$ORIGIN' dist/FreeFileSync/Bin/FreeFileSync_${arch} dist/FreeFileSync/Bin/RealTimeSync_${arch}
-        if LD_LIBRARY_PATH= ldd dist/FreeFileSync/Bin/*_${arch} | grep 'not found'; then exit 1; fi
+        # the build container also has libssh2 in /usr/local/lib, so check that the binaries resolve the bundled copy
+        bundledSsh2=$(realpath dist/FreeFileSync/Bin/libssh2.so.1)
+        for bin in dist/FreeFileSync/Bin/*_${arch}; do
+          if LD_LIBRARY_PATH= ldd "${bin}" | grep 'not found'; then exit 1; fi
+          LD_LIBRARY_PATH= ldd "${bin}" | grep -qF "libssh2.so.1 => ${bundledSsh2} " ||
+            { echo "::error::${bin} does not load the bundled libssh2"; exit 1; }
+        done
         ln -s "Bin/FreeFileSync_${arch}" dist/FreeFileSync/FreeFileSync
         ln -s "Bin/RealTimeSync_${arch}" dist/FreeFileSync/RealTimeSync
         cp -a dist/FreeFileSync/. "${pkg}/opt/FreeFileSync/"
