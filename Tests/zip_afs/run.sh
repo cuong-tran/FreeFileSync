@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and run the ZIP AbstractFileSystem test (Linux, needs: g++ >= 13, zlib, python3, zip)
+# Build and run the ZIP AbstractFileSystem test (Linux only, like the app: needs a C++26 g++, zlib, glib/gio, python3, zip)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -8,13 +8,16 @@ trap 'rm -rf "$WORK"' EXIT
 CXX="${CXX:-g++}"
 
 echo "== build"
-"$CXX" -std=c++23 -O1 -g -pthread -Wall -Wfatal-errors -Wshadow -Wno-unused-function -Wno-maybe-uninitialized \
-    -DNDEBUG -DWXINTL_NO_GETTEXT_MACRO $(pkg-config --cflags glib-2.0) -I"$ROOT" -I"$ROOT/zenXml" -include "zen/i18n.h" \
+#same language standard and warnings as FreeFileSync/Source/Makefile; zen/sys_error.cpp needs glib + gio (GError)
+"$CXX" -std=c++26 -O1 -g -pthread -DNDEBUG -DWXINTL_NO_GETTEXT_MACRO -I"$ROOT" -I"$ROOT/zenXml" -include "zen/i18n.h" \
+    -Wall -Wfatal-errors -Wshadow -Wmissing-include-dirs -Wswitch-enum -Wcast-align -Wnon-virtual-dtor -Wimplicit-fallthrough -Wundef -Wpedantic -Wredundant-decls \
+    -Wno-unused-function -Wno-deprecated-enum-enum-conversion -Wno-maybe-uninitialized -Wno-free-nonheap-object -Wno-restrict -Wduplicated-cond -Wlogical-op \
+    $(pkg-config --cflags glib-2.0 gio-2.0 zlib) \
     "$ROOT/Tests/zip_afs/zip_afs_test.cpp" \
     "$ROOT/FreeFileSync/Source/afs/zip.cpp" \
     "$ROOT/FreeFileSync/Source/afs/abstract.cpp" \
     "$ROOT"/zen/{zstring,file_path,resolve_path,file_access,file_io,file_traverser,sys_error,sys_info,sys_version,thread,format_unit,legacy_compiler,process_exec}.cpp \
-    $(pkg-config --libs glib-2.0) -lz -o "$WORK/zip_afs_test"
+    $(pkg-config --libs glib-2.0 gio-2.0 zlib) -o "$WORK/zip_afs_test"
 
 echo "== fixtures"
 REF="$WORK/ref"

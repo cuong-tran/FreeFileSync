@@ -3,12 +3,9 @@
 // * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
 // * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
 // *****************************************************************************
-
-#ifndef ZIP_H_48572039485720394857
-#define ZIP_H_48572039485720394857
+#pragma once
 
 #include "abstract.h"
-
 
 namespace fff
 {
@@ -25,5 +22,3 @@ AbstractPath createItemPathZip(const Zstring& itemPathPhrase); //noexcept
 void zipInit();
 void zipTeardown();
 }
-
-#endif //ZIP_H_48572039485720394857
