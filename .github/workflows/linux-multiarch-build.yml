@@ -146,11 +146,13 @@ jobs:
             ldd "$bin" | grep -E 'curl|ssh2|ssl|idn2|gtk-3' || true
           done
 
+      # upload-artifact zips files without Unix permissions, so pack the binaries into a tarball to keep them executable
+      - name: Pack binaries
+        run: tar -czvf "FreeFileSync-linux-${{ matrix.arch }}.tar.gz" -C FreeFileSync/Build/Bin .
+
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
           name: FreeFileSync-linux-${{ matrix.arch }}
-          path: |
-            FreeFileSync/Build/Bin/FreeFileSync_*
-            FreeFileSync/Build/Bin/RealTimeSync_*
+          path: FreeFileSync-linux-${{ matrix.arch }}.tar.gz
           if-no-files-found: error
