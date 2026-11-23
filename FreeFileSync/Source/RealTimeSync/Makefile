@@ -68,9 +68,11 @@ cppFiles += ../../../zen/sys_version.cpp
 cppFiles += ../../../zen/thread.cpp
 cppFiles += ../../../zen/zstring.cpp
 
-tmpPath := $(shell dirname "$(shell mktemp -u)")/$(exeName)_Make
+#object files stay inside this checkout instead of a fixed folder in the shared temp directory:
+#builds of different checkouts never mix their objects, and other users can't plant files or symlinks there
+objPath := ../../Build/Obj/$(exeName)
 
-objFiles := $(cppFiles:%=$(tmpPath)/ffs/src/rts/%.o)
+objFiles := $(cppFiles:%=$(objPath)/ffs/src/rts/%.o)
 
 all: ../../Build/Bin/$(exeName)
 
@@ -78,13 +80,13 @@ all: ../../Build/Bin/$(exeName)
 	mkdir -p $(dir $@)
 	$(CXX) -o $@ $^ $(LDFLAGS)
 
-$(tmpPath)/ffs/src/rts/%.o : %
+$(objPath)/ffs/src/rts/%.o : %
 	mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 #recompile wx+/darkmode.cpp when the wxColorHook check above changes its result (e.g. after switching between a patched and a stock wxWidgets):
 #make doesn't track compiler flags, so keep the result in a stamp file that is rewritten only when the result changes
-wxColorHookStamp := $(tmpPath)/wxColorHook.stamp
+wxColorHookStamp := $(objPath)/wxColorHook.stamp
 
 $(filter %/wx+/darkmode.cpp.o,$(objFiles)): $(wxColorHookStamp)
 
@@ -95,5 +97,5 @@ $(wxColorHookStamp): FORCE
 .PHONY: FORCE
 
 clean:
-	rm -rf $(tmpPath)
+	rm -rf $(objPath)
 	rm -f ../../Build/Bin/$(exeName)

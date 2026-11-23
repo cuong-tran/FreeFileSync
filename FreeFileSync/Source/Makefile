@@ -24,13 +24,14 @@ ifeq ($(BUILD),debug)
     CXXFLAGS += -g3 -O0 #the later -O0 overrides -O3 above
     LDFLAGS  += -g
     buildRoot := ../Build/Debug
-    tmpPath   := $(shell dirname "$(shell mktemp -u)")/$(exeName)_Debug_Make
 else ifeq ($(BUILD),release)
     buildRoot := ../Build
-    tmpPath   := $(shell dirname "$(shell mktemp -u)")/$(exeName)_Make
 else
     $(error BUILD must be "release" or "debug", not "$(BUILD)")
 endif
+#object files stay inside this checkout instead of a fixed folder in the shared temp directory:
+#builds of different checkouts never mix their objects, and other users can't plant files or symlinks there
+objPath := $(buildRoot)/Obj/$(exeName)
 
 CXXFLAGS += $(shell wx-config --cxxflags --debug=no)
 LDFLAGS  += $(shell wx-config --libs std, aui, richtext --debug=no)
@@ -151,7 +152,7 @@ cppFiles += ../../wx+/popup_dlg.cpp
 cppFiles += ../../wx+/popup_dlg_generated.cpp
 cppFiles += ../../xBRZ/src/xbrz.cpp
 
-objFiles := $(cppFiles:%=$(tmpPath)/ffs/src/%.o)
+objFiles := $(cppFiles:%=$(objPath)/ffs/src/%.o)
 target   := $(buildRoot)/Bin/$(exeName)
 
 .PHONY: all clean debug debugResources
@@ -179,13 +180,13 @@ depFiles := $(objFiles:.o=.d)
 #explicit targets, so make doesn't treat a missing .d as an intermediate file
 $(depFiles):
 
-$(tmpPath)/ffs/src/%.o : % $(tmpPath)/ffs/src/%.d
+$(objPath)/ffs/src/%.o : % $(objPath)/ffs/src/%.d
 	mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
 
 #recompile wx+/darkmode.cpp when the wxColorHook check above changes its result (e.g. after switching between a patched and a stock wxWidgets):
 #make doesn't track compiler flags, so keep the result in a stamp file that is rewritten only when the result changes
-wxColorHookStamp := $(tmpPath)/wxColorHook.stamp
+wxColorHookStamp := $(objPath)/wxColorHook.stamp
 
 $(filter %/wx+/darkmode.cpp.o,$(objFiles)): $(wxColorHookStamp)
 
@@ -196,7 +197,7 @@ $(wxColorHookStamp): FORCE
 .PHONY: FORCE
 
 clean:
-	rm -rf $(tmpPath)
+	rm -rf $(objPath)
 	rm -f $(target)
 ifeq ($(BUILD),debug)
 	rm -rf $(buildRoot)
