@@ -4,6 +4,9 @@
 # $WAIT_SECONDS (default 30), a visible window is titled like an error/warning popup, or stderr reports an error
 # (a GLib CRITICAL/ERROR message, a wx "Error:" line or a failed assertion).
 # With SCREENSHOT=<file.png> it also saves a screenshot of the screen after the check (needs ImageMagick's "import").
+# With OFFLINE=1 the app (and Xvfb) run in a network namespace without network access (needs root or sudo, and unshare
+# and setpriv from util-linux), so nothing depends on the internet: FreeFileSync's update check on a first start then
+# fails silently, as without a network, instead of showing an error when freefilesync.org rejects the CI machine.
 # Needs xvfb-run and xdotool.
 # Usage: check-app-starts.sh <binary> <main window title regex>
 #   e.g. check-app-starts.sh FreeFileSync/Build/Bin/FreeFileSync_x86_64 '^FreeFileSync [0-9.]+ '
@@ -49,9 +52,17 @@ exit 0
 EOF
 
 [ -n "${SCREENSHOT:-}" ] && SCREENSHOT="$(realpath -m -- "$SCREENSHOT")"
-export BIN TITLE_REGEX WAIT_SECONDS WORK SCREENSHOT
 # NO_AT_BRIDGE: no accessibility bus under Xvfb, so GTK would warn about it on stderr
-HOME="$WORK/home" LANG=C.UTF-8 NO_AT_BRIDGE=1 xvfb-run -a -s "-screen 0 1280x1024x24" bash "$WORK/inside.sh"
+RUN=(env HOME="$WORK/home" LANG=C.UTF-8 NO_AT_BRIDGE=1 BIN="$BIN" TITLE_REGEX="$TITLE_REGEX" WAIT_SECONDS="$WAIT_SECONDS"
+     WORK="$WORK" SCREENSHOT="${SCREENSHOT:-}" PATH="$PATH" xvfb-run -a -s "-screen 0 1280x1024x24" bash "$WORK/inside.sh")
+if [ "${OFFLINE:-0}" = 1 ]; then
+    # a new network namespace (only a loopback device, down), then back to the calling user
+    SUDO=()
+    [ "$(id -u)" -eq 0 ] || SUDO=(sudo)
+    "${SUDO[@]}" unshare --net -- setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups -- "${RUN[@]}"
+else
+    "${RUN[@]}"
+fi
 
 result="$(cat "$WORK/result.txt" 2>/dev/null || echo "no result")"
 echo "== $(basename "$BIN"): $result"

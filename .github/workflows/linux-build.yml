@@ -247,8 +247,11 @@ jobs:
             if grep -q 'libstdc++' needed.txt; then echo "::error::$app is linked against libstdc++ directly"; exit 1; fi
           done
 
-      # main window shown, no error popup, no error on stderr, still running (fresh HOME, Xvfb)
+      # main window shown, no error popup, no error on stderr, still running (fresh HOME, Xvfb, no network: a first start
+      # runs FreeFileSync's update check, and freefilesync.org may reject CI machines, which shows an error dialog)
       - name: Check the apps start
+        env:
+          OFFLINE: 1
         run: |
           mkdir -p screenshots
           rc=0
