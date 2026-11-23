@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Build a static wxWidgets for FreeFileSync into $WX_PREFIX (used by .github/workflows/build-arm64.yml).
 # Needs WX_VERSION, WX_SHA256 and WX_PREFIX; CC/CXX, if set, come from the environment.
-# FreeFileSync needs wxWidgets 3.3 with the wxColorHook patch from Bugs.txt and without
-# wxWidgets' own exception handling (application.cpp refuses to build if wxUSE_EXCEPTIONS is set).
+# FreeFileSync needs wxWidgets 3.3 without wxWidgets' own exception handling (application.cpp refuses
+# to build if wxUSE_EXCEPTIONS is set). The wxColorHook patch from Bugs.txt is applied for full dark mode
+# support; without it the makefiles build a fallback and warn.
 set -euo pipefail
 : "${WX_VERSION:?}" "${WX_SHA256:?}" "${WX_PREFIX:?}"
 

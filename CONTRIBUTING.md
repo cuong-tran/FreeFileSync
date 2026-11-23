@@ -108,6 +108,8 @@ make -j"$(nproc)" && sudo make install && sudo ldconfig
 
 `wx-config --version` should then report the version you built, and `wx-config --selected-config` should start with `gtk3`. `--disable-exceptions` is required: `application.cpp` stops the build with an `#error` if wxWidgets was built with its uncaught-exception handling (`wxUSE_EXCEPTIONS`). Don't use `--enable-no_exceptions` instead. It also turns that handling off, but it puts `-fno-exceptions` into `wx-config --cxxflags`, and FreeFileSync reports errors through C++ exceptions. See [wxWidgets' GTK install notes](https://github.com/wxWidgets/wxWidgets/blob/master/docs/gtk/install.md) for other options.
 
+Of the wxWidgets patches, only the `include/wx/settings.h` color hook (`wxColorHook`, used by `wx+/darkmode.cpp`) is needed to compile; the others change runtime behavior only. Without it, the makefiles print "wxWidgets lacks the wxColorHook patch from Bugs.txt" and build anyway with `-DZEN_WX_NO_COLOR_HOOK`, so dark mode loses the higher-contrast gray text.
+
 ### FreeFileSync and RealTimeSync
 
 Check the glib version first with `pkg-config --modversion glib-2.0`. From glib 2.78 (Ubuntu 24.04, Debian 13, Fedora 40 and later), `g_free` can be a function-like macro, and the `::g_free(...)` calls in `afs/ftp.cpp`, `base/icon_loader.cpp` and `zen/zstring.cpp` don't compile. So cap the glib API at 2.76 through the environment, which the makefiles' `CXXFLAGS +=` appends to:
