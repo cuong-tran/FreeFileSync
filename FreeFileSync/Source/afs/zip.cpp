@@ -527,10 +527,10 @@ public:
 
         if (entry.method == ZIP_METHOD_DEFLATE)
         {
+            inBuf_.resize(ZIP_STREAM_BLOCK_SIZE); //throw std::bad_alloc: before inflateInit2(), the destructor doesn't run if the constructor throws
             if (::inflateInit2(&zs_, -MAX_WBITS /*raw deflate*/) != Z_OK)
                 throw SysError(formatSystemError("inflateInit2", L"", L"zlib initialization failed."));
             zsInitialized_ = true;
-            inBuf_.resize(ZIP_STREAM_BLOCK_SIZE);
         }
     }
 
