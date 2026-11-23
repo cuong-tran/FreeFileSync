@@ -187,7 +187,7 @@ Zstring decodeCp437(const std::string& str) //ZIP default encoding if flag bit 1
 }
 
 
-//returns empty on failure/unsafe path (e.g. containing "..")
+//returns empty on failure/unsafe path (e.g. containing ".." or a NUL character)
 Zstring sanitizeArchiveItemPath(const Zstring& rawPath)
 {
     Zstring relPath;
@@ -197,7 +197,8 @@ Zstring sanitizeArchiveItemPath(const Zstring& rawPath)
     {
         if (part.empty() || part == Zstr("."))
             return;
-        if (part == Zstr(".."))
+        if (part == Zstr("..") ||
+            contains(part, Zstr('\0'))) //not a valid file name: c_str() would silently cut it short on the target side
         {
             unsafe = true;
             return;
