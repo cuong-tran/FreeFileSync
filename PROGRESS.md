@@ -8,8 +8,8 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 |---|---|---|---|---|
 | M1 Foundation | Plan and architecture | done | | n/a (docs) |
 | M1 Foundation | 1. Platform macros, `Tests/zen` | done | `d1e9037^..128099a`, fixes `584a353^..90c338a` | 8 findings: 7 fixed, 1 kept |
-| M1 Foundation | 2. Clang + libc++ on Linux | in progress | | |
-| M1 Foundation | 3. macOS dependency builds in CI | | | |
+| M1 Foundation | 2. Clang + libc++ on Linux | done, review fixes in progress | `9a0f61e^..8f3c1fd` | 6 findings, see below |
+| M1 Foundation | 3. macOS dependency builds in CI | in progress | | |
 | M2 Sentry | | | | |
 | M3 macOS | | | | |
 | M4 Windows | | | | |
@@ -59,3 +59,16 @@ Marked `KNOWN_ISSUE` in `Tests/zen`, not fixed (upstream code):
 | 6 | Timeout test leaves a `sleep 10` process behind | nit | fixed in `c22d105` |
 | 7 | A `KNOWN_ISSUE` that no longer reproduces does not fail the run | nit | fixed in `50448c1` |
 | 8 | Test helpers lack the `//throw FileError` comment | nit | fixed in `c22d105` |
+
+### M1 step 2 (`9a0f61e^..8f3c1fd`, `/code-review medium`)
+
+Result of the step: both apps compile, link and start with clang 20 + libc++ on Linux. Two source fixes (`#include <exception>` in `zen/scope_guard.h`, an `int64_t` cast in `application.cpp`), three clang-only `-Wno-` flags for style warnings in upstream code. The g++ command lines are byte-identical to before.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | Object folder is shared between g++ and `STDLIB=libc++` builds, so switching toolchains fails at link | important | sent for fixing |
+| 2 | Compiler family detection matches "clang" anywhere in `--version` and treats everything else as GCC | nit | sent for fixing |
+| 3 | CI start check passes when the app shows an error dialog | nit | sent for fixing |
+| 4 | Cache key of the clang job misses the inline wxWidgets flags | nit | sent for fixing |
+| 5 | Stale docs (job count, g++-only wording) | nit | sent for fixing |
+| 6 | g++ test entries run as root, clang entries as a normal user | nit | no change needed: both variants are useful coverage; a comment is added |
