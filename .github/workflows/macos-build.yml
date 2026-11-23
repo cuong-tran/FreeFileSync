@@ -1,0 +1,180 @@
+# macOS CI (M1 step 3 of docs/PORTING_PLAN.md): builds and caches the third-party libraries for both Mac architectures
+# and reports what the Apple toolchain accepts. FreeFileSync itself does not build on macOS yet (M3).
+#
+# - "Toolchain report" (informational): Xcode's clang and Homebrew LLVM against the C++ dialect and the platform-
+#   independent zen code, and the oldest deployment target per C++ library feature (.github/build/macos-report.sh).
+# - "Libraries (<arch>)": OpenSSL, libssh2, libidn2, libcurl and wxWidgets (wxOSX/Cocoa) as static libraries with the
+#   .github/build scripts (FFS_TARGET=macos-<arch>), arm64 natively and x86_64 cross-compiled on the same arm64 runner,
+#   cached like the Linux libraries. Uploads one archive per architecture with the build log and a manifest, and a
+#   (non-failing) syntax check of every zen/*.cpp as the macOS porting work list.
+#
+# Later stages slot in after "Libraries": a job per architecture that builds FreeFileSync.app and RealTimeSync.app
+# against the cached libraries (needs: libraries), and a "wrap-mac-dmg" job that turns each .app into a .dmg and uploads
+# one artifact per architecture with archive: false (the shape of Musikku's desktop-package.yml).
+name: macOS build
+
+on:
+  push:
+    branches: [main, dev] # feature branches are built by their pull requests
+    paths: &build-paths
+      - ".github/build/**"
+      - ".github/workflows/macos-build.yml"
+      - "Bugs.txt"
+      - "FreeFileSync/Source/**"
+      - "zen/**"
+      - "wx+/**"
+      - "zenXml/**"
+      - "libcurl/**"
+      - "libssh2/**"
+      - "xBRZ/**"
+  pull_request:
+    paths: *build-paths
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  toolchain:
+    name: Toolchain report
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      # informational only: a missing Homebrew LLVM just leaves its part of the report empty
+      - name: Install Homebrew LLVM
+        continue-on-error: true
+        run: brew install llvm
+
+      - name: Toolchain report
+        continue-on-error: true
+        run: |
+          {
+            echo "Xcode installations: $(ls -d /Applications/Xcode*.app 2>/dev/null | xargs -n 1 basename | tr '\n' ' ')"
+            echo "selected: $(xcode-select -p)"
+            .github/build/macos-report.sh toolchain
+          } 2>&1 | tee toolchain-report.txt
+          { echo '```'; cat toolchain-report.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          path: toolchain-report.txt
+          archive: false
+          if-no-files-found: ignore
+
+  libraries:
+    name: Libraries (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x86_64] # x86_64 is cross-compiled on the arm64 runner
+    runs-on: macos-15
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      FFS_TARGET: macos-${{ matrix.arch }}
+      CC: clang # Xcode's clang, see "Toolchain report"
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@v4
+
+      # the build scripts need bash 4+ and GNU coreutils/flock (macOS has bash 3.2 and BSD tools)
+      - name: Install build tools
+        run: |
+          brew install bash coreutils flock pkgconf
+          bash --version | head -n 1
+          echo "MACOSX_DEPLOYMENT_TARGET in common.sh: $(sed -nE 's/^FFS_MACOS_DEPLOYMENT_TARGET=([0-9.]+).*/\1/p' .github/build/common.sh)"
+
+      - name: Identify the compiler
+        id: compiler
+        run: |
+          clang++ --version
+          echo "id=$(clang++ --version | head -n 1 | tr -c 'A-Za-z0-9.\n' '-')-sdk$(xcrun --show-sdk-version)" >> "$GITHUB_OUTPUT"
+
+      # restore and save are separate steps so the libraries are kept even when a later step fails
+      - name: Restore libraries
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .build/deps/macos-${{ matrix.arch }}
+          # the compiler, SDK and every script and patch that decides how the libraries are built
+          key: deps-macos-${{ matrix.arch }}-${{ steps.compiler.outputs.id }}-${{ hashFiles('.github/build/common.sh', '.github/build/build.sh', '.github/build/build-openssl.sh', '.github/build/build-libssh2.sh', '.github/build/build-libidn2.sh', '.github/build/build-curl.sh', '.github/build/build-wxwidgets.sh', '.github/build/patches/**') }}
+
+      - name: Build libraries
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: .github/build/build.sh 2>&1 | tee build.log
+
+      - name: Save libraries
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .build/deps/macos-${{ matrix.arch }}
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
+      # fails the job if a library is missing, has another architecture or another deployment target (also on a cache hit)
+      - name: Check libraries and write the manifest
+        run: |
+          prefix=".build/deps/macos-${{ matrix.arch }}"
+          target="$(sed -nE 's/^FFS_MACOS_DEPLOYMENT_TARGET=([0-9.]+).*/\1/p' .github/build/common.sh)"
+          {
+            echo "target: macos-${{ matrix.arch }}, deployment target $target"
+            echo "compiler: $(clang++ --version | head -n 1), SDK $(xcrun --show-sdk-version)"
+            echo "installed (stamps):"
+            ls "$prefix/.stamps" | sed 's/^/    /'
+            echo "libraries:"
+          } > manifest.txt
+          for lib in libssl libcrypto libssh2 libidn2 libcurl; do
+            test -f "$prefix/lib/$lib.a" || { echo "::error::$lib.a is missing"; exit 1; }
+          done
+          for file in "$prefix"/lib/*.a; do
+            archs="$(lipo -archs "$file")"
+            minos="$(otool -l "$file" | awk '/LC_BUILD_VERSION/ { found = 1 } found && $1 == "minos" { print $2; exit }')"
+            echo "    $(basename "$file"): $archs, minos $minos" >> manifest.txt
+            [ "$archs" = "${{ matrix.arch }}" ] || { echo "::error::$file is built for $archs"; exit 1; }
+            [ "$minos" = "$target" ] || { echo "::error::$file is built for macOS $minos, not $target"; exit 1; }
+          done
+          if ls "$prefix"/lib/*.dylib >/dev/null 2>&1; then echo "::error::shared libraries in the prefix:"; ls "$prefix"/lib/*.dylib; exit 1; fi
+          echo "wx-config: $("$prefix/bin/wx-config" --version) $("$prefix/bin/wx-config" --selected-config)" >> manifest.txt
+          echo "curl: $(PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig" pkg-config --modversion libcurl), $(PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig" pkg-config --static --libs libcurl)" >> manifest.txt
+          cat manifest.txt
+
+      # informational: the work list for porting zen/ (M3 step 1)
+      - name: zen port work list
+        continue-on-error: true
+        run: .github/build/macos-report.sh port-todo ${{ matrix.arch }} ".build/deps/macos-${{ matrix.arch }}" 2>&1 | tee macos-port-todo-${{ matrix.arch }}.txt
+
+      - name: Upload zen port work list
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          path: macos-port-todo-${{ matrix.arch }}.txt
+          archive: false
+          if-no-files-found: ignore
+
+      - name: Pack build log and manifest
+        if: always()
+        run: |
+          touch build.log manifest.txt
+          tar czf macos-libraries-${{ matrix.arch }}.tar.gz build.log manifest.txt
+
+      - name: Upload build log and manifest
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          path: macos-libraries-${{ matrix.arch }}.tar.gz
+          archive: false
+          if-no-files-found: error
