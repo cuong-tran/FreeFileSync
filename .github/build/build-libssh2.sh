@@ -8,7 +8,7 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 LIBSSH2_VERSION="${1:-${LIBSSH2_VERSION:-1.11.1}}"
 NAME="libssh2-$LIBSSH2_VERSION"
 
-if is_installed "$NAME"; then
+if is_installed "$NAME" openssl; then
     log "$NAME already installed in $INSTALL_DIR"
     exit 0
 fi
@@ -27,4 +27,4 @@ cd "$(fresh_build_dir libssh2)"
     --disable-sshd-tests
 make -j "$JOBS"
 make install
-mark_installed "$NAME"
+mark_installed "$NAME" openssl

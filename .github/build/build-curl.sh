@@ -8,7 +8,7 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 CURL_VERSION="${1:-${CURL_VERSION:-8.21.0}}"
 NAME="curl-$CURL_VERSION"
 
-if is_installed "$NAME"; then
+if is_installed "$NAME" openssl libssh2; then
     log "$NAME already installed in $INSTALL_DIR"
     exit 0
 fi
@@ -29,4 +29,4 @@ cd "$(fresh_build_dir curl)"
     --enable-versioned-symbols
 make -j "$JOBS"
 make install
-mark_installed "$NAME"
+mark_installed "$NAME" openssl libssh2

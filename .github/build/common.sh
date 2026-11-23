@@ -37,19 +37,29 @@ declare -A KNOWN_SHA256=(
 log() { printf '\n==> %s\n' "$*" >&2; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-# is_installed <name-version>: true if this version was installed with the current patch
+# is_installed <name-version> [dependency name...]: true if this version was installed with the
+# current patch and against the dependency versions installed now (e.g. "openssl" matches
+# the stamp of whichever openssl-<version> was built), so changing a dependency rebuilds it.
 is_installed() {
-    [ -f "$STAMP_DIR/$1" ] && [ "$(cat "$STAMP_DIR/$1")" = "$(patch_id "$1")" ]
+    [ -f "$STAMP_DIR/$1" ] && [ "$(cat "$STAMP_DIR/$1")" = "$(install_id "$@")" ]
 }
 
+# mark_installed <name-version> [dependency name...]: call after a successful install
 mark_installed() {
     mkdir -p "$STAMP_DIR"
-    patch_id "$1" >"$STAMP_DIR/$1"
+    install_id "$@" >"$STAMP_DIR/$1"
 }
 
-patch_id() {
-    local patch="$PATCH_DIR/$1.patch"
-    if [ -f "$patch" ]; then sha256sum "$patch" | cut -d' ' -f1; else echo unpatched; fi
+install_id() {
+    local name="$1" dep stamp
+    shift
+    if [ -f "$PATCH_DIR/$name.patch" ]; then sha256sum "$PATCH_DIR/$name.patch" | cut -d' ' -f1; else echo unpatched; fi
+    for dep in "$@"; do
+        for stamp in "$STAMP_DIR/$dep"-*; do
+            [ -f "$stamp" ] && echo "$(basename "$stamp") $(sha256sum <"$stamp" | cut -d' ' -f1)"
+        done
+    done
+    return 0
 }
 
 # fetch_source <name-version> <archive file name> <url> [nopatch]
