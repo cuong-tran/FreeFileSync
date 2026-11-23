@@ -55,7 +55,7 @@ Drop `--dry-run` to publish. It needs an authenticated `gh` CLI, skips releases 
 
 ## Building
 
-The source ships Linux makefiles only (`FreeFileSync/Source/Makefile` and `FreeFileSync/Source/RealTimeSync/Makefile`); there are no Windows or macOS project files. The only automated test is the standalone ZIP test described at the end of this section. Upstream recommends building against current library versions with the patches from `Bugs.txt` applied, and that file names the versions it was written for (for 14.13: wxWidgets 3.3.4, libcurl 8.21.0, a libssh2 1.11.2 development snapshot).
+The source ships Linux makefiles only (`FreeFileSync/Source/Makefile` and `FreeFileSync/Source/RealTimeSync/Makefile`); there are no Windows or macOS project files. The automated tests are the standalone ZIP test and the zen unit tests described at the end of this section. Upstream recommends building against current library versions with the patches from `Bugs.txt` applied, and that file names the versions it was written for (for 14.13: wxWidgets 3.3.4, libcurl 8.21.0, a libssh2 1.11.2 development snapshot).
 
 ### Build with the scripts in .github/build
 
@@ -169,3 +169,15 @@ bash Tests/zip_afs/run.sh
 ```
 
 The `ZIP AFS test` workflow runs it in a `gcc:15` container on pull requests and pushes to `dev` and `main` that touch `afs/`, `zen/` or the test.
+
+### zen unit tests
+
+`Tests/zen/run.sh` builds the platform layer in `zen/` (only the sources the tests need, with `assert()` enabled) together with the tests in `Tests/zen/` and runs them. They cover file and folder creation, removal, moving and copying, modification times, sizes, item types, symlinks, permissions, free disk space, buffered and plain file I/O, folder traversal with Unicode and long names, the path helpers and macro expansion, `Zstring` comparison, case conversion, natural sorting and Unicode normalization, the directory watcher, the recycle bin, system and OS information, running a child process, the thread helpers and system error texts. Every test runs in a new temporary folder, and `run.sh` points `HOME` and `XDG_DATA_HOME` into its own temporary folder, so the recycle bin test never touches your trash; nothing is left behind. It needs a C++26 g++ and the glib dev packages (`libglib2.0-dev pkg-config`); set `CXX` to pick the compiler, and pass test names to run only those:
+
+```bash
+bash Tests/zen/run.sh              # all tests
+bash Tests/zen/run.sh --list       # names
+bash Tests/zen/run.sh dirWatcher   # one test
+```
+
+The summary line counts checks, failures and known issues. A known issue is an upstream bug the test documents with `KNOWN_ISSUE` instead of failing; the tests don't change `zen/` to make it pass. The tests use no Linux-only calls, so they can run on macOS and Windows once `zen/` builds there; where the expected behavior differs per platform they branch on `ZEN_LINUX`, `ZEN_MAC` and `ZEN_WIN`, which `zen/build_info.h` derives from the compiler's predefined macros. The `zen tests` workflow runs them in a `gcc:15` container on pull requests and pushes to `dev` and `main` that touch `zen/` or the tests; its job matrix has one Ubuntu entry for now.
