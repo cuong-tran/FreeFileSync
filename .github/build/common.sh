@@ -38,8 +38,9 @@ log() { printf '\n==> %s\n' "$*" >&2; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 # is_installed <name-version> [dependency name...]: true if this version was installed with the
-# current patch and against the dependency versions installed now (e.g. "openssl" matches
-# the stamp of whichever openssl-<version> was built), so changing a dependency rebuilds it.
+# current patch and build script, and against the dependency versions installed now (e.g.
+# "openssl" matches the stamp of whichever openssl-<version> was built), so changing any of
+# them rebuilds it.
 is_installed() {
     [ -f "$STAMP_DIR/$1" ] && [ "$(cat "$STAMP_DIR/$1")" = "$(install_id "$@")" ]
 }
@@ -54,6 +55,7 @@ install_id() {
     local name="$1" dep stamp
     shift
     if [ -f "$PATCH_DIR/$name.patch" ]; then sha256sum "$PATCH_DIR/$name.patch" | cut -d' ' -f1; else echo unpatched; fi
+    sha256sum "$0" | cut -d' ' -f1 # the calling build-<lib>.sh, for its configure options
     for dep in "$@"; do
         for stamp in "$STAMP_DIR/$dep"-*; do
             [ -f "$stamp" ] && echo "$(basename "$stamp") $(sha256sum <"$stamp" | cut -d' ' -f1)"
