@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Git mirror of the FreeFileSync source code (C++23, wxWidgets/GTK 3), rebuilt from the official source zips at https://freefilesync.org/archive.php (past releases) and https://freefilesync.org/download.php (current release). `README.md` describes the app; `FAQ.md` and `MANUAL.md` summarize the official FAQ and manual (images in `docs/images/`, copied from freefilesync.org); `CONTRIBUTING.md` covers branches, importing releases, the source layout and building.
+Git mirror of the FreeFileSync source code (C++26, wxWidgets/GTK 3), rebuilt from the official source zips at https://freefilesync.org/archive.php (past releases) and https://freefilesync.org/download.php (current release). `README.md` describes the app; `FAQ.md` and `MANUAL.md` summarize the official FAQ and manual (images in `docs/images/`, copied from freefilesync.org); `CONTRIBUTING.md` covers branches, importing releases, the source layout and building.
 
 ## Repository rules
 
@@ -29,6 +29,6 @@ Git mirror of the FreeFileSync source code (C++23, wxWidgets/GTK 3), rebuilt fro
 
 ## Building and checking
 
-- Linux only from these sources: `make -C FreeFileSync/Source -j"$(nproc)"` (and `make -C FreeFileSync/Source/RealTimeSync`). It needs a C++23 g++/clang plus wxWidgets (GTK 3), OpenSSL, libcurl, libssh2 and libidn2 dev packages. There are no Windows/macOS project files and no test suite.
+- Linux only from these sources: `make -C FreeFileSync/Source -j"$(nproc)"` (and `make -C FreeFileSync/Source/RealTimeSync`). It needs g++ 14+ (`-std=c++26`, GCC-only warning flags) plus wxWidgets 3.3 (GTK 3, usually built from source), OpenSSL, libcurl, libssh2 and libidn2 dev packages; see `CONTRIBUTING.md` for packages and steps. There are no Windows/macOS project files and no test suite.
 - `Bugs.txt` lists patches upstream applies to its third-party libraries; builds against unpatched libraries may misbehave.
 - To see what changed in a release, diff the release commits: `git diff <prev-release-commit> <release-commit> -- FreeFileSync/Source`.
