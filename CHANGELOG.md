@@ -21,6 +21,14 @@ Entries are grouped by the upstream release they were made against.
 - `CONTRIBUTING.md`: added a "Build in Docker" section and the debug build; `CLAUDE.md` points to both.
 - Updated the dependency build scripts in `.github/build/` for 14.13: they default to the library versions in `Bugs.txt`, add libssh2 (a pinned 1.11.2_DEV snapshot built with CMake), apply every `Bugs.txt` fix from `.github/build/patches/`, build wxWidgets with `--disable-exceptions`, verify download checksums, install into `.build/deps` with an rpath, and build FreeFileSync and RealTimeSync with the upstream makefiles, with the glib API capped at 2.76 for glib 2.78 and later. Usage is in `.github/build/README.md`.
 - Turned the dependency CI workflow into `linux-patched-libs.yml`, which builds the patched libraries and both apps on Ubuntu 24.04 with g++ 14, checks that the binaries load the patched libraries, and uploads them with those libraries as a tarball. It runs on pushes to `main`/`dev`, on pull requests that touch the sources or the build scripts, and on demand.
+- Adapted the read-only ZIP archive support to 14.13: `#pragma once` header, Makefile entries in the 14.13 syntax, the ZIP test built with `-std=c++26` and the Makefile's warnings in a `gcc:15` container and linked against gio, a SIGPIPE abort in the test fixtures fixed, and the full-build CI job (wxWidgets 3.3.1, too old for 14.13) dropped.
+- Hardened the ZIP reader: Zip64 central-directory sizes that would overflow are rejected instead of crashing, a missing archive reads as "does not exist" for inner paths too, all error texts go through `_()`, entry names containing NUL are skipped, a name that is both a file and a folder is kept as the folder only, and the index cache also checks nanosecond mtime and inode.
+- Added a missing-archive case to the ZIP test.
+
+## FreeFileSync 14.11
+
+- Added read-only ZIP archives as a sync source: a `zip:` AbstractFileSystem in `afs/zip.cpp` with its own central-directory parser (Zip64, self-extracting prefix, UTF-8/CP437 and Info-ZIP Unicode names, extended/NTFS timestamps). It inflates through zlib, checks CRC32 and size, and caches the parsed index per archive. Write operations fail with "Operation not supported by device". Syntax: `zip:/path/archive.zip`, or `zip:/path/archive.zip|inner/folder`. Dropping a `.zip` file on a folder field selects the archive. Typical use is "Mirror" from the archive to a folder, which extracts only new and changed files and deletes obsolete ones.
+- Added the standalone ZIP test `Tests/zip_afs/run.sh` (archives made by Python zipfile and Info-ZIP: stored, deflate, Zip64, CRC corruption) and a GitHub Actions workflow that runs it.
 
 ## FreeFileSync 14.9
 
