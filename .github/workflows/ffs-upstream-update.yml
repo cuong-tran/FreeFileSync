@@ -84,26 +84,33 @@ jobs:
         run: |
           python3 -I -u "$SCRIPTS/ffs_release.py" --repo . --branch upstream \
             --gh-repo "$GITHUB_REPOSITORY" ${DRY_RUN:+--dry-run} 2>&1 | tee "$RUNNER_TEMP/release.log"
-          echo "RELEASED=1" >> "$GITHUB_ENV"
 
       - name: Summary
         if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }} # read-only use: looks up each imported version's release
         run: |
           {
             echo "## FreeFileSync upstream update${DRY_RUN:+ (dry run)}"
             if [ -n "${BEFORE:-}" ] && [ "$(git -C repo rev-parse HEAD)" != "$BEFORE" ]; then
               echo
-              if [ -n "${RELEASED:-}" ]; then
-                echo "### Imported and released"
-              elif [ -n "${PUSHED:-}" ]; then
-                echo "### Imported and pushed, but the releases were not published (rerun to publish them)"
+              if [ -n "${PUSHED:-}" ]; then
+                echo "### Imported and pushed"
               else
                 echo "### Imported but not pushed (the run failed; these commits are discarded, a rerun imports them again)"
               fi
               git -C repo log --reverse --format='%s' "$BEFORE..HEAD" | sed -nE 's/^FreeFileSync (.*)$/\1/p' |
                 while read -r v; do
-                  if [ -n "${RELEASED:-}" ]; then
+                  # The release step publishes one version at a time and may fail midway, so ask
+                  # GitHub which of them actually have a published (non-draft) release.
+                  draft=""
+                  if [ -n "${PUSHED:-}" ]; then
+                    draft=$(gh release view "v$v" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || true)
+                  fi
+                  if [ "$draft" = "false" ]; then
                     echo "- FreeFileSync $v: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/v$v"
+                  elif [ -n "${PUSHED:-}" ]; then
+                    echo "- FreeFileSync $v: release not published yet (rerun to publish it)"
                   else
                     echo "- FreeFileSync $v"
                   fi
