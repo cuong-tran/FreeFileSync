@@ -39,7 +39,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # one group per requested architecture, so a manual run for one architecture does not cancel a run for another
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.arch || 'all' }}
   cancel-in-progress: true
 
 env:
