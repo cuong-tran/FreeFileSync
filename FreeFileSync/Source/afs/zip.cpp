@@ -652,6 +652,8 @@ class ZipFileSystem : public AbstractFileSystem
 public:
     explicit ZipFileSystem(const Zstring& archivePath) : archivePath_(archivePath) {}
 
+    const Zstring& getArchivePath() const { return archivePath_; }
+
 private:
     Zstring getInitPathPhrase(const AfsPath& itemPath) const override
     {
@@ -923,4 +925,12 @@ AbstractPath fff::createItemPathZip(const Zstring& itemPathPhrase) //noexcept
     const Zstring archivePath = trimCpy(archivePhrase).empty() ? Zstring() : getResolvedFilePath(archivePhrase);
 
     return AbstractPath(makeSharedRef<ZipFileSystem>(archivePath), sanitizeDeviceRelativePath(innerPath));
+}
+
+
+Zstring fff::getZipArchivePath(const AbstractPath& itemPath) //noexcept
+{
+    if (const auto zipDevice = dynamic_cast<const ZipFileSystem*>(&itemPath.afsDevice.ref()))
+        return zipDevice->getArchivePath();
+    return {};
 }

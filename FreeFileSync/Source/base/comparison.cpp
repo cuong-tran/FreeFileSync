@@ -17,6 +17,7 @@
 #include "status_handler_impl.h"
 #include "../afs/concrete.h"
 #include "../afs/native.h"
+#include "../afs/zip.h"
 
 using namespace zen;
 using namespace fff;
@@ -1147,6 +1148,28 @@ FolderComparison fff::compare(WarningDialogs& warnings,
         if (!msg.empty())
             callback.reportWarning(_("One folder of the folder pair is a subfolder of the other.") +
                                    (shouldExclude ? L'\n' + _("The folder should be excluded via filter.") : L"") +
+                                   msg, warnings.warnDependentFolderPair); //throw X
+    }
+
+    //ZIP archive on one side stored inside the folder on the other side: not found by the check above (different AFS types),
+    //but e.g. "Mirror" would delete the very archive it is reading from
+    {
+        std::wstring msg;
+
+        for (const auto& [folderPair, fpCfg] : workLoad)
+            for (const auto& [zipFolderPath, otherFolderPath] : {std::pair(folderPair.folderPathLeft,  folderPair.folderPathRight),
+                                                                std::pair(folderPair.folderPathRight, folderPair.folderPathLeft)})
+                if (const Zstring archivePath = getZipArchivePath(zipFolderPath); !archivePath.empty())
+                    if (const std::optional<PathDependency> pd = getPathDependency(createItemPathNativeNoFormatting(archivePath), otherFolderPath);
+                        pd && pd->itemPathParent == otherFolderPath && !pd->relPath.empty() &&
+                        fpCfg.filter.nameFilter.ref().passFileFilter(pd->relPath))
+                        msg += L"\n\n" +
+                               AFS::getDisplayPath(zipFolderPath) + L" <-> " + L'\n' +
+                               AFS::getDisplayPath(otherFolderPath);
+
+        if (!msg.empty())
+            callback.reportWarning(_("The ZIP archive is stored inside the folder on the other side of the folder pair and may be deleted or overwritten by the synchronization.") + L'\n' +
+                                   _("The archive should be excluded via filter.") +
                                    msg, warnings.warnDependentFolderPair); //throw X
     }
     //-------------------end of basic checks------------------------------------------

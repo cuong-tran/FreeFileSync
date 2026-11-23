@@ -19,6 +19,9 @@ namespace fff
 bool  acceptsItemPathPhraseZip(const Zstring& itemPathPhrase); //noexcept
 AbstractPath createItemPathZip(const Zstring& itemPathPhrase); //noexcept
 
+//native path of the archive if itemPath is inside a ZIP archive, empty otherwise
+Zstring getZipArchivePath(const AbstractPath& itemPath); //noexcept
+
 void zipInit();
 void zipTeardown();
 }
