@@ -13,7 +13,7 @@
 #elif defined _WIN32
     #define ZEN_WIN
 #else
-    #error unsupported platform
+    #error Unsupported platform: FreeFileSync builds for Linux, macOS and Windows only
 #endif
 
 
