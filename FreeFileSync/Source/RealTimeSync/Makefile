@@ -82,6 +82,18 @@ $(tmpPath)/ffs/src/rts/%.o : %
 	mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+#recompile wx+/darkmode.cpp when the wxColorHook check above changes its result (e.g. after switching between a patched and a stock wxWidgets):
+#make doesn't track compiler flags, so keep the result in a stamp file that is rewritten only when the result changes
+wxColorHookStamp := $(tmpPath)/wxColorHook.stamp
+
+$(filter %/wx+/darkmode.cpp.o,$(objFiles)): $(wxColorHookStamp)
+
+$(wxColorHookStamp): FORCE
+	mkdir -p $(dir $@)
+	echo '$(haveWxColorHook)' | cmp -s - $@ || echo '$(haveWxColorHook)' > $@
+
+.PHONY: FORCE
+
 clean:
 	rm -rf $(tmpPath)
 	rm -f ../../Build/Bin/$(exeName)
