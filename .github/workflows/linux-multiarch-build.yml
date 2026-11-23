@@ -45,6 +45,10 @@ env:
   WX_VERSION: '3.3.4'
   WX_SHA256: '815c16cafa4fcbfcf25c5c0a3418309c62257b8a3b6f91d85a1367a134f98c98'
   WX_PREFIX: /opt/wx
+  # glib >= 2.78 turns g_free() into a function-like macro when sized free is available, which breaks the
+  # "::g_free(ptr)" calls in FreeFileSync (afs/ftp.cpp, base/icon_loader.cpp, zen/zstring.cpp). Capping the
+  # glib API level at 2.76 keeps g_free a plain function. Passed through the environment so the Makefiles' "+=" appends to it.
+  FFS_CXXFLAGS: -DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_76 -DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_2_76
   # bump WX_CACHE_REV whenever the wxWidgets patch or configure options below change
   WX_CACHE_REV: 1
 
@@ -136,10 +140,10 @@ jobs:
           grep -rE '#define wxUSE_EXCEPTIONS +0' "$WX_PREFIX/lib/wx/include"
 
       - name: Build FreeFileSync
-        run: make -C FreeFileSync/Source -j"$(nproc)"
+        run: CXXFLAGS="$FFS_CXXFLAGS" make -C FreeFileSync/Source -j"$(nproc)"
 
       - name: Build RealTimeSync
-        run: make -C FreeFileSync/Source/RealTimeSync -j"$(nproc)"
+        run: CXXFLAGS="$FFS_CXXFLAGS" make -C FreeFileSync/Source/RealTimeSync -j"$(nproc)"
 
       - name: List binaries
         run: |
