@@ -86,7 +86,11 @@ jobs:
         shell: bash
     env:
       FFS_TARGET: macos-${{ matrix.arch }}
-      CC: clang # Xcode's clang, see "Toolchain report"
+      # Xcode's clang, from the newest Xcode on the runner image (decided from the toolchain report: it accepts C++26,
+      # its libc++ 20 has std::jthread, and only floating-point from_chars needs a fallback, so no C++ runtime has to
+      # ship with the app). The libraries are built with the compiler the apps will use; it is part of the cache key.
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      CC: clang
       CXX: clang++
     steps:
       - uses: actions/checkout@v4
@@ -101,6 +105,7 @@ jobs:
       - name: Identify the compiler
         id: compiler
         run: |
+          xcodebuild -version
           clang++ --version
           echo "id=$(clang++ --version | head -n 1 | tr -c 'A-Za-z0-9.\n' '-')-sdk$(xcrun --show-sdk-version)" >> "$GITHUB_OUTPUT"
 

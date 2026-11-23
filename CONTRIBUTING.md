@@ -172,6 +172,10 @@ make -C FreeFileSync/Source/RealTimeSync -j"$(nproc)" STDLIB=libc++
 
 wxWidgets is C++, so it has to be built against the same C++ library: with the scripts in `.github/build`, `CC=clang-20 CXX=clang++-20 CXXFLAGS=-stdlib=libc++ LDFLAGS=-stdlib=libc++ .github/build/build-wxwidgets.sh`, then `CXX=clang++-20 STDLIB=libc++ .github/build/build-free-file-sync.sh` (use a separate `FFS_BUILD_DIR` if you also build with g++; OpenSSL, libssh2 and libcurl are C libraries and work with either). The `clang + libc++` job of the Linux build workflow does exactly this, links both apps, checks that they use libc++ and starts each one with `.github/build/check-app-starts.sh <binary> <title regex>` (needs `xvfb` and `xdotool`), which fails unless the main window shows up without an error popup or error output. Both test scripts take the same `CXX` and `STDLIB` variables (`CXX=clang++-20 STDLIB=libc++ bash Tests/zen/run.sh`), and both test workflows run a clang + libc++ entry next to the g++ one.
 
+### macOS libraries
+
+FreeFileSync itself doesn't build on macOS yet, but the libraries it needs do: `FFS_TARGET=macos-arm64` or `macos-x86_64 .github/build/build.sh` builds static OpenSSL, libssh2, libidn2, libcurl and wxWidgets (wxOSX/Cocoa) for one architecture and macOS 13.3 or later into `.build/deps/<target>`, with Xcode's clang; x86_64 is cross-compiled on Apple silicon. It needs `brew install bash coreutils flock pkgconf`. Details, the toolchain findings and the CI workflow (`macos-build.yml`, which also reports what of `zen/` compiles on macOS) are in [.github/build/README.md](.github/build/README.md#macos).
+
 When something compiles with libstdc++ but not with libc++, the usual causes are a missing `#include` that libstdc++ happened to provide transitively, and integer types that differ between the libraries (`std::chrono` durations use `long long` in libc++ and `long` in libstdc++). Fix the source in standard form; for a library feature libc++ lacks, add a fallback to `zen/legacy_compiler.h` keyed on its `__cpp_lib_*` macro rather than on the compiler name.
 
 ### ZIP archive test

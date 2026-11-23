@@ -53,7 +53,7 @@ FFS_TARGET=macos-arm64  .github/build/build.sh
 FFS_TARGET=macos-x86_64 .github/build/build.sh   # cross-compiled with -arch x86_64 on an Apple silicon Mac
 ```
 
-Each target is installed into `.build/deps/<target>`, as static libraries only, for one architecture and the deployment target `FFS_MACOS_DEPLOYMENT_TARGET` in `common.sh`, which every library is checked against (`lipo -archs`, `otool -l`). The compiler is Xcode's clang (`CC=clang CXX=clang++`, override through the environment); pkg-config sees only the prefix, so nothing from Homebrew ends up in a library. What differs from Linux:
+Each target is installed into `.build/deps/<target>`, as static libraries only, for one architecture and the deployment target `FFS_MACOS_DEPLOYMENT_TARGET` in `common.sh`, which every library is checked against (`lipo -archs`, `otool -l`). The compiler is Xcode's clang (`CC=clang CXX=clang++`, override through the environment; CI selects Xcode 26.3 with `DEVELOPER_DIR`, the toolchain the apps will be built with); pkg-config sees only the prefix, so nothing from Homebrew ends up in a library. What differs from Linux:
 
 - **OpenSSL**: `no-shared` with the `darwin64-arm64-cc`/`darwin64-x86_64-cc` target.
 - **libssh2**: static, against that OpenSSL and the SDK's zlib, with the `Bugs.txt` patch.
@@ -62,6 +62,8 @@ Each target is installed into `.build/deps/<target>`, as static libraries only, 
 - **wxWidgets**: wxOSX/Cocoa with the same feature set as on Linux, `--disable-exceptions`, wx's bundled image libraries (`--disable-sys-libs`) and the SDK's zlib. Of the `Bugs.txt` fixes in the patch, `wx/settings.h` (the color hook), `src/aui` and `src/common` take effect on macOS; the `src/gtk` and `src/unix` hunks apply but aren't compiled there.
 
 `macos-report.sh` writes two informational reports: `toolchain` (compiler and libc++ versions of Xcode's clang and Homebrew LLVM, which `-std=` they accept, a syntax check of zen code without platform-specific includes, and the oldest deployment target per C++ library feature) and `port-todo <arch> <prefix>` (a syntax check of every `zen/*.cpp` for macOS, with the first error per file: the work list for porting `zen/`).
+
+Toolchain findings so far (macos-15 runner): Xcode 16.4 (Apple clang 17.0.0, libc++ 19) and Xcode 26.3 (Apple clang 17.0.0, libc++ 20) both accept `-std=c++26`, as does Homebrew LLVM 23. Apple's libc++ makes floating-point `std::to_chars` and `std::format` available from macOS 13.3 on, hence the deployment target 13.3 (zen uses `to_chars(double)`); floating-point `std::from_chars` is deleted in libc++ 19 and needs macOS 26 in libc++ 20 (also with Homebrew LLVM against the system libc++), so `zen/legacy_compiler.cpp` will need a fallback; `std::jthread` exists from libc++ 20 on.
 
 The [macOS build workflow](../workflows/macos-build.yml) runs both on a `macos-15` runner (arm64; x86_64 is cross-compiled there) and caches each target's prefix under a key of compiler, SDK, scripts and patches. It uploads per architecture `macos-libraries-<arch>.tar.gz` (build log and a manifest with versions, architectures and deployment targets) and `macos-port-todo-<arch>.txt`.
 
