@@ -110,6 +110,14 @@ make -j"$(nproc)" && sudo make install && sudo ldconfig
 
 ### FreeFileSync and RealTimeSync
 
+Check the glib version first with `pkg-config --modversion glib-2.0`. From glib 2.78 (Ubuntu 24.04, Debian 13, Fedora 40 and later), `g_free` can be a function-like macro, and the `::g_free(...)` calls in `afs/ftp.cpp`, `base/icon_loader.cpp` and `zen/zstring.cpp` don't compile. So cap the glib API at 2.76 through the environment, which the makefiles' `CXXFLAGS +=` appends to:
+
+```bash
+export CXXFLAGS="-DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_76 -DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_2_76"
+```
+
+Skip that line only if glib is older than 2.78; glib older than 2.76 doesn't define `GLIB_VERSION_2_76`. Then build both programs in the same shell:
+
 ```bash
 make -C FreeFileSync/Source -j"$(nproc)"
 ```
@@ -120,10 +128,4 @@ make -C FreeFileSync/Source/RealTimeSync -j"$(nproc)"
 
 The binaries are written to `FreeFileSync/Build/Bin/FreeFileSync_<arch>` and `FreeFileSync/Build/Bin/RealTimeSync_<arch>`, and object files go to a `<exe>_Make` folder in the system temp directory (`make clean` removes both).
 
-With glib 2.78 or newer (Ubuntu 24.04, Debian 13 and later), `g_free` can be a function-like macro, and the `::g_free(...)` calls in `afs/ftp.cpp`, `base/icon_loader.cpp` and `zen/zstring.cpp` don't compile. Cap the glib API at 2.76 through the environment, which the makefiles' `CXXFLAGS +=` appends to:
-
-```bash
-CXXFLAGS="-DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_76 -DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_2_76" make -C FreeFileSync/Source -j"$(nproc)"
-```
-
-Do the same for RealTimeSync. To use a compiler other than the default `g++`, set `CXX` in the environment, for example `CXX=g++-14 make -C FreeFileSync/Source -j"$(nproc)"`. Don't pass it as a make argument (`make CXX=g++-14`): a command-line variable overrides the makefiles' `CXX += -pthread`.
+To use a compiler other than the default `g++`, set `CXX` in the environment the same way, for example `export CXX=g++-14` before running make. Don't pass it as a make argument (`make CXX=g++-14`): a command-line variable overrides the makefiles' `CXX += -pthread`.
