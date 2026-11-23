@@ -56,7 +56,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .build/deps
-          key: deps-ubuntu-24.04-gcc14-${{ hashFiles('.github/build/*.sh', '.github/build/patches/**') }}
+          # only the files that decide how the libraries are built, so editing build-free-file-sync.sh keeps the cache
+          key: deps-ubuntu-24.04-gcc14-${{ hashFiles('.github/build/common.sh', '.github/build/build.sh', '.github/build/build-openssl.sh', '.github/build/build-libssh2.sh', '.github/build/build-curl.sh', '.github/build/build-wxwidgets.sh', '.github/build/patches/**') }}
 
       - name: Build patched libraries
         if: steps.cache.outputs.cache-hit != 'true'
