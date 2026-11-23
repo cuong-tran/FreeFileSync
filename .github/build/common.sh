@@ -11,11 +11,12 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." &>/dev/null && pwd)
 SCRIPT_DIR="$REPO_ROOT/.github/build"
 PATCH_DIR="$SCRIPT_DIR/patches"
 
-BUILD_DIR="${FFS_BUILD_DIR:-$REPO_ROOT/.build}"
+# absolute, because the scripts change directories and the prefix ends up in rpaths and .pc files
+BUILD_DIR="$(realpath -m -- "${FFS_BUILD_DIR:-$REPO_ROOT/.build}")"
 ARCHIVE_DIR="$BUILD_DIR/archives"
 SOURCE_DIR="$BUILD_DIR/src"
 WORK_DIR="$BUILD_DIR/tmp"
-INSTALL_DIR="${FFS_DEPS_PREFIX:-$BUILD_DIR/deps}"
+INSTALL_DIR="$(realpath -m -- "${FFS_DEPS_PREFIX:-$BUILD_DIR/deps}")"
 STAMP_DIR="$INSTALL_DIR/.stamps"
 JOBS="${JOBS:-$(nproc)}"
 
