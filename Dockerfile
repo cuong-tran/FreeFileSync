@@ -9,7 +9,8 @@
 # Build the image once, then compile the mounted source tree (binaries land in FreeFileSync/Build/):
 #   docker build -t freefilesync-build .
 #   docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/src" freefilesync-build
-#   docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/src" freefilesync-build make -C FreeFileSync/Source BUILD=debug -j"$(nproc)"
+#   docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/src" freefilesync-build sh -c 'make -C FreeFileSync/Source BUILD=debug -j"$(nproc)"'
+# (single quotes, so $(nproc) runs in the container: macOS has no nproc, and a bare -j means unlimited jobs)
 #
 # The makefiles keep object files in /tmp. Add "-v freefilesync-objs:/tmp" to keep them between runs for incremental builds.
 #

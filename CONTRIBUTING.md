@@ -67,7 +67,13 @@ docker build -t freefilesync-build .
 docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/src" freefilesync-build
 ```
 
-Add `-v freefilesync-objs:/tmp` to keep the object files between runs, or append a command such as `make -C FreeFileSync/Source BUILD=debug -j"$(nproc)"` to run something else. libssh2 and libcurl are shared libraries inside the image, so the binaries run there, not necessarily on the host. The rest of this section describes the manual setup.
+Add `-v freefilesync-objs:/tmp` to keep the object files between runs, or append a command to run something else, quoted so the container's shell expands `$(nproc)` (macOS has no `nproc`, and a bare `-j` runs unlimited jobs):
+
+```bash
+docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/src" freefilesync-build sh -c 'make -C FreeFileSync/Source BUILD=debug -j"$(nproc)"'
+```
+
+libssh2 and libcurl are shared libraries inside the image, so the binaries run there, not necessarily on the host. The rest of this section describes the manual setup.
 
 ### Requirements
 
