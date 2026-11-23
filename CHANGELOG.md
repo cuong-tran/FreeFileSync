@@ -17,6 +17,7 @@ Entries are grouped by the upstream release they were made against.
 - Updated the `Dockerfile` for 14.13: Ubuntu 26.04 with GCC 15 (C++26), libssh2 from a pinned 1.11.2 development commit (14.13 needs `LIBSSH2_ERROR_STORE_OVERFLOW`), libcurl 8.21.0 and wxWidgets 3.3.4 built with `--disable-exceptions` and the `Bugs.txt` `wx/settings.h` patch (as a unified diff that also includes `<memory>`), with the glib API capped at 2.76 so upstream's `::g_free(...)` calls compile. All three source downloads are checked against pinned SHA-256 values. By default it builds FreeFileSync and RealTimeSync from the mounted source tree.
 - `FreeFileSync/Source/Makefile`: the default `make` again writes `FreeFileSync/Build/Bin/` with objects in the temp folder like upstream; `make BUILD=debug` builds into `FreeFileSync/Build/Debug/` with separate objects, replaces its `Resources` copy on every build and keeps `NDEBUG`; an unknown `BUILD` value is an error; objects without a `.d` file (e.g. from an older build) are rebuilt.
 - Added a `.gitignore` for the build output folders.
+- `CONTRIBUTING.md`: added a "Build in Docker" section and the debug build; `CLAUDE.md` points to both.
 
 ## FreeFileSync 14.9
 
