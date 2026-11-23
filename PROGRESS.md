@@ -7,8 +7,8 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | Milestone | Step | State | Commits | Review |
 |---|---|---|---|---|
 | M1 Foundation | Plan and architecture | done | | n/a (docs) |
-| M1 Foundation | 1. Platform macros, `Tests/zen` | next | | |
-| M1 Foundation | 2. Clang + libc++ on Linux | | | |
+| M1 Foundation | 1. Platform macros, `Tests/zen` | done, review fixes in progress | `d1e9037^..128099a` | 8 findings, see below |
+| M1 Foundation | 2. Clang + libc++ on Linux | in progress | | |
 | M1 Foundation | 3. macOS dependency builds in CI | | | |
 | M2 Sentry | | | | |
 | M3 macOS | | | | |
@@ -38,6 +38,24 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 - Repository secrets for Sentry (builds work without them, reporting stays off): `SENTRY_DSN`, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`.
 - Later, for notarized Mac builds: an Apple Developer ID certificate and app-specific password.
 
+## Upstream bugs found by the tests
+
+Marked `KNOWN_ISSUE` in `Tests/zen`, not fixed (upstream code):
+
+- `zen/sys_error.cpp` `formatGlibError()`: treats `G_FILE_ERROR` codes as errno values, so the message is wrong (e.g. `G_FILE_ERROR_NOENT` prints as `EINTR`).
+- `zen/sys_info.cpp` `getUserDownloadsPath()`: throws instead of falling back to `~/Downloads` when `xdg-user-dir` is not installed (non-root users only).
+
 ## Review findings
 
-None yet.
+### M1 step 1 (`d1e9037^..128099a`, `/code-review medium`)
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | `Tests/zen/run.sh` drops the caller's `CXXFLAGS` and has no glib 2.76 cap; fails to compile with glib 2.78+ | important | sent for fixing |
+| 2 | `Tests/zen/run.sh` can miss a failed compile job and link stale objects | important | sent for fixing |
+| 3 | Running `zen_test` directly uses the real recycle bin (sandbox only in `run.sh`) | important | sent for fixing |
+| 4 | `test_paths.cpp` dereferences an empty optional when `HOME` is unset | important | sent for fixing |
+| 5 | `zen/build_info.h` `#error` on platforms other than Linux, macOS, Windows | important | kept on purpose; message to name the supported platforms |
+| 6 | Timeout test leaves a `sleep 10` process behind | nit | sent for fixing |
+| 7 | A `KNOWN_ISSUE` that no longer reproduces does not fail the run | nit | sent for fixing |
+| 8 | Test helpers lack the `//throw FileError` comment | nit | sent for fixing |
