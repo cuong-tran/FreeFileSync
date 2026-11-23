@@ -27,6 +27,7 @@ CXXFLAGS += -isystem/usr/include/gtk-3.0
 #(YES/NO, or empty if the preprocessor run itself fails => leave it to the real compile to report the error)
 haveWxColorHook := $(shell if wxSettings=$$($(CXX) $(CXXFLAGS) -E -x c++ -include wx/settings.h /dev/null 2>/dev/null); then grep -q refGlobalColorHook <<< "$$wxSettings" && echo YES || echo NO; fi)
 ifeq ($(haveWxColorHook),NO)
+    $(warning wxWidgets lacks the wxColorHook patch from Bugs.txt => building without the enhanced dark mode text contrast)
     CXXFLAGS += -DZEN_WX_NO_COLOR_HOOK
 endif
 
