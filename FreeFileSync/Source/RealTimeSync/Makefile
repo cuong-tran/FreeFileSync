@@ -12,7 +12,26 @@ CXXFLAGS += -std=c++26 -pipe -I../../.. -I../../../zenXml -include "zen/i18n.h" 
            -Wall -Wfatal-errors -Wshadow -Wmissing-include-dirs -Wswitch-enum -Wcast-align -Wnon-virtual-dtor -Wimplicit-fallthrough -Wundef -Wpedantic -Wredundant-decls \
            -Wno-unused-function -Wno-deprecated-enum-enum-conversion \
            -O3 -DNDEBUG
+#compiler family from "$(CXX) --version": GCC-only warning flags for g++, their closest clang counterparts otherwise
+compilerFamily := $(if $(findstring clang,$(shell $(CXX) --version 2>/dev/null)),clang,gcc)
+ifeq ($(compilerFamily),gcc)
 CXXFLAGS += -Wno-maybe-uninitialized -Wno-free-nonheap-object -Wno-restrict -Wduplicated-cond -Wlogical-op
+else
+#-Wlogical-op, -Wduplicated-cond: clang has no direct equivalent; -Wtautological-overlap-compare catches contradictory or redundant comparisons
+#-Wno-potentially-evaluated-expression: "typeid(path.afsDevice.ref())" evaluates its operand on purpose, to get the dynamic type
+#-Wno-unused-const-variable: constants kept for features this edition doesn't compile in (e.g. the EMAIL_* limits in log_file.cpp)
+#-Wno-unused-lambda-capture: captures of constants clang can use without capturing (GCC and MSVC may still require them)
+CXXFLAGS += -Wtautological-overlap-compare -Wno-potentially-evaluated-expression -Wno-unused-const-variable -Wno-unused-lambda-capture
+endif
+
+#optional: "make STDLIB=libc++" compiles and links against LLVM's libc++ instead of the compiler's default C++ library
+#(libstdc++ on Linux); macOS and the Windows cross build use libc++, so this reproduces their library errors on Linux
+ifeq ($(STDLIB),libc++)
+    CXXFLAGS += -stdlib=libc++
+    LDFLAGS  += -stdlib=libc++
+else ifneq ($(STDLIB),)
+    $(error STDLIB must be empty or "libc++", not "$(STDLIB)")
+endif
 
 CXX += -pthread
 
