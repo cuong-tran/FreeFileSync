@@ -8,6 +8,7 @@ on:
     paths:
       - ".github/build/**"
       - ".github/workflows/linux-patched-libs.yml"
+      - "Bugs.txt"
       - "FreeFileSync/Source/**"
       - "zen/**"
       - "wx+/**"
@@ -19,6 +20,7 @@ on:
     paths:
       - ".github/build/**"
       - ".github/workflows/linux-patched-libs.yml"
+      - "Bugs.txt"
       - "FreeFileSync/Source/**"
       - "zen/**"
       - "wx+/**"
