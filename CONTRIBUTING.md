@@ -74,7 +74,7 @@ Add `libselinux1-dev` for SELinux support. GTK 2 (`libgtk2.0-dev`) is not needed
 
 ### libssh2
 
-`libssh2/libssh2_wrap.h` uses `LIBSSH2_ERROR_STORE_OVERFLOW`, which only libssh2's development branch has (`Bugs.txt` names `1.11.2_DEV`). `afs/sftp.cpp` also needs `MAX_SFTP_OUTGOING_SIZE` and `MAX_SFTP_READ_SIZE`, which libssh2 keeps in its private `src/sftp.h`. Download a recent commit from [libssh2](https://github.com/libssh2/libssh2), add the two `#define` lines from `Bugs.txt` to `include/libssh2_sftp.h`, then build and install it with OpenSSL:
+`libssh2/libssh2_wrap.h` uses `LIBSSH2_ERROR_STORE_OVERFLOW`, which only libssh2's development branch has (`Bugs.txt` names `1.11.2_DEV`). `afs/sftp.cpp` also uses `MAX_SFTP_OUTGOING_SIZE` and `MAX_SFTP_READ_SIZE`, which libssh2 keeps in its private `src/sftp.h`; it falls back to libssh2's value of 30000 when the headers don't define them, so adding the two `#define` lines from `Bugs.txt` to `include/libssh2_sftp.h` is optional. Download a recent commit from [libssh2](https://github.com/libssh2/libssh2), then build and install it with OpenSSL:
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DCRYPTO_BACKEND=OpenSSL -DENABLE_ZLIB_COMPRESSION=ON -DBUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF

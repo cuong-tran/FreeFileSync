@@ -30,6 +30,6 @@ Git mirror of the FreeFileSync source code (C++26, wxWidgets/GTK 3), rebuilt fro
 
 ## Building and checking
 
-- Linux only from these sources: `make -C FreeFileSync/Source -j"$(nproc)"` (and `make -C FreeFileSync/Source/RealTimeSync`). It needs g++ 14+ (`-std=c++26`, GCC-only warning flags) plus wxWidgets 3.3 built from source with `--disable-exceptions` (GTK 3), libssh2 built from a development commit with the `Bugs.txt` change, and the OpenSSL, libcurl, libidn2 and zlib dev packages. With glib 2.78+ it also needs the glib API capped at 2.76 through `CXXFLAGS`. See `CONTRIBUTING.md` for packages and steps. There are no Windows/macOS project files and no test suite.
+- Linux only from these sources: `make -C FreeFileSync/Source -j"$(nproc)"` (and `make -C FreeFileSync/Source/RealTimeSync`). It needs g++ 14+ (`-std=c++26`, GCC-only warning flags) plus wxWidgets 3.3 built from source with `--disable-exceptions` (GTK 3), libssh2 built from a development commit (the `Bugs.txt` header change is optional: `afs/sftp.cpp` falls back to the same values), and the OpenSSL, libcurl, libidn2 and zlib dev packages. With glib 2.78+ it also needs the glib API capped at 2.76 through `CXXFLAGS`. See `CONTRIBUTING.md` for packages and steps. There are no Windows/macOS project files and no test suite.
 - `Bugs.txt` lists patches upstream applies to its third-party libraries; builds against unpatched libraries may misbehave.
 - To see what changed in a release, diff the release commits: `git diff <prev-release-commit> <release-commit> -- FreeFileSync/Source`.

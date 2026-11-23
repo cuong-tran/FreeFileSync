@@ -1,0 +1,187 @@
+# Builds FreeFileSync and RealTimeSync for Linux ARM64 and packages them as a .deb and a portable tar.gz.
+#
+# Same build environment as linux-multiarch-build.yml (Ubuntu 26.04 container for a GCC with -std=c++26,
+# wxWidgets 3.3.4 and a pinned libssh2 development commit, glib API capped at 2.76), but this workflow runs on
+# every push and pull request to main and dev and turns the arm64 build into installable packages. libssh2 is
+# installed unpatched here, so the build also covers the MAX_SFTP_* fallback in afs/sftp.cpp; the library is
+# shipped next to the binaries, which find it through an $ORIGIN rpath.
+name: Build Linux ARM64 packages
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WX_VERSION: 3.3.4
+  WX_SHA256: 815c16cafa4fcbfcf25c5c0a3418309c62257b8a3b6f91d85a1367a134f98c98
+  WX_PREFIX: /opt/wx-install
+  # last libssh2 master commit before the FreeFileSync 14.13 release ("1.11.2_DEV" in Bugs.txt): libssh2/libssh2_wrap.h
+  # needs LIBSSH2_ERROR_STORE_OVERFLOW from it, and distribution releases such as Ubuntu 24.04's 1.11.0 also lack
+  # LIBSSH2_ERROR_MAC_FAILURE. Keep in sync with LIBSSH2_COMMIT/LIBSSH2_SHA256 in linux-multiarch-build.yml.
+  LIBSSH2_COMMIT: 83284a05a1add34722c1fa36fa706fe7aced87b6
+  LIBSSH2_SHA256: 03e70390ceafcde9ceb98654d9e55f05c705c2e62c05863d5284e4e11f51b8a7
+  # glib >= 2.78 makes g_free() a function-like macro, which breaks FreeFileSync's "::g_free(ptr)" calls.
+  # Passed through the environment so the makefiles' "CXXFLAGS +=" appends to it.
+  FFS_CXXFLAGS: -DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_76 -DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_2_76
+
+jobs:
+  build-arm64:
+    name: Build packages on Linux ARM64 (aarch64)
+    runs-on: ubuntu-24.04-arm
+    container: ubuntu:26.04
+    timeout-minutes: 90
+
+    steps:
+    - name: Install build dependencies
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        apt-get update
+        apt-get install -y --no-install-recommends \
+          ca-certificates curl bzip2 make cmake g++ pkg-config python3 dpkg-dev unzip patchelf \
+          libgtk-3-dev libssl-dev zlib1g-dev libcurl4-openssl-dev libidn2-dev libselinux1-dev
+        g++ --version
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Build libssh2 ${{ env.LIBSSH2_COMMIT }}
+      working-directory: ${{ runner.temp }}
+      run: |
+        set -euo pipefail
+        curl -fsSL --retry 3 --retry-all-errors -o libssh2.tar.gz "https://github.com/libssh2/libssh2/archive/${LIBSSH2_COMMIT}.tar.gz"
+        echo "${LIBSSH2_SHA256}  libssh2.tar.gz" | sha256sum -c -
+        tar -xzf libssh2.tar.gz
+        cd "libssh2-${LIBSSH2_COMMIT}"
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -DBUILD_SHARED_LIBS=ON -DBUILD_STATIC_LIBS=OFF -DCRYPTO_BACKEND=OpenSSL -DENABLE_ZLIB_COMPRESSION=ON \
+          -DBUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF
+        cmake --build build -j"$(nproc)"
+        cmake --install build
+        ldconfig
+        pkg-config --modversion libssh2
+
+    # restore and save are separate steps so a wxWidgets build is kept even when the FreeFileSync build fails
+    - name: Restore wxWidgets build
+      id: wx-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ env.WX_PREFIX }}
+        key: wx-${{ env.WX_VERSION }}-ubuntu26.04-arm64-${{ hashFiles('.github/scripts/build-wxwidgets.sh') }}
+
+    - name: Build wxWidgets ${{ env.WX_VERSION }}
+      if: steps.wx-cache.outputs.cache-hit != 'true'
+      run: .github/scripts/build-wxwidgets.sh
+
+    - name: Save wxWidgets build
+      if: steps.wx-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ env.WX_PREFIX }}
+        key: ${{ steps.wx-cache.outputs.cache-primary-key }}
+
+    - name: Build FreeFileSync and RealTimeSync
+      run: |
+        set -euo pipefail
+        export PATH="${WX_PREFIX}/bin:${PATH}"
+        echo "Using $(command -v wx-config), wxWidgets $(wx-config --version)"
+        CXXFLAGS="${FFS_CXXFLAGS}" make -C FreeFileSync/Source -j"$(nproc)"
+        CXXFLAGS="${FFS_CXXFLAGS}" make -C FreeFileSync/Source/RealTimeSync -j"$(nproc)"
+        ls -l FreeFileSync/Build/Bin
+
+    - name: Create DEB package
+      env:
+        SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }} # not the temporary merge commit of a PR
+      run: |
+        set -euo pipefail
+        ffsVersion=$(sed -n 's/^const char ffsVersion\[\] = "\([^"]*\)".*/\1/p' FreeFileSync/Source/version/version.h)
+        test -n "${ffsVersion}"
+        debArch=$(dpkg --print-architecture)
+        debVersion="${ffsVersion}+ci${GITHUB_RUN_NUMBER}"
+        arch=$(arch)
+
+        pkg="${RUNNER_TEMP}/deb"
+        rm -rf "${pkg}"
+        mkdir -p "${pkg}/DEBIAN" "${pkg}/opt/FreeFileSync" "${pkg}/usr/bin" \
+                 "${pkg}/usr/share/applications" "${pkg}/usr/share/pixmaps"
+
+        # same layout as upstream's Linux package: FreeFileSync looks for Resources next to the Bin folder of the
+        # executable, and RealTimeSync starts batch jobs with "<install dir>/FreeFileSync" (getFreeFileSyncLauncherPath())
+        mkdir -p dist/FreeFileSync
+        cp -r FreeFileSync/Build/Bin FreeFileSync/Build/Resources dist/FreeFileSync/
+        # ship the libssh2 built above (not packaged by the distribution) next to the binaries
+        cp -L "$(ldd FreeFileSync/Build/Bin/FreeFileSync_${arch} | awk '/libssh2/ {print $3}')" dist/FreeFileSync/Bin/
+        # only binaries that link libssh2 (FreeFileSync, not RealTimeSync) get the $ORIGIN rpath; the build container
+        # also has libssh2 in /usr/local/lib, so check that they resolve the bundled copy. No "grep -q" in these pipelines:
+        # with pipefail, grep exiting at the first match can kill readelf/ldd with SIGPIPE and fail the test.
+        bundledSsh2=$(realpath dist/FreeFileSync/Bin/libssh2.so.1)
+        for bin in dist/FreeFileSync/Bin/*_${arch}; do
+          if LD_LIBRARY_PATH= ldd "${bin}" | grep 'not found'; then exit 1; fi
+          if readelf -d "${bin}" | grep -F '[libssh2.so.1]' >/dev/null; then
+            patchelf --set-rpath '$ORIGIN' "${bin}"
+            LD_LIBRARY_PATH= ldd "${bin}" | grep -F "libssh2.so.1 => ${bundledSsh2} " >/dev/null ||
+              { echo "::error::${bin} does not load the bundled libssh2"; exit 1; }
+          fi
+        done
+        readelf -d "dist/FreeFileSync/Bin/FreeFileSync_${arch}" | grep -F '[libssh2.so.1]' >/dev/null # FreeFileSync itself must link it
+        ln -s "Bin/FreeFileSync_${arch}" dist/FreeFileSync/FreeFileSync
+        ln -s "Bin/RealTimeSync_${arch}" dist/FreeFileSync/RealTimeSync
+        cp -a dist/FreeFileSync/. "${pkg}/opt/FreeFileSync/"
+        ln -s /opt/FreeFileSync/FreeFileSync "${pkg}/usr/bin/freefilesync"
+        ln -s /opt/FreeFileSync/RealTimeSync "${pkg}/usr/bin/realtimesync"
+        unzip -p FreeFileSync/Build/Resources/Icons.zip FreeFileSync.png > "${pkg}/usr/share/pixmaps/freefilesync.png"
+        unzip -p FreeFileSync/Build/Resources/Icons.zip RealTimeSync.png > "${pkg}/usr/share/pixmaps/realtimesync.png"
+
+        printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=FreeFileSync' \
+          'Comment=Folder Comparison and Synchronization' 'Exec=/usr/bin/freefilesync %F' \
+          'Icon=freefilesync' 'Terminal=false' 'Categories=Utility;FileTools;' \
+          > "${pkg}/usr/share/applications/freefilesync.desktop"
+        printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=RealTimeSync' \
+          'Comment=Automated Synchronization' 'Exec=/usr/bin/realtimesync %F' \
+          'Icon=realtimesync' 'Terminal=false' 'Categories=Utility;FileTools;' \
+          > "${pkg}/usr/share/applications/realtimesync.desktop"
+
+        # let dpkg-shlibdeps work out the shared library dependencies (wxWidgets is linked statically; the bundled
+        # libssh2 has no package info, so its own dependencies come from scanning the library itself)
+        shlibsDir="${RUNNER_TEMP}/shlibs"
+        mkdir -p "${shlibsDir}/debian"
+        echo 'Source: freefilesync' > "${shlibsDir}/debian/control"
+        depends=$(cd "${shlibsDir}" && dpkg-shlibdeps -O --ignore-missing-info "${pkg}"/opt/FreeFileSync/Bin/* | sed -n 's/^shlibs:Depends=//p')
+        test -n "${depends}"
+
+        cat > "${pkg}/DEBIAN/control" <<EOF
+        Package: freefilesync
+        Version: ${debVersion}
+        Section: utils
+        Priority: optional
+        Architecture: ${debArch}
+        Depends: ${depends}
+        Maintainer: ${GITHUB_REPOSITORY_OWNER} <noreply@github.com>
+        Homepage: https://github.com/${GITHUB_REPOSITORY}
+        Description: Folder comparison and synchronization (unofficial build)
+         FreeFileSync and RealTimeSync built from https://github.com/${GITHUB_REPOSITORY}
+         at commit ${SOURCE_SHA}.
+        EOF
+        cat "${pkg}/DEBIAN/control"
+
+        dpkg-deb --build --root-owner-group "${pkg}" "dist/freefilesync_${debVersion}_${debArch}.deb"
+        tar -C dist -czf "dist/FreeFileSync_${ffsVersion}_Linux_${arch}.tar.gz" FreeFileSync
+        rm -rf dist/FreeFileSync
+        ls -l dist
+
+    - name: Upload packages
+      uses: actions/upload-artifact@v4
+      with:
+        name: freefilesync-linux-arm64
+        path: dist/*
+        retention-days: 30
