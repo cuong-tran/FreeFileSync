@@ -3,6 +3,10 @@
 #
 # Adapted from the Geeeeeker fork (https://github.com/Geeeeeker/FreeFileSync).
 # Run it by hand from the Actions tab; it also runs on pull requests that touch this workflow or the Makefiles.
+# It is not a general CI check: pull requests that only change C++ sources do not trigger it.
+#
+# The binaries are CI build products, not release packages: they link against the glibc, GTK 3, libcurl,
+# libssh2 and OpenSSL of Ubuntu 26.04 and may not start on older distributions.
 #
 # Library setup follows Bugs.txt: wxWidgets is built from source with the settings.h color hook
 # that wx+/darkmode.cpp needs and without exception handling (application.cpp has an #error for that),
