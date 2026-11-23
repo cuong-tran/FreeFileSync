@@ -6,7 +6,8 @@
 #pragma once
 
 #include <cassert>
-#include "legacy_compiler.h" //std::uncaught_exceptions
+#include <exception> //std::uncaught_exceptions
+#include "legacy_compiler.h"
 
 namespace zen
 {
