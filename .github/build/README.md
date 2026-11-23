@@ -53,7 +53,7 @@ FFS_TARGET=macos-arm64  .github/build/build.sh
 FFS_TARGET=macos-x86_64 .github/build/build.sh   # cross-compiled with -arch x86_64 on an Apple silicon Mac
 ```
 
-Each target is installed into `.build/deps/<target>`, as static libraries only, for one architecture and the deployment target `FFS_MACOS_DEPLOYMENT_TARGET` in `common.sh`, which every library is checked against (`lipo -archs`, `otool -l`). The compiler is Xcode's clang (`CC=clang CXX=clang++`, override through the environment; CI selects Xcode 26.3 with `DEVELOPER_DIR`, the toolchain the apps will be built with); pkg-config sees only the prefix, so nothing from Homebrew ends up in a library. What differs from Linux:
+Each target is installed into `.build/deps/<target>`, as static libraries only, for one architecture and the deployment target `FFS_MACOS_DEPLOYMENT_TARGET` in `common.sh`, which every library is checked against (`lipo -archs`, `otool -l`). The compiler is Xcode's clang (`CC=clang CXX=clang++`, override through the environment; CI selects the newest Xcode 26.x on the runner image with `DEVELOPER_DIR`, the toolchain the apps will be built with); pkg-config sees only the prefix, so nothing from Homebrew ends up in a library. What differs from Linux:
 
 - **OpenSSL**: `no-shared` with the `darwin64-arm64-cc`/`darwin64-x86_64-cc` target.
 - **libssh2**: static, against that OpenSSL and the SDK's zlib, with the `Bugs.txt` patch.
