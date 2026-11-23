@@ -13,7 +13,7 @@ The scripts here download those libraries, apply the `Bugs.txt` fixes from [patc
 Install a C++26 compiler (g++ 14 or newer) and the system packages they still use. On Debian or Ubuntu:
 
 ```bash
-sudo apt-get install build-essential g++-14 pkg-config perl patch curl libgtk-3-dev libxtst-dev libidn2-dev zlib1g-dev
+sudo apt-get install build-essential g++-14 pkg-config perl patch curl xz-utils bzip2 libgtk-3-dev libxtst-dev libidn2-dev zlib1g-dev
 ```
 
 Build the libraries (OpenSSL, libssh2, libcurl, wxWidgets; about 15 minutes on 4 cores):

@@ -4,6 +4,7 @@ name: Linux build (patched libraries)
 
 on:
   push:
+    branches: [main, dev] # feature branches are built by their pull requests
     paths:
       - ".github/build/**"
       - ".github/workflows/linux-patched-libs.yml"
@@ -47,7 +48,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            gcc-14 g++-14 make pkg-config perl patch \
+            gcc-14 g++-14 make pkg-config perl patch curl xz-utils bzip2 \
             libgtk-3-dev libxtst-dev libidn2-dev zlib1g-dev libselinux1-dev
 
       - name: Restore patched libraries
