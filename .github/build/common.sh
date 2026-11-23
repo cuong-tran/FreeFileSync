@@ -8,6 +8,8 @@
 #   JOBS              parallel make jobs (default: nproc)
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." &>/dev/null && pwd)"
+# the build-<lib>.sh that sourced this file, resolved now because the scripts cd before mark_installed
+CALLER_SCRIPT="$(realpath -- "$0")"
 SCRIPT_DIR="$REPO_ROOT/.github/build"
 PATCH_DIR="$SCRIPT_DIR/patches"
 
@@ -63,7 +65,7 @@ install_id() {
     local name="$1" dep stamp
     shift
     if [ -f "$PATCH_DIR/$name.patch" ]; then sha256sum "$PATCH_DIR/$name.patch" | cut -d' ' -f1; else echo unpatched; fi
-    sha256sum "$0" | cut -d' ' -f1 # the calling build-<lib>.sh, for its configure options
+    sha256sum "$CALLER_SCRIPT" | cut -d' ' -f1 # the calling build-<lib>.sh, for its configure options
     for dep in "$@"; do
         for stamp in "$STAMP_DIR/$dep"-*; do
             [ -f "$stamp" ] && echo "$(basename "$stamp") $(sha256sum <"$stamp" | cut -d' ' -f1)"
