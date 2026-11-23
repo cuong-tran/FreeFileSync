@@ -42,3 +42,5 @@ wxWidgets is linked statically. OpenSSL, libssh2 and libcurl are shared librarie
 When an upstream release changes the library versions in `Bugs.txt`, update the defaults in the scripts and the checksums in `common.sh`, and port the `Bugs.txt` fixes to the new sources as `patches/<name>-<version>.patch` (a unified diff applied with `patch -p1` in the unpacked source tree). The scripts refuse to build a version without a patch, so a forgotten patch shows up as an error rather than a subtly broken build.
 
 The [Linux CI workflow](../workflows/linux-patched-libs.yml) runs these scripts on Ubuntu 24.04.
+
+The other Linux workflows don't use these scripts. [linux-multiarch-build.yml](../workflows/linux-multiarch-build.yml) builds its libraries inline, and [build-arm64.yml](../workflows/build-arm64.yml) uses its own [.github/scripts/build-wxwidgets.sh](../scripts/build-wxwidgets.sh), which is not the `build-wxwidgets.sh` here. Each carries its own copy of the wxWidgets color hook patch and the libssh2 commit pin, so update all three when a new release changes them.
