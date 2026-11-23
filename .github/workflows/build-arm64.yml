@@ -17,6 +17,8 @@ concurrency:
 env:
   WX_VERSION: 3.3.4
   WX_SHA256: 815c16cafa4fcbfcf25c5c0a3418309c62257b8a3b6f91d85a1367a134f98c98
+  # passed via the environment: "make CXX=..." would override the makefiles' "CXX += -pthread"
+  CC: gcc-14
   CXX: g++-14
 
 jobs:
@@ -100,8 +102,7 @@ jobs:
           --disable-stc \
           --disable-webview \
           --disable-mediactrl \
-          --without-opengl \
-          CXX="${CXX}" CC=gcc-14
+          --without-opengl
         make -j"$(nproc)"
         make install
 
@@ -110,8 +111,8 @@ jobs:
         set -euo pipefail
         export PATH="${WX_PREFIX}/bin:${PATH}"
         echo "Using $(command -v wx-config), wxWidgets $(wx-config --version)"
-        make -C FreeFileSync/Source -j"$(nproc)" CXX="${CXX}"
-        make -C FreeFileSync/Source/RealTimeSync -j"$(nproc)" CXX="${CXX}"
+        make -C FreeFileSync/Source -j"$(nproc)"
+        make -C FreeFileSync/Source/RealTimeSync -j"$(nproc)"
         ls -l FreeFileSync/Build/Bin
 
     - name: Create DEB package
