@@ -85,7 +85,7 @@ Run every command from the repository root.
    python3 -I "${TMPDIR:-/tmp}/ffs-skill/ffs_release.py" --repo . --branch upstream
    ```
 
-   It stops on the first error, such as a download that returns an HTML page instead of a file, or a GitHub API failure. Rerunning it resumes and completes a draft or partial release. If the same file keeps failing, report it to the user rather than skipping it.
+   It stops on the first network or GitHub API error; rerunning it resumes and completes a draft or partial release. A file is treated differently when its website link works but doesn't deliver it, i.e. the response is empty, truncated or an HTML page even after following a MediaFire landing page. The script retries such a file three times, then publishes the release without it and lists it at the end under "not attached". Some old files are broken this way on the hosting side, e.g. `FreeFileSync_5.17_Mac_OS_X_64-bit.zip`. Report the list to the user. Later runs retry those files, so the dry run keeps listing their releases as incomplete until the links work.
 
 9. Verify each new release, for example `gh release view v<ver> --json name,body,isDraft,assets --jq '{name, isDraft, body, assets: [.assets[].name]}'`. The title and body should match `git log -1 --format=%B v<ver>`, it should not be a draft, and all of the version's prebuilt files should be attached, with no `*_Source.zip`.
 

@@ -98,7 +98,23 @@ def ensure_tag(repo, remote, tag, sha):
         run(["git", "-C", repo, "push", "-q", remote, f"refs/tags/{tag}"], capture=False)
 
 
-def download_asset(url, dest_dir, referer):
+class UnavailableAsset(RuntimeError):
+    """The website's link works but doesn't deliver the file (empty, truncated or HTML response)."""
+
+
+def download_asset(url, dest_dir, referer, tries=3):
+    """Download one asset, retrying when the response isn't a valid file; raise UnavailableAsset if
+    it never is. Network failures still raise RuntimeError (from ffs.fetch) and stop the run."""
+    for attempt in range(1, tries + 1):
+        try:
+            return _download_asset(url, dest_dir, referer)
+        except UnavailableAsset:
+            if attempt == tries:
+                raise
+            time.sleep(5 * attempt)
+
+
+def _download_asset(url, dest_dir, referer):
     name = url.rsplit("/", 1)[1]
     path = os.path.join(dest_dir, name)
     ffs.fetch(url, path, referer=referer)
@@ -116,7 +132,7 @@ def download_asset(url, dest_dir, referer):
                 head = fh.read(8)
     magic = MAGIC.get(ext, b"")
     if os.path.getsize(path) == 0 or head.lstrip().startswith(b"<") or (magic and not head.startswith(magic)):
-        raise RuntimeError(f"{url} did not return a valid {ext} file (got {head!r})")
+        raise UnavailableAsset(f"{url} did not return a valid {ext} file (got {head!r})")
     return path
 
 
@@ -132,16 +148,27 @@ def publish(args, gh_repo, version, commit, info, existing, is_latest):
     ensure_tag(args.repo, args.remote, tag, sha)
     missing = [u for u in info["assets"] if existing is None or u.rsplit("/", 1)[1] not in existing["assets"]]
     with tempfile.TemporaryDirectory(prefix=f"ffs-release-{version}-") as tmp:
-        files = [download_asset(u, tmp, info["referer"]) for u in missing]
-        if existing is None:
-            notes = os.path.join(tmp, "notes.md")
-            with open(notes, "w", encoding="utf-8") as fh:
-                fh.write(body + "\n")
-            run(["gh", "release", "create", tag, "--repo", gh_repo, "--verify-tag", "--title", subject,
-                 "--notes-file", notes, latest, *files], capture=False)
-            return f"created with {len(files)} assets"
-        if files:
-            run(["gh", "release", "upload", tag, "--repo", gh_repo, "--clobber", *files], capture=False)
+        files, unavailable = [], []
+        for u in missing:
+            try:
+                files.append(download_asset(u, tmp, info["referer"]))
+            except UnavailableAsset as exc:
+                print(f"  warning: skipping {u.rsplit('/', 1)[1]}: {exc}", file=sys.stderr, flush=True)
+                unavailable.append(u)
+        result = publish_files(gh_repo, tag, subject, body, tmp, files, existing, latest)
+    return result + (f", {len(unavailable)} unavailable" if unavailable else ""), unavailable
+
+
+def publish_files(gh_repo, tag, subject, body, tmp, files, existing, latest):
+    if existing is None:
+        notes = os.path.join(tmp, "notes.md")
+        with open(notes, "w", encoding="utf-8") as fh:
+            fh.write(body + "\n")
+        run(["gh", "release", "create", tag, "--repo", gh_repo, "--verify-tag", "--title", subject,
+             "--notes-file", notes, latest, *files], capture=False)
+        return f"created with {len(files)} assets"
+    if files:
+        run(["gh", "release", "upload", tag, "--repo", gh_repo, "--clobber", *files], capture=False)
     if existing["draft"]:
         run(["gh", "release", "edit", tag, "--repo", gh_repo, "--draft=false", latest], capture=False)
         return f"added {len(files)} missing assets and published the draft"
@@ -201,11 +228,18 @@ def run_all(args):
             print(f"  v{v}: {len(pages[v]['assets'])} files"
                   + ("" if f"v{v}" not in releases else " (incomplete or draft release exists)"))
         return 0
+    unavailable = []
     for i, v in enumerate(todo, 1):
-        result = publish(args, gh_repo, v, commits[v], pages[v], releases.get(f"v{v}"), v == newest)
+        result, skipped = publish(args, gh_repo, v, commits[v], pages[v], releases.get(f"v{v}"), v == newest)
+        unavailable += skipped
         print(f"[{i}/{len(todo)}] v{v}: {result}", flush=True)
         if i < len(todo):
             time.sleep(args.delay)
+    if unavailable:
+        # These releases stay "incomplete", so every later run retries them in case the link gets fixed.
+        print(f"\n{len(unavailable)} file(s) the website links to but doesn't deliver; not attached:")
+        for u in unavailable:
+            print(f"  {u}")
     return 0
 
 
