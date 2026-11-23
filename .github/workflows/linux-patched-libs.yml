@@ -1,0 +1,104 @@
+# Builds the libraries from Bugs.txt with their patches (.github/build/build.sh), then
+# FreeFileSync and RealTimeSync with the upstream makefiles against them.
+name: Linux build (patched libraries)
+
+on:
+  push:
+    branches: [main, dev] # feature branches are built by their pull requests
+    paths:
+      - ".github/build/**"
+      - ".github/workflows/linux-patched-libs.yml"
+      - "Bugs.txt"
+      - "FreeFileSync/Source/**"
+      - "zen/**"
+      - "wx+/**"
+      - "zenXml/**"
+      - "libcurl/**"
+      - "libssh2/**"
+      - "xBRZ/**"
+  pull_request:
+    paths:
+      - ".github/build/**"
+      - ".github/workflows/linux-patched-libs.yml"
+      - "Bugs.txt"
+      - "FreeFileSync/Source/**"
+      - "zen/**"
+      - "wx+/**"
+      - "zenXml/**"
+      - "libcurl/**"
+      - "libssh2/**"
+      - "xBRZ/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      CC: gcc-14
+      CXX: g++-14 # the sources use -std=c++26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-14 g++-14 make cmake pkg-config perl patch curl xz-utils bzip2 \
+            libgtk-3-dev libxtst-dev libidn2-dev zlib1g-dev libselinux1-dev
+
+      - name: Restore patched libraries
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: .build/deps
+          # only the files that decide how the libraries are built, so editing build-free-file-sync.sh keeps the cache
+          key: deps-ubuntu-24.04-gcc14-${{ hashFiles('.github/build/common.sh', '.github/build/build.sh', '.github/build/build-openssl.sh', '.github/build/build-libssh2.sh', '.github/build/build-curl.sh', '.github/build/build-wxwidgets.sh', '.github/build/patches/**') }}
+
+      - name: Build patched libraries
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: .github/build/build.sh
+
+      - name: Build FreeFileSync and RealTimeSync
+        shell: bash # the default run shell has no pipefail, and tee would hide a failed build
+        run: .github/build/build-free-file-sync.sh 2>&1 | tee build.log
+
+      # the makefiles only warn (and build a fallback) when wxWidgets lacks the Bugs.txt color hook,
+      # so make sure the patched wxWidgets was actually used
+      - name: Check the wxWidgets color hook patch is used
+        run: |
+          grep -q refGlobalColorHook .build/deps/include/wx-3.*/wx/settings.h || { echo "::error::installed wx/settings.h lacks the wxColorHook patch"; exit 1; }
+          if grep -q "lacks the wxColorHook patch" build.log; then echo "::error::the makefiles built the wxColorHook fallback"; exit 1; fi
+
+      - name: Check the binaries use the patched libraries
+        run: |
+          for exe in FreeFileSync/Build/Bin/FreeFileSync_x86_64 FreeFileSync/Build/Bin/RealTimeSync_x86_64; do
+            ls -l "$exe"
+          done
+          ldd FreeFileSync/Build/Bin/FreeFileSync_x86_64 | tee ldd.txt
+          for lib in libcurl libssh2 libssl libcrypto; do
+            grep -E "$lib[^ ]* => $GITHUB_WORKSPACE/.build/deps/lib/" ldd.txt || { echo "::error::$lib is not taken from .build/deps"; exit 1; }
+          done
+
+      # A tarball keeps the executable bits (upload-artifact drops them). The binaries find the patched
+      # shared libraries through an rpath into this runner's workspace, so they are packed in lib/:
+      # run with LD_LIBRARY_PATH=lib Bin/FreeFileSync_x86_64 from the unpacked folder.
+      - name: Pack binaries
+        run: |
+          mkdir -p dist/lib
+          cp -a FreeFileSync/Build/Bin FreeFileSync/Build/Resources dist/
+          cp -a .build/deps/lib/*.so* dist/lib/
+          tar -czf FreeFileSync-linux-x86_64.tar.gz -C dist .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FreeFileSync-linux-x86_64
+          path: FreeFileSync-linux-x86_64.tar.gz
+          if-no-files-found: error
+          retention-days: 7

@@ -1,3 +1,5 @@
 FreeFileSync/Build/Bin/
 FreeFileSync/Build/Debug/
 FreeFileSync/Build/Obj/
+# Work area of the .github/build scripts (downloads, sources, installed libraries)
+/.build/
