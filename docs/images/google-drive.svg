@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="465px" height="465px" viewBox="0 0 465 465" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>Google Drive</title>
+    <defs>
+        <linearGradient x1="25.3104364%" y1="50.1992308%" x2="100.670317%" y2="97.5886538%" id="linearGradient-3">
+            <stop stop-color="#1A237E" stop-opacity="0.2" offset="0%"></stop>
+            <stop stop-color="#1A237E" stop-opacity="0.02" offset="100%"></stop>
+        </linearGradient>
+        <path d="M279.279602,0 L141.859939,0 L0,247.248134 L67.0618942,366.293532 L354.077646,366.293532 L421.13954,247.248134 L279.279602,0 Z M136.023494,247.248134 L210.56977,118.587531 L285.116046,247.248134 L136.023494,247.248134 Z" id="path-1"></path>
+        <path d="M279.279602,0 L141.859939,0 L0,247.248134 L67.0618942,366.293532 L354.077646,366.293532 L421.13954,247.248134 L279.279602,0 Z M136.023494,247.248134 L210.56977,118.587531 L285.116046,247.248134 L136.023494,247.248134 Z" id="path-4"></path>
+        <path d="M279.279602,0 L141.859939,0 L0,247.248134 L67.0618942,366.293532 L354.077646,366.293532 L421.13954,247.248134 L279.279602,0 Z M136.023494,247.248134 L210.56977,118.587531 L285.116046,247.248134 L136.023494,247.248134 Z" id="path-6"></path>
+    </defs>
+    <g stroke="none" stroke-width="1" fill="none" fill-rule="evenodd" transform="translate(20, 40)">
+		<g>
+			<mask id="mask-2" fill="white">
+				<use xlink:href="#path-1"></use>
+			</mask>
+			<g mask="url(#mask-2)">
+				<g transform="translate(67.018979, 247.248134)">
+					<polygon fill="#4285F4" fill-rule="nonzero" points="0.0429150347 0 0.0429150347 119.045398 287.058667 119.045398 354.120561 0"></polygon>
+					<polygon fill="url(#linearGradient-3)" fill-rule="nonzero" points="69.0045147 0 137.989002 119.045398 0.0429150347 119.045398"></polygon>
+					<g stroke-width="1" fill="none" fill-rule="evenodd">
+						<polygon fill-opacity="0.2"  fill="#FFFFFF" fill-rule="nonzero" points="67.6770097 2.28933458 350.20671 2.28933458 350.20671 2.28933458 354.120561 0 69.0045147 0 69.0045147 0"></polygon>
+						<polygon fill-opacity="0.2"  fill="#1A237E" fill-rule="nonzero" points="350.20671 2.28933458 285.731162 116.756063 1.37042011 116.756063 0.0429150347 119.045398 287.058667 119.045398 354.120561 0"></polygon>
+						<polygon fill-opacity="0.05" fill="#1A237E" fill-rule="nonzero" points="70.3320198 2.28933458 69.0045147 0 0.0429150347 119.045398 2.67503716 119.045398"></polygon>
+					</g>
+				</g>
+			</g>
+		</g>
+		<g>
+			<mask id="mask-5" fill="white">
+				<use xlink:href="#path-4"></use>
+			</mask>
+			<g mask="url(#mask-5)" fill-rule="nonzero">
+				<polygon                    fill="#0F9D58" points="141.859939 0 0 247.248134 67.0618942 366.293532 228.857297 87.0176073"></polygon>
+				<polygon fill-opacity="0.1" fill="#263238" points="141.859939 0 143.11878 6.753537 207.91476 118.587531 67.0847822 361.669076 2.63212213 247.248134 0 247.248134 67.0618942 366.293532 210.56977 118.587531"></polygon>
+				<polygon fill-opacity="0.2" fill="#FFFFFF" points="2.63212213 247.248134 143.187444 2.28933458 141.859939 0 141.859939 0 0 247.248134"></polygon>
+			</g>
+		</g>
+		<g>
+			<mask id="mask-7" fill="white">
+				<use xlink:href="#path-6"></use>
+			</mask>
+			<g mask="url(#mask-7)">
+				<g transform="translate(141.762664, 0.000000)">
+					<polygon fill="#FFCD40" fill-rule="nonzero" points="137.516937 0 0.0972740786 0 143.353382 247.248134 279.376876 247.248134"></polygon>
+					<g stroke-width="1" fill="none" fill-rule="evenodd">
+						<polygon fill-opacity="0.2" fill="#FFFFFF" fill-rule="nonzero" points="137.516937 0 0.0972740786 0 4.05690128 2.28933458 136.189432 2.28933458 276.744754 247.248134 279.376876 247.248134"></polygon>
+						<polygon fill-opacity="0.1" fill="#BF360C" fill-rule="nonzero" points="144.657999 244.9588 4.05690128 2.28933458 4.05690128 2.28933458 0.0972740786 0 143.353382 247.248134"></polygon>
+					</g>
+				</g>
+			</g>
+		</g>
+    </g>
+</svg>
