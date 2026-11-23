@@ -3,6 +3,7 @@
 // usage: zip_afs_test <archive.zip> <reference folder>          => archive content must equal reference folder
 //        zip_afs_test --expect-read-error <archive.zip> <item>  => reading <item> must fail (e.g. CRC mismatch)
 //        zip_afs_test --expect-item-count <archive.zip> <count> => archive must list exactly <count> items
+//        zip_afs_test --expect-item <archive.zip> <rel path>    => archive must list <rel path> (UTF-8), e.g. to check name decoding
 
 #include <cstdlib>
 #include <filesystem>
@@ -217,13 +218,23 @@ int main(int argc, char* argv[])
         check(itemCount == std::stoul(argv[3]), "item count mismatch: " + std::to_string(itemCount) + " vs " + argv[3]);
         std::cout << itemCount << " items listed in " << argv[2] << '\n';
     }
+    else if (argc == 4 && std::string(argv[1]) == "--expect-item")
+    {
+        const auto items = traverse(createItemPathZip(Zstr("zip:") + Zstring(argv[2])));
+        std::string listing;
+        for (const auto& [relPath, item] : items)
+            listing += "\n    " + relPath;
+        check(items.contains(argv[3]), std::string("missing in archive listing: ") + argv[3] + "\n  listed:" + listing);
+        std::cout << "listed: " << argv[3] << '\n';
+    }
     else if (argc == 3)
         compareWithReference(argv[1], argv[2]);
     else
     {
         std::cerr << "usage: zip_afs_test <archive.zip> <reference folder>\n"
                   "       zip_afs_test --expect-read-error <archive.zip> <item>\n"
-                  "       zip_afs_test --expect-item-count <archive.zip> <count>\n";
+                  "       zip_afs_test --expect-item-count <archive.zip> <count>\n"
+                  "       zip_afs_test --expect-item <archive.zip> <rel path>\n";
         return EXIT_FAILURE;
     }
 

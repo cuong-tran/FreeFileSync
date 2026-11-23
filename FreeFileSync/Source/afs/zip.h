@@ -14,7 +14,8 @@ namespace fff
     - optional sub folder inside the archive:  zip:/home/user/backup.zip|some/folder
     - variant "Mirror" (left => right): only new/changed files are extracted, obsolete files are deleted on the right side
 
-   supported: stored + deflate, Zip64, UTF-8 names (flag bit 11 or Info-ZIP Unicode path extra field), extended timestamps
+   supported: stored + deflate, Zip64, self-extracting archives (executable prefix), extended timestamps,
+              UTF-8 names (flag bit 11, Info-ZIP Unicode path extra field, or valid UTF-8 from non-DOS hosts), otherwise CP437
    not supported: encryption, other compression methods (reported as error when reading the file)  */
 bool  acceptsItemPathPhraseZip(const Zstring& itemPathPhrase); //noexcept
 AbstractPath createItemPathZip(const Zstring& itemPathPhrase); //noexcept

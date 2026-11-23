@@ -298,14 +298,28 @@ ZipIndex parseZipArchive(const Zstring& archivePath) //throw SysError
         archive.readAt(eocdOffset - 20, locator, sizeof(locator)); //throw SysError
         if (readLE32(locator) == SIG_ZIP64_EOCD_LOCATOR)
         {
-            const uint64_t zip64EocdOffset = readLE64(locator + 8);
+            const uint64_t locatorOffset = eocdOffset - 20;
             unsigned char zip64Eocd[56] = {};
-            if (details.fileSize < sizeof(zip64Eocd) || zip64EocdOffset > details.fileSize - sizeof(zip64Eocd)) //untrusted offset: avoid overflow
-                throw SysError(_("ZIP archive is corrupted.") + L" (Zip64 EOCD)");
-            archive.readAt(zip64EocdOffset, zip64Eocd, sizeof(zip64Eocd)); //throw SysError
 
-            if (readLE32(zip64Eocd) != SIG_ZIP64_EOCD)
-                throw SysError(_("ZIP archive is corrupted.") + L" (Zip64 EOCD)");
+            auto readZip64Eocd = [&](uint64_t offset) //throw SysError
+            {
+                if (offset > locatorOffset || locatorOffset - offset < sizeof(zip64Eocd)) //untrusted offset: record must end before the locator; avoid overflow
+                    return false;
+                archive.readAt(offset, zip64Eocd, sizeof(zip64Eocd)); //throw SysError
+                return readLE32(zip64Eocd) == SIG_ZIP64_EOCD;
+            };
+
+            const uint64_t zip64EocdOffset = readLE64(locator + 8);
+            uint64_t zip64EocdPos = zip64EocdOffset;
+            if (!readZip64Eocd(zip64EocdPos))
+            {
+                /* self-extracting archive: the stored offset excludes the executable prefix
+                   => expect the record (without extensible data sector) directly before the locator, the difference is the prefix size  */
+                zip64EocdPos = locatorOffset - std::min<uint64_t>(locatorOffset, sizeof(zip64Eocd));
+                if (zip64EocdPos <= zip64EocdOffset || !readZip64Eocd(zip64EocdPos))
+                    throw SysError(_("ZIP archive is corrupted.") + L" (Zip64 EOCD)");
+                prefixSize = zip64EocdPos - zip64EocdOffset;
+            }
 
             entryCount = readLE64(zip64Eocd + 32);
             cdSize     = readLE64(zip64Eocd + 40);
@@ -428,10 +442,16 @@ ZipIndex parseZipArchive(const Zstring& archivePath) //throw SysError
         }
 
         //---------- item name ----------
+        /* without flag bit 11 the spec says CP437, but macOS Archive Utility and older Info-ZIP on Unix write UTF-8 without setting the flag
+           => like Info-ZIP unzip, use CP437 for archives made on DOS/Windows hosts (where valid UTF-8 can still be CP437, e.g. "C3 A9" = "├⌐"),
+              and for other hosts only if the name is not valid UTF-8  */
+        const uint8_t hostSystem = versionMadeBy >> 8;
+        const bool isDosHost = hostSystem == 0 /*MS-DOS, OS/2 FAT*/ || hostSystem == 6 /*OS/2 HPFS*/ ||
+                               hostSystem == 10 /*Windows NTFS*/ || hostSystem == 14 /*VFAT*/;
         Zstring itemName;
         if (unicodeName)
             itemName = *unicodeName;
-        else if ((entry.flags & ZIP_FLAG_UTF8) || isValidUtf(rawName))
+        else if ((entry.flags & ZIP_FLAG_UTF8) || (!isDosHost && isValidUtf(rawName)))
             itemName = Zstring(rawName.c_str(), rawName.size());
         else
             itemName = decodeCp437(rawName);
