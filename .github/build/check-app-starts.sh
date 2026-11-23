@@ -7,8 +7,9 @@
 # With OFFLINE=1 the app (and Xvfb) run in a network namespace without network access (needs root or sudo, and unshare
 # and setpriv from util-linux), so the result doesn't depend on the internet: FreeFileSync's update check on a first
 # start then fails silently, as on a machine without a network.
-# Note: running as root, FreeFileSync keeps its settings in root's home (getpwnam), not $HOME, so only a non-root
-# user gets a real first start.
+# Started as root, the app runs as "nobody" instead (setpriv): as root FreeFileSync keeps its settings in root's home
+# (getpwnam), not $HOME, so it would neither get a first start nor a predictable window title. The binary and its
+# libraries must then be readable by "nobody"; the script says so and stops if they aren't.
 # Needs xvfb-run and xdotool.
 # Usage: check-app-starts.sh <binary> <main window title regex>
 #   e.g. check-app-starts.sh FreeFileSync/Build/Bin/FreeFileSync_x86_64 '^FreeFileSync [0-9.]+ '
@@ -40,7 +41,11 @@ for (( i = 0; i < WAIT_SECONDS * 2; ++i )); do
     if grep -Eq -- "$TITLE_REGEX" "$WORK/titles.txt"; then
         sleep 3 #give an error popup at startup time to show up next to the main window
         for w in $(xdotool search --onlyvisible --name '' 2>/dev/null); do xdotool getwindowname "$w" 2>/dev/null || true; done > "$WORK/titles.txt"
-        kill -0 "$pid" 2>/dev/null && result=ok || result=exited
+        if kill -0 "$pid" 2>/dev/null; then
+            result=ok
+        else
+            wait "$pid"; echo "exit code $? (after showing its main window)" > "$WORK/exited.txt"; result=exited
+        fi
         break
     fi
 done
@@ -56,15 +61,31 @@ EOF
 [ -n "${SCREENSHOT:-}" ] && SCREENSHOT="$(realpath -m -- "$SCREENSHOT")"
 # NO_AT_BRIDGE: no accessibility bus under Xvfb, so GTK would warn about it on stderr
 RUN=(env HOME="$WORK/home" LANG=C.UTF-8 NO_AT_BRIDGE=1 BIN="$BIN" TITLE_REGEX="$TITLE_REGEX" WAIT_SECONDS="$WAIT_SECONDS"
-     WORK="$WORK" SCREENSHOT="${SCREENSHOT:-}" PATH="$PATH" xvfb-run -a -s "-screen 0 1280x1024x24" bash "$WORK/inside.sh")
+     WORK="$WORK" SCREENSHOT="${SCREENSHOT:+$WORK/screenshot.png}" PATH="$PATH" xvfb-run -a -s "-screen 0 1280x1024x24" bash "$WORK/inside.sh")
+# the user the app runs as: the caller, or "nobody" when started as root
+RUN_UID="$(id -u)"
+RUN_GID="$(id -g)"
+if [ "$RUN_UID" -eq 0 ]; then
+    RUN_UID="$(id -u nobody)"
+    RUN_GID="$(id -g nobody)"
+    chown -R "$RUN_UID:$RUN_GID" "$WORK"
+    setpriv --reuid="$RUN_UID" --regid="$RUN_GID" --init-groups -- test -x "$BIN" ||
+        { echo "error: started as root, the app runs as \"nobody\", which cannot execute $BIN (make it and its folders readable, or run as a normal user)" >&2; exit 2; }
+fi
+DROP=(setpriv --reuid="$RUN_UID" --regid="$RUN_GID" --init-groups --)
 if [ "${OFFLINE:-0}" = 1 ]; then
-    # a new network namespace (only a loopback device, down), then back to the calling user
+    # a new network namespace (only a loopback device, down), then back to the app's user
     SUDO=()
     [ "$(id -u)" -eq 0 ] || SUDO=(sudo)
-    "${SUDO[@]}" unshare --net -- setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups -- "${RUN[@]}"
+    "${SUDO[@]}" unshare --net -- "${DROP[@]}" "${RUN[@]}"
+elif [ "$(id -u)" -eq 0 ]; then
+    "${DROP[@]}" "${RUN[@]}"
 else
     "${RUN[@]}"
 fi
+
+# taken in $WORK, where the app's user can write, and copied to where the caller asked for it
+if [ -n "${SCREENSHOT:-}" ] && [ -f "$WORK/screenshot.png" ]; then cp "$WORK/screenshot.png" "$SCREENSHOT"; fi
 
 result="$(cat "$WORK/result.txt" 2>/dev/null || echo "no result")"
 echo "== $(basename "$BIN"): $result"
