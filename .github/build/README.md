@@ -1,12 +1,8 @@
 # Building the patched libraries
 
-FreeFileSync 14.13 doesn't build against the libraries most Linux distributions ship:
+FreeFileSync 14.13 doesn't build against the libraries most Linux distributions ship; the Building section of [CONTRIBUTING.md](../../CONTRIBUTING.md#building) explains why and how to build them by hand.
 
-- wxWidgets must be built with `wxUSE_EXCEPTIONS` off (`application.cpp` stops with `#error` otherwise) and with the dark mode hook from `Bugs.txt` (`wx+/darkmode.cpp` uses `wxColorHook`). `Bugs.txt` names wxWidgets 3.3.4; distributions mostly ship 3.2.
-- libssh2 must be the unreleased 1.11.2_DEV (`libssh2_wrap.h` uses `LIBSSH2_ERROR_STORE_OVERFLOW`, which 1.11.1 lacks), and `afs/sftp.cpp` needs `MAX_SFTP_READ_SIZE`/`MAX_SFTP_OUTGOING_SIZE` in its public header, which stock libssh2 doesn't have.
-- The libcurl FTP fixes in `Bugs.txt` aren't upstream yet.
-
-The scripts here download those libraries, apply the `Bugs.txt` fixes from [patches/](patches/) and install them into `.build/deps` in the repository, without touching the system. Then they build FreeFileSync and RealTimeSync with the upstream makefiles against them.
+The scripts here download OpenSSL, libssh2, libcurl and wxWidgets, apply the `Bugs.txt` fixes from [patches/](patches/) and install them into `.build/deps` in the repository, without touching the system. Then they build FreeFileSync and RealTimeSync with the upstream makefiles against them.
 
 ## Usage
 
