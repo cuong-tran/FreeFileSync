@@ -75,6 +75,8 @@ docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/src" freefilesync-build sh -c '
 
 libssh2 and libcurl are shared libraries inside the image, so the binaries run there, not necessarily on the host. The rest of this section describes the manual setup.
 
+The sections below build everything by hand and install it system-wide. As a scripted alternative, the scripts in [.github/build](.github/build/README.md) download OpenSSL, the pinned libssh2 snapshot, libcurl and wxWidgets, apply all the `Bugs.txt` patches, install them into `.build/deps` in the repository without touching the system, and then build FreeFileSync and RealTimeSync against them with the glib cap below; [.github/workflows/linux-patched-libs.yml](.github/workflows/linux-patched-libs.yml) runs them in CI.
+
 ### Requirements
 
 - A g++ that accepts `-std=c++26`, which means GCC 14 or newer (GCC 14 is the oldest that takes the flag; whether all of 14.13 compiles with it is untested here). The makefiles also pass GCC-only warning flags such as `-Wlogical-op`.
