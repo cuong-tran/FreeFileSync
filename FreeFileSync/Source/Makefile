@@ -10,7 +10,7 @@ exeName := FreeFileSync_$(shell arch)
 CXXFLAGS += -std=c++26 -pipe -I../.. -I../../zenXml -include "zen/i18n.h" \
            -DWXINTL_NO_GETTEXT_MACRO -DwxNO_IMPLICIT_WXSTRING_ENCODING -DwxNO_IMPLICIT_WXSTRING_CONV_TO_PTR \
            -Wall -Wfatal-errors -Wshadow -Wmissing-include-dirs -Wswitch-enum -Wcast-align -Wnon-virtual-dtor -Wimplicit-fallthrough -Wundef -Wpedantic -Wredundant-decls \
-           -Wno-unused-function -Wno-deprecated-enum-enum-conversion
+           -Wno-unused-function -Wno-deprecated-enum-enum-conversion \
            -O3 -DNDEBUG
 CXXFLAGS += -Wno-maybe-uninitialized -Wno-free-nonheap-object -Wno-restrict -Wduplicated-cond -Wlogical-op
 

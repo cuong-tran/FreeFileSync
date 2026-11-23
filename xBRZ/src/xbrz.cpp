@@ -82,7 +82,7 @@ uint32_t gradientARGB(uint32_t pixFront, uint32_t pixBack)
 //
 
 
-#if  def __GNUC__
+#if   defined __GNUC__
     #define FORCE_INLINE __attribute__((always_inline)) inline
 #else
     #define FORCE_INLINE inline
