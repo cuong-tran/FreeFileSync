@@ -82,13 +82,36 @@ open(f"{work}/unsafe.zip", "wb").write(data)
 with zipfile.ZipFile(f"{work}/comment.zip", "w") as zf:
     zf.writestr("entry.txt", "listed only if the real EOCD record is found")
     zf.comment = b"note PK\x05\x06" + bytes(18) + b" end of note"
+
+# Zip64 end records for a small archive: zipfile writes them only above its limits => lower the entry count limit
+limit = zipfile.ZIP_FILECOUNT_LIMIT
+zipfile.ZIP_FILECOUNT_LIMIT = 0
+with zipfile.ZipFile(f"{work}/py_zip64.zip", "w") as zf: add_all(zf, zipfile.ZIP_DEFLATED)
+zipfile.ZIP_FILECOUNT_LIMIT = limit
+assert b"PK\x06\x06" in open(f"{work}/py_zip64.zip", "rb").read()
+
+# self-extracting archives: executable stub prepended without adjusting the stored offsets (like "cat stub archive.zip")
+stub = b"#!/bin/sh\necho self-extracting stub\nexit 0\n" + bytes(1000)
+for name in ["py_deflate", "py_zip64"]:
+    open(f"{work}/sfx_{name}.zip", "wb").write(stub + open(f"{work}/{name}.zip", "rb").read())
+
+# names without UTF-8 flag (bit 11): bytes "C3 A9" are CP437 "├⌐" from a DOS/Windows host, but UTF-8 "é" from a Unix host (e.g. macOS Archive Utility)
+# zipfile sets the flag for non-ASCII names => write ASCII placeholders of the same length and patch the raw bytes
+with zipfile.ZipFile(f"{work}/unflagged.zip", "w") as zf:
+    for placeholder, host in [("XX_dos.txt", 0), ("XX_unix.txt", 3)]:
+        zi = zipfile.ZipInfo(placeholder)
+        zi.create_system = host
+        zf.writestr(zi, "name without UTF-8 flag")
+data = open(f"{work}/unflagged.zip", "rb").read()
+assert data.count(b"XX_") == 4 # local header + central directory
+open(f"{work}/unflagged.zip", "wb").write(data.replace(b"XX_", b"\xc3\xa9_"))
 EOF
 zip -q -r "$WORK/infozip.zip" .                 # Info-ZIP: extended time stamps, UTF-8 names
 zip -q -r -fz "$WORK/infozip64.zip" .           # force Zip64 extra fields
 cd "$WORK"
 
 echo "== test"
-for archive in py_deflate py_stored infozip infozip64; do
+for archive in py_deflate py_stored py_zip64 sfx_py_deflate sfx_py_zip64 infozip infozip64; do
     "$WORK/zip_afs_test" "$WORK/$archive.zip" "$REF"
 done
 cp "$WORK/py_deflate.zip" "$WORK/pipe|name.zip"       # '|' in the archive name must not be taken as the inner path separator
@@ -97,5 +120,8 @@ cp "$WORK/py_deflate.zip" "$WORK/pipe|name.zip"       # '|' in the archive name 
 "$WORK/zip_afs_test" --expect-item-count "$WORK/many.zip" 65540
 "$WORK/zip_afs_test" --expect-item-count "$WORK/unsafe.zip" 3
 "$WORK/zip_afs_test" --expect-item-count "$WORK/comment.zip" 1
+"$WORK/zip_afs_test" --expect-item-count "$WORK/unflagged.zip" 2
+"$WORK/zip_afs_test" --expect-item "$WORK/unflagged.zip" "├⌐_dos.txt"  # CP437
+"$WORK/zip_afs_test" --expect-item "$WORK/unflagged.zip" "é_unix.txt"  # UTF-8
 
 echo "== all ZIP tests passed"
