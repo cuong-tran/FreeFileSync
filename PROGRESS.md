@@ -8,8 +8,13 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 |---|---|---|---|---|
 | M1 Foundation | Plan and architecture | done | | n/a (docs) |
 | M1 Foundation | 1. Platform macros, `Tests/zen` | done | `d1e9037^..128099a`, fixes `584a353^..90c338a` | 8 findings: 7 fixed, 1 kept |
+<<<<<<< HEAD
 | M1 Foundation | 2. Clang + libc++ on Linux | done | `9a0f61e^..8f3c1fd`, fixes `f36f54a`, `62e5860`, `8b96471`, `bbfdcb8`, `b12fa57`, `a2ac5e0`, `a3a3741` | 6 findings: 5 fixed, 1 kept |
 | M1 Foundation | 3. macOS dependency builds in CI | in progress | | |
+=======
+| M1 Foundation | 2. Clang + libc++ on Linux | done, review fixes in progress | `9a0f61e^..8f3c1fd` | 6 findings, see below |
+| M1 Foundation | 3. macOS dependency builds in CI | done, review fixes in progress | `8f3c1fd..5ef2d42` | 7 findings, see below |
+>>>>>>> 15fee4b (PROGRESS.md: record M1 step 3, its decisions and review findings)
 | M2 Sentry | | | | |
 | M3 macOS | | | | |
 | M4 Windows | | | | |
@@ -32,6 +37,11 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | 2026-11-23 | Sentry is opt-in at build time (`FFS_SENTRY=1` plus DSN), with an empty implementation otherwise | Same full/FOSS split as Musikku; a build without the secret has no tracking code. |
 | 2026-11-23 | Apps are ad-hoc signed, not notarized | No Apple Developer ID available yet. |
 | 2026-11-23 | Local `dev` was replaced by `origin/dev` (the old local commits are the pre-rewrite copies of PRs 1–7, kept on local branch `dev-local-stale`) | The remote branch is the current history. |
+| 2026-11-23 | macOS compiler: Apple clang from Xcode 26.x (libc++ 20), not Homebrew LLVM | The CI probe showed it accepts `-std=c++26` and compiles the portable `zen` headers unchanged; no C++ runtime has to ship in the app. Xcode 16.4's libc++ 19 lacks `std::jthread`. |
+| 2026-11-23 | macOS deployment target 13.3 | Oldest version Apple's libc++ allows for `std::to_chars(double)` and `std::format`, which `zen` uses. |
+| 2026-11-23 | Third-party libraries on macOS are static: OpenSSL 3.5.9, libssh2 (pinned commit), libidn2 2.3.8, curl 8.21.0, wxWidgets 3.3.4 | Simple app bundle; nothing can leak in from Homebrew (host architecture only). curl verifies certificates against the macOS trust store. |
+| 2026-11-23 | libidn2 is built for both Mac architectures instead of using Apple's IDN in curl | `zen/socket.h` calls libidn2 directly, so one library serves both and the Linux code path is kept. |
+| 2026-11-23 | `Resources/Animal.dat`: ship an own image, do not copy it from the official binaries | It is missing from the source zip; the license of upstream's artwork in the binary packages is unclear. |
 
 ## Needed from the repository owner
 
@@ -76,3 +86,17 @@ Result of the step: both apps compile, link and start with clang 20 + libc++ on 
 | 4 | Cache key of the clang job misses the inline wxWidgets flags | nit | fixed in `8b96471` |
 | 5 | Stale docs (job count, g++-only wording) | nit | fixed in `bbfdcb8` |
 | 6 | g++ test entries run as root, clang entries as a normal user | nit | no change needed: both variants are useful coverage; a comment is added |
+
+### M1 step 3 (`8f3c1fd..5ef2d42`, `/code-review medium`)
+
+Result of the step: `.github/workflows/macos-build.yml` builds and caches the libraries for arm64 and x86_64 (cold about 10 to 12 minutes per architecture, cached about 1 minute). Work list for M3 step 1 from the compile probe: 17 of 21 `zen/*.cpp` stop at `#include <glib.h>` in `zen/sys_error.h`; `file_path.cpp` needs `environ`, `legacy_compiler.cpp` a floating-point `from_chars` fallback (Apple's needs macOS 26), `thread.cpp` a replacement for `sys/prctl.h`.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | `package.sh` does not know the toolchain-suffixed binary names | important | sent for fixing |
+| 2 | Compiler detection in `build-free-file-sync.sh` can fail randomly (SIGPIPE under `pipefail`) | important | sent for fixing |
+| 3 | `otool | awk ... exit` can abort a local macOS library build silently | important | sent for fixing |
+| 4 | Start check does not report the exit code of an app that dies after showing its window | nit | sent for fixing |
+| 5 | Start check can time out when run as root with saved settings | nit | sent for fixing |
+| 6 | Hard-coded Xcode 26.3 path in the macOS workflow | nit | sent for fixing |
+| 7 | `CLAUDE.md` describes the old compiler detection | nit | sent for fixing |
