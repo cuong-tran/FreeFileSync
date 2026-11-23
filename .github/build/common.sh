@@ -29,7 +29,7 @@ export LDFLAGS="-L$INSTALL_DIR/lib -Wl,-rpath,$INSTALL_DIR/lib${LDFLAGS:+ $LDFLA
 # SHA-256 of the archives for the default versions. Other versions are downloaded unverified.
 declare -A KNOWN_SHA256=(
     [openssl-3.5.9.tar.gz]=603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
-    [libssh2-1.11.1.tar.gz]=d9ec76cbe34db98eec3539fe2c899d26b0c837cb3eb466a56b0f109cabf658f7
+    [libssh2-83284a05a1add34722c1fa36fa706fe7aced87b6.tar.gz]=03e70390ceafcde9ceb98654d9e55f05c705c2e62c05863d5284e4e11f51b8a7
     [curl-8.21.0.tar.xz]=aa1b66a70eace83dc624508745646c08ae561de512ab403adffb93ac87fc72e6
     [wxWidgets-3.3.4.tar.bz2]=815c16cafa4fcbfcf25c5c0a3418309c62257b8a3b6f91d85a1367a134f98c98
 )

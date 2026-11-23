@@ -3,7 +3,7 @@
 FreeFileSync 14.13 doesn't build against the libraries most Linux distributions ship:
 
 - wxWidgets must be built with `wxUSE_EXCEPTIONS` off (`application.cpp` stops with `#error` otherwise) and with the dark mode hook from `Bugs.txt` (`wx+/darkmode.cpp` uses `wxColorHook`). `Bugs.txt` names wxWidgets 3.3.4; distributions mostly ship 3.2.
-- `afs/sftp.cpp` needs `MAX_SFTP_READ_SIZE`/`MAX_SFTP_OUTGOING_SIZE` in libssh2's public header, which stock libssh2 doesn't have.
+- libssh2 must be the unreleased 1.11.2_DEV (`libssh2_wrap.h` uses `LIBSSH2_ERROR_STORE_OVERFLOW`, which 1.11.1 lacks), and `afs/sftp.cpp` needs `MAX_SFTP_READ_SIZE`/`MAX_SFTP_OUTGOING_SIZE` in its public header, which stock libssh2 doesn't have.
 - The libcurl FTP fixes in `Bugs.txt` aren't upstream yet.
 
 The scripts here download those libraries, apply the `Bugs.txt` fixes from [patches/](patches/) and install them into `.build/deps` in the repository, without touching the system. Then they build FreeFileSync and RealTimeSync with the upstream makefiles against them.
@@ -13,10 +13,10 @@ The scripts here download those libraries, apply the `Bugs.txt` fixes from [patc
 Install a C++26 compiler (g++ 14 or newer) and the system packages they still use. On Debian or Ubuntu:
 
 ```bash
-sudo apt-get install build-essential g++-14 pkg-config perl patch curl xz-utils bzip2 libgtk-3-dev libxtst-dev libidn2-dev zlib1g-dev
+sudo apt-get install build-essential g++-14 cmake pkg-config perl patch curl xz-utils bzip2 libgtk-3-dev libxtst-dev libidn2-dev zlib1g-dev
 ```
 
-Build the libraries (OpenSSL, libssh2, libcurl, wxWidgets; about 15 minutes on 4 cores):
+Build the libraries (OpenSSL, libssh2, libcurl, wxWidgets; under 10 minutes on 4 cores):
 
 ```bash
 CC=gcc-14 CXX=g++-14 .github/build/build.sh
@@ -32,7 +32,8 @@ Each library has its own script (`build-openssl.sh`, `build-libssh2.sh`, `build-
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `OPENSSL_VERSION`, `LIBSSH2_VERSION`, `CURL_VERSION`, `WXWIDGETS_VERSION` | 3.5.9, 1.11.1, 8.21.0, 3.3.4 | Library versions; also accepted as the first argument of each script |
+| `OPENSSL_VERSION`, `CURL_VERSION`, `WXWIDGETS_VERSION` | 3.5.9, 8.21.0, 3.3.4 | Library versions; also accepted as the first argument of each script |
+| `LIBSSH2_COMMIT` | `83284a05…` | libssh2 commit to build; 14.13 needs the unreleased 1.11.2_DEV API, so this is a pinned master snapshot from just before the 14.13 release |
 | `FFS_BUILD_DIR` | `<repo>/.build` | Downloads, unpacked sources and build trees |
 | `FFS_DEPS_PREFIX` | `$FFS_BUILD_DIR/deps` | Install prefix of the libraries |
 | `FFS_SKIP_PATCHES` | unset | Set to `1` to build a version that has no patch in `patches/` |

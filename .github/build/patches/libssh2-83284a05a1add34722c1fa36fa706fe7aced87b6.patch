@@ -1,6 +1,6 @@
 --- a/include/libssh2_sftp.h
 +++ b/include/libssh2_sftp.h
-@@ -57,6 +57,19 @@
+@@ -50,6 +50,19 @@
   */
  #define LIBSSH2_SFTP_VERSION        3
  
@@ -17,12 +17,12 @@
 + */
 +#define MAX_SFTP_READ_SIZE 30000
 +
- typedef struct _LIBSSH2_SFTP                LIBSSH2_SFTP;
- typedef struct _LIBSSH2_SFTP_HANDLE         LIBSSH2_SFTP_HANDLE;
- typedef struct _LIBSSH2_SFTP_ATTRIBUTES     LIBSSH2_SFTP_ATTRIBUTES;
+ /* Flags for open_ex() */
+ #define LIBSSH2_SFTP_OPENFILE           0
+ #define LIBSSH2_SFTP_OPENDIR            1
 --- a/src/sftp.h
 +++ b/src/sftp.h
-@@ -40,17 +40,6 @@
+@@ -33,17 +33,6 @@
   * SPDX-License-Identifier: BSD-3-Clause
   */
  
