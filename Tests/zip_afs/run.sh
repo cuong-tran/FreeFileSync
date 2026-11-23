@@ -49,6 +49,20 @@ data = bytearray(open(f"{work}/corrupt.zip", "rb").read())
 pos = data.find(b"some payload")
 data[pos] ^= 0xFF
 open(f"{work}/corrupt.zip", "wb").write(data)
+
+# more than 65535 entries without Zip64 records, entry count stored modulo 65536 (as some tools do)
+# => all entries must still be listed
+import struct
+with zipfile.ZipFile(f"{work}/many.zip", "w") as zf:
+    for i in range(65540):
+        zf.writestr(f"f{i}", "")
+data = open(f"{work}/many.zip", "rb").read()
+eocdPos  = data.rfind(b"PK\x05\x06")
+zip64Pos = data.rfind(b"PK\x06\x06", 0, eocdPos)
+assert zip64Pos > 0 # zipfile writes Zip64 records for > 65535 entries: strip them
+eocd = bytearray(data[eocdPos:eocdPos + 22])
+struct.pack_into("<HH", eocd, 8, 65540 & 0xffff, 65540 & 0xffff)
+open(f"{work}/many.zip", "wb").write(data[:zip64Pos] + bytes(eocd))
 EOF
 zip -q -r "$WORK/infozip.zip" .                 # Info-ZIP: extended time stamps, UTF-8 names
 zip -q -r -fz "$WORK/infozip64.zip" .           # force Zip64 extra fields
@@ -59,5 +73,6 @@ for archive in py_deflate py_stored infozip infozip64; do
     "$WORK/zip_afs_test" "$WORK/$archive.zip" "$REF"
 done
 "$WORK/zip_afs_test" --expect-read-error "$WORK/corrupt.zip" corrupt.txt
+"$WORK/zip_afs_test" --expect-item-count "$WORK/many.zip" 65540
 
 echo "== all ZIP tests passed"

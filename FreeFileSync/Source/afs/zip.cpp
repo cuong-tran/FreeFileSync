@@ -323,8 +323,20 @@ ZipIndex parseZipArchive(const Zstring& archivePath) //throw SysError
     const auto cdBytes = reinterpret_cast<const unsigned char*>(cd.data());
 
     size_t pos = 0;
-    for (uint64_t i = 0; i < entryCount; ++i)
+    for (uint64_t i = 0;; ++i)
     {
+        if (i >= entryCount)
+        {
+            /* the non-Zip64 EOCD stores the entry count in 16 bits, and some tools write it modulo 65536 for larger archives:
+               don't silently drop the remaining entries (a mirror sync would delete them on the target!) => continue while more headers follow */
+            if (isZip64 || pos + 4 > cd.size() || readLE32(cdBytes + pos) != SIG_CENTRAL_HEADER)
+            {
+                if (!isZip64 && (i & 0xffff) != entryCount)
+                    throw SysError(_("ZIP archive is corrupted.") + L" (central directory entry count)");
+                break;
+            }
+        }
+
         if (pos + 46 > cd.size() || readLE32(cdBytes + pos) != SIG_CENTRAL_HEADER)
             throw SysError(_("ZIP archive is corrupted.") + L" (central directory entry " + numberTo<std::wstring>(i) + L')');
 

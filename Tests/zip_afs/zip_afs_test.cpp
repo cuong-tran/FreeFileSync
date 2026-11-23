@@ -2,6 +2,7 @@
 //
 // usage: zip_afs_test <archive.zip> <reference folder>          => archive content must equal reference folder
 //        zip_afs_test --expect-read-error <archive.zip> <item>  => reading <item> must fail (e.g. CRC mismatch)
+//        zip_afs_test --expect-item-count <archive.zip> <count> => archive must list exactly <count> items
 
 #include <cstdlib>
 #include <filesystem>
@@ -210,12 +211,19 @@ int main(int argc, char* argv[])
         }
         catch (const FileError& e) { std::cout << "expected error: " << utfTo<std::string>(e.toString()) << '\n'; }
     }
+    else if (argc == 4 && std::string(argv[1]) == "--expect-item-count")
+    {
+        const size_t itemCount = traverse(createItemPathZip(Zstr("zip:") + Zstring(argv[2]))).size();
+        check(itemCount == std::stoul(argv[3]), "item count mismatch: " + std::to_string(itemCount) + " vs " + argv[3]);
+        std::cout << itemCount << " items listed in " << argv[2] << '\n';
+    }
     else if (argc == 3)
         compareWithReference(argv[1], argv[2]);
     else
     {
         std::cerr << "usage: zip_afs_test <archive.zip> <reference folder>\n"
-                  "       zip_afs_test --expect-read-error <archive.zip> <item>\n";
+                  "       zip_afs_test --expect-read-error <archive.zip> <item>\n"
+                  "       zip_afs_test --expect-item-count <archive.zip> <count>\n";
         return EXIT_FAILURE;
     }
 
