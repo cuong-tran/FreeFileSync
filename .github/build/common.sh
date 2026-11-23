@@ -23,6 +23,14 @@ INSTALL_DIR="$(realpath -m -- "${FFS_DEPS_PREFIX:-$BUILD_DIR/deps}")"
 STAMP_DIR="$INSTALL_DIR/.stamps"
 JOBS="${JOBS:-$(nproc)}"
 
+# One build at a time per work area and per prefix: the scripts delete and recreate trees in src/ and
+# tmp/ and install into the prefix. Locks are always taken in this order, and released when the script exits.
+mkdir -p "$BUILD_DIR" "$INSTALL_DIR"
+exec 8>"$BUILD_DIR/.lock" 9>"$INSTALL_DIR/.lock"
+for fd in 8 9; do
+    flock -n "$fd" || { printf '==> Waiting for another build using %s\n' "$BUILD_DIR or $INSTALL_DIR" >&2; flock "$fd"; }
+done
+
 # Make the installed libraries win over the system ones, at build time (wx-config, pkg-config)
 # and at run time (rpath; the libraries are installed as shared objects, except wxWidgets).
 export PATH="$INSTALL_DIR/bin:$PATH"
