@@ -2,7 +2,7 @@
 
 FreeFileSync 14.13 doesn't build against the libraries most Linux distributions ship:
 
-- wxWidgets must be 3.3, built without exception handling (`application.cpp` stops with `#error` otherwise), and with the dark mode hook from `Bugs.txt` (`wx+/darkmode.cpp` uses `wxColorHook`).
+- wxWidgets must be built with `wxUSE_EXCEPTIONS` off (`application.cpp` stops with `#error` otherwise) and with the dark mode hook from `Bugs.txt` (`wx+/darkmode.cpp` uses `wxColorHook`). `Bugs.txt` names wxWidgets 3.3.4; distributions mostly ship 3.2.
 - `afs/sftp.cpp` needs `MAX_SFTP_READ_SIZE`/`MAX_SFTP_OUTGOING_SIZE` in libssh2's public header, which stock libssh2 doesn't have.
 - The libcurl FTP fixes in `Bugs.txt` aren't upstream yet.
 
