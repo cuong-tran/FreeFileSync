@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 
 # Linux build environment for FreeFileSync and RealTimeSync.
-# Builds libcurl and wxWidgets at the versions named in Bugs.txt and the latest libssh2 release from source.
+# Builds libcurl and wxWidgets at the versions named in Bugs.txt from source, and libssh2 from a pinned development
+# commit (Bugs.txt: "1.11.2_DEV"; libssh2/libssh2_wrap.h needs LIBSSH2_ERROR_STORE_OVERFLOW, which 1.11.1 lacks).
 # wxWidgets gets the wx/settings.h color hook patch FreeFileSync needs to compile. libssh2 is not patched: afs/sftp.cpp
 # falls back to libssh2's MAX_SFTP_* values. The other Bugs.txt patches only fix runtime behavior and are not applied.
 #
@@ -16,7 +17,9 @@
 
 FROM ubuntu:26.04
 
-ARG LIBSSH2_VERSION=1.11.1
+# last libssh2 master commit before the FreeFileSync 14.13 release (2026-10-16)
+ARG LIBSSH2_COMMIT=83284a05a1add34722c1fa36fa706fe7aced87b6
+ARG LIBSSH2_SHA256=03e70390ceafcde9ceb98654d9e55f05c705c2e62c05863d5284e4e11f51b8a7
 ARG CURL_VERSION=8.21.0
 ARG WX_VERSION=3.3.4
 
@@ -24,6 +27,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
 	build-essential \
+	cmake \
 	pkg-config \
 	ca-certificates \
 	wget \
@@ -40,14 +44,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /build
 
 # --- libssh2 ---
-RUN wget -q https://libssh2.org/download/libssh2-${LIBSSH2_VERSION}.tar.gz \
-	&& tar xf libssh2-${LIBSSH2_VERSION}.tar.gz \
-	&& cd libssh2-${LIBSSH2_VERSION} \
-	&& ./configure --quiet --with-crypto=openssl --disable-static --disable-examples-build \
-	&& make -j"$(nproc)" \
-	&& make install \
+RUN wget -q -O libssh2.tar.gz https://github.com/libssh2/libssh2/archive/${LIBSSH2_COMMIT}.tar.gz \
+	&& echo "${LIBSSH2_SHA256}  libssh2.tar.gz" | sha256sum -c - \
+	&& tar xf libssh2.tar.gz \
+	&& cd libssh2-${LIBSSH2_COMMIT} \
+	&& cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
+		-DBUILD_SHARED_LIBS=ON -DBUILD_STATIC_LIBS=OFF -DCRYPTO_BACKEND=OpenSSL -DENABLE_ZLIB_COMPRESSION=ON \
+		-DBUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF \
+	&& cmake --build build -j"$(nproc)" \
+	&& cmake --install build \
 	&& ldconfig \
-	&& cd /build && rm -rf libssh2-${LIBSSH2_VERSION}*
+	&& cd /build && rm -rf libssh2*
 
 # --- libcurl ---
 RUN wget -q https://curl.se/download/curl-${CURL_VERSION}.tar.gz \
