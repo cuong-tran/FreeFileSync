@@ -32,14 +32,38 @@ Each library has its own script (`build-openssl.sh`, `build-libssh2.sh`, `build-
 | --- | --- | --- |
 | `OPENSSL_VERSION`, `CURL_VERSION`, `WXWIDGETS_VERSION` | 3.5.9, 8.21.0, 3.3.4 | Library versions; also accepted as the first argument of each script |
 | `LIBSSH2_COMMIT` | `83284a05…` | libssh2 commit to build; 14.13 needs the unreleased 1.11.2_DEV API, so this is a pinned master snapshot from just before the 14.13 release |
+| `FFS_TARGET` | `linux` on Linux, `macos-<host arch>` on macOS | What the libraries are built for: `linux`, `macos-arm64` or `macos-x86_64` (see [macOS](#macos)) |
+| `LIBIDN2_VERSION` | 2.3.8 | macOS only: libidn2 version |
 | `FFS_BUILD_DIR` | `<repo>/.build` | Downloads, unpacked sources and build trees |
-| `FFS_DEPS_PREFIX` | `$FFS_BUILD_DIR/deps` | Install prefix of the libraries |
+| `FFS_DEPS_PREFIX` | `$FFS_BUILD_DIR/deps` (Linux), `$FFS_BUILD_DIR/deps/<target>` (macOS) | Install prefix of the libraries |
 | `FFS_SKIP_PATCHES` | unset | Set to `1` to build a version that has no patch in `patches/`. An unpatched wxWidgets still compiles: the makefiles detect the missing `wxColorHook`, warn, and build without the dark mode contrast fix |
 | `FFS_UNPATCHED` | unset | Set to `1` to build every library without its patch, even when `patches/` has one. CI uses it to check that FreeFileSync still compiles against stock libraries |
 | `FFS_SYSTEM_LIBS` | unset | `build-free-file-sync.sh` only: space-separated pkg-config names (`openssl`, `libssh2`, `libcurl`) that may come from the system instead of the prefix, e.g. `"openssl libcurl"` to build against the distribution's packages. The script refuses to build if one of them is also installed in the prefix, since the prefix's copy would be used |
 | `JOBS` | `nproc` | Parallel make jobs |
 
 wxWidgets is linked statically. OpenSSL, libssh2 and libcurl are shared libraries found through an rpath to `.build/deps/lib`, so the binaries only run on the machine that built them unless those libraries are copied along.
+
+## macOS
+
+FreeFileSync doesn't build on macOS yet (that is milestone M3 of [docs/PORTING_PLAN.md](../../docs/PORTING_PLAN.md)), but the libraries do, with the same scripts and `FFS_TARGET=macos-arm64` or `macos-x86_64`:
+
+```bash
+brew install bash coreutils flock pkgconf   # bash 4+, sha256sum, realpath -m, nproc, flock
+FFS_TARGET=macos-arm64  .github/build/build.sh
+FFS_TARGET=macos-x86_64 .github/build/build.sh   # cross-compiled with -arch x86_64 on an Apple silicon Mac
+```
+
+Each target is installed into `.build/deps/<target>`, as static libraries only, for one architecture and the deployment target `FFS_MACOS_DEPLOYMENT_TARGET` in `common.sh`, which every library is checked against (`lipo -archs`, `otool -l`). The compiler is Xcode's clang (`CC=clang CXX=clang++`, override through the environment); pkg-config sees only the prefix, so nothing from Homebrew ends up in a library. What differs from Linux:
+
+- **OpenSSL**: `no-shared` with the `darwin64-arm64-cc`/`darwin64-x86_64-cc` target.
+- **libssh2**: static, against that OpenSSL and the SDK's zlib, with the `Bugs.txt` patch.
+- **libidn2** (`build-libidn2.sh`, macOS only): static, with libidn2's bundled copy of the libunistring parts it needs and without gettext. FreeFileSync calls libidn2 itself (`zen/socket.h`), not only through libcurl, so the port keeps the same IDN implementation as Linux; curl's `--with-apple-idn` would cover curl only. The archive's checksum in `common.sh` is the one Homebrew's libidn2 formula pins.
+- **libcurl**: static, with the `Bugs.txt` patch, OpenSSL plus `--with-apple-sectrust` (certificates are verified with the macOS trust store, so no CA bundle has to ship), libssh2, libidn2 and the SDK's zlib; every other optional dependency is switched off explicitly.
+- **wxWidgets**: wxOSX/Cocoa with the same feature set as on Linux, `--disable-exceptions`, wx's bundled image libraries (`--disable-sys-libs`) and the SDK's zlib. Of the `Bugs.txt` fixes in the patch, `wx/settings.h` (the color hook), `src/aui` and `src/common` take effect on macOS; the `src/gtk` and `src/unix` hunks apply but aren't compiled there.
+
+`macos-report.sh` writes two informational reports: `toolchain` (compiler and libc++ versions of Xcode's clang and Homebrew LLVM, which `-std=` they accept, a syntax check of zen code without platform-specific includes, and the oldest deployment target per C++ library feature) and `port-todo <arch> <prefix>` (a syntax check of every `zen/*.cpp` for macOS, with the first error per file: the work list for porting `zen/`).
+
+The [macOS build workflow](../workflows/macos-build.yml) runs both on a `macos-15` runner (arm64; x86_64 is cross-compiled there) and caches each target's prefix under a key of compiler, SDK, scripts and patches. It uploads per architecture `macos-libraries-<arch>.tar.gz` (build log and a manifest with versions, architectures and deployment targets) and `macos-port-todo-<arch>.txt`.
 
 ## Packaging
 

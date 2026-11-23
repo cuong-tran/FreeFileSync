@@ -148,7 +148,8 @@ jobs:
           done
           if ls "$prefix"/lib/*.dylib >/dev/null 2>&1; then echo "::error::shared libraries in the prefix:"; ls "$prefix"/lib/*.dylib; exit 1; fi
           echo "wx-config: $("$prefix/bin/wx-config" --version) $("$prefix/bin/wx-config" --selected-config)" >> manifest.txt
-          echo "curl: $(PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig" pkg-config --modversion libcurl), $(PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig" pkg-config --static --libs libcurl)" >> manifest.txt
+          export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig"
+          echo "libcurl $(pkg-config --modversion libcurl 2>&1), static link flags: $(pkg-config --static --libs libcurl 2>&1)" >> manifest.txt
           cat manifest.txt
 
       # informational: the work list for porting zen/ (M3 step 1)
