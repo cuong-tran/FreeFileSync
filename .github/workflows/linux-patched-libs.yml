@@ -1,17 +1,81 @@
-name: Makefile CI
+# Builds the libraries from Bugs.txt with their patches (.github/build/build.sh), then
+# FreeFileSync and RealTimeSync with the upstream makefiles against them.
+name: Linux build (patched libraries)
 
 on:
   push:
-    branches: [main, develop]
+    paths:
+      - ".github/build/**"
+      - ".github/workflows/linux-patched-libs.yml"
+      - "FreeFileSync/Source/**"
+      - "zen/**"
+      - "wx+/**"
+      - "zenXml/**"
+      - "libcurl/**"
+      - "libssh2/**"
+      - "xBRZ/**"
   pull_request:
-    branches: [main, develop]
+    paths:
+      - ".github/build/**"
+      - ".github/workflows/linux-patched-libs.yml"
+      - "FreeFileSync/Source/**"
+      - "zen/**"
+      - "wx+/**"
+      - "zenXml/**"
+      - "libcurl/**"
+      - "libssh2/**"
+      - "xBRZ/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-
+    runs-on: ubuntu-24.04
+    env:
+      CC: gcc-14
+      CXX: g++-14 # the sources use -std=c++26
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: ./.github/build/build.sh
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-14 g++-14 make pkg-config perl patch \
+            libgtk-3-dev libxtst-dev libidn2-dev zlib1g-dev libselinux1-dev
+
+      - name: Restore patched libraries
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: .build/deps
+          key: deps-ubuntu-24.04-gcc14-${{ hashFiles('.github/build/*.sh', '.github/build/patches/**') }}
+
+      - name: Build patched libraries
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: .github/build/build.sh
+
+      - name: Build FreeFileSync and RealTimeSync
+        run: .github/build/build-free-file-sync.sh
+
+      - name: Check the binaries use the patched libraries
+        run: |
+          for exe in FreeFileSync/Build/Bin/FreeFileSync_x86_64 FreeFileSync/Build/Bin/RealTimeSync_x86_64; do
+            ls -l "$exe"
+          done
+          ldd FreeFileSync/Build/Bin/FreeFileSync_x86_64 | tee ldd.txt
+          for lib in libcurl libssh2 libssl libcrypto; do
+            grep -E "$lib[^ ]* => $GITHUB_WORKSPACE/.build/deps/lib/" ldd.txt || { echo "::error::$lib is not taken from .build/deps"; exit 1; }
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FreeFileSync-linux-x86_64
+          path: FreeFileSync/Build/Bin/*_x86_64
+          retention-days: 7
