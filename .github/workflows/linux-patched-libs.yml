@@ -76,8 +76,19 @@ jobs:
             grep -E "$lib[^ ]* => $GITHUB_WORKSPACE/.build/deps/lib/" ldd.txt || { echo "::error::$lib is not taken from .build/deps"; exit 1; }
           done
 
+      # A tarball keeps the executable bits (upload-artifact drops them). The binaries find the patched
+      # shared libraries through an rpath into this runner's workspace, so they are packed in lib/:
+      # run with LD_LIBRARY_PATH=lib Bin/FreeFileSync_x86_64 from the unpacked folder.
+      - name: Pack binaries
+        run: |
+          mkdir -p dist/lib
+          cp -a FreeFileSync/Build/Bin FreeFileSync/Build/Resources dist/
+          cp -a .build/deps/lib/*.so* dist/lib/
+          tar -czf FreeFileSync-linux-x86_64.tar.gz -C dist .
+
       - uses: actions/upload-artifact@v4
         with:
           name: FreeFileSync-linux-x86_64
-          path: FreeFileSync/Build/Bin/*_x86_64
+          path: FreeFileSync-linux-x86_64.tar.gz
+          if-no-files-found: error
           retention-days: 7
