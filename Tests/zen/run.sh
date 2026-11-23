@@ -34,10 +34,11 @@ esac
 CXXFLAGS_TEST=(-std=c++26 -O1 -g -pthread -DWXINTL_NO_GETTEXT_MACRO -I"$ROOT" -include "zen/i18n.h"
     -Wall -Wfatal-errors -Wshadow -Wmissing-include-dirs -Wswitch-enum -Wcast-align -Wnon-virtual-dtor -Wimplicit-fallthrough -Wundef -Wpedantic -Wredundant-decls
     -Wno-unused-function -Wno-deprecated-enum-enum-conversion)
-# compiler family and STDLIB: same flags as the makefiles
-if "$CXX" --version | grep -q clang; then
+# compiler family (detected positively from the predefined macros, like the makefiles) and STDLIB: same flags as the makefiles
+COMPILER_MACROS="$("$CXX" -dM -E -x c++ /dev/null 2>/dev/null || true)"
+if grep -q __clang__ <<< "$COMPILER_MACROS"; then
     CXXFLAGS_TEST+=(-Wtautological-overlap-compare -Wno-potentially-evaluated-expression -Wno-unused-const-variable -Wno-unused-lambda-capture)
-else
+elif grep -q __GNUC__ <<< "$COMPILER_MACROS"; then
     CXXFLAGS_TEST+=(-Wno-maybe-uninitialized -Wno-free-nonheap-object -Wno-restrict -Wduplicated-cond -Wlogical-op)
 fi
 STDLIB_FLAGS=()

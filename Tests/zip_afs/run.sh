@@ -16,10 +16,12 @@ GLIB_CAP=()
 if pkg-config --atleast-version=2.76 glib-2.0; then
     GLIB_CAP=(-DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_76 -DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_2_76)
 fi
-#compiler family and STDLIB: same flags as the makefiles
-if "$CXX" --version | grep -q clang; then
+#compiler family (detected positively from the predefined macros, like the makefiles) and STDLIB: same flags as the makefiles
+COMPILER_FLAGS=()
+COMPILER_MACROS="$("$CXX" -dM -E -x c++ /dev/null 2>/dev/null || true)"
+if grep -q __clang__ <<< "$COMPILER_MACROS"; then
     COMPILER_FLAGS=(-Wtautological-overlap-compare -Wno-potentially-evaluated-expression -Wno-unused-const-variable -Wno-unused-lambda-capture)
-else
+elif grep -q __GNUC__ <<< "$COMPILER_MACROS"; then
     COMPILER_FLAGS=(-Wno-maybe-uninitialized -Wno-free-nonheap-object -Wno-restrict -Wduplicated-cond -Wlogical-op)
 fi
 case "${STDLIB:-}" in
@@ -32,6 +34,7 @@ read -r -a LDFLAGS_USER  <<< "${LDFLAGS:-}"
 
 echo "== build ($("$CXX" --version | head -n 1)${STDLIB:+, $STDLIB})"
 #same language standard and warnings as FreeFileSync/Source/Makefile; zen/sys_error.cpp needs glib + gio (GError)
+# shellcheck disable=SC2046 # pkg-config output is meant to be split into words
 "$CXX" -std=c++26 -O1 -g -pthread -DNDEBUG -DWXINTL_NO_GETTEXT_MACRO -I"$ROOT" -I"$ROOT/zenXml" -include "zen/i18n.h" \
     -Wall -Wfatal-errors -Wshadow -Wmissing-include-dirs -Wswitch-enum -Wcast-align -Wnon-virtual-dtor -Wimplicit-fallthrough -Wundef -Wpedantic -Wredundant-decls \
     -Wno-unused-function -Wno-deprecated-enum-enum-conversion "${COMPILER_FLAGS[@]}" \
