@@ -10,8 +10,8 @@
 #   checks in libcurl/curl_wrap.cpp), which the patched build never uses.
 # - "clang + libc++": Ubuntu 24.04 with clang 20 and LLVM's libc++ (make STDLIB=libc++), the compiler and C++ library
 #   family of the macOS and Windows ports, against the patched libssh2 and a wxWidgets built with libc++ (the
-#   distribution's OpenSSL and libcurl are C libraries and work with either C++ library). Builds and links both apps,
-#   checks that they use libc++ and that they start.
+#   distribution's OpenSSL and libcurl are C libraries and work with either C++ library). Builds and links both apps
+#   (named <app>_x86_64-clang-libc++, see the makefiles), checks that they use libc++ and that they start (check-app-starts.sh).
 name: Linux build
 
 on:
@@ -197,6 +197,7 @@ jobs:
       CC: clang-20
       CXX: clang++-20
       STDLIB: libc++ # read by the makefiles
+      WX_FLAGS: -stdlib=libc++ # CXXFLAGS and LDFLAGS for the wxWidgets build; part of the cache key
     steps:
       - uses: actions/checkout@v4
 
@@ -205,7 +206,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             clang-20 libc++-20-dev libc++abi-20-dev make cmake pkg-config perl patch curl xz-utils bzip2 \
-            libgtk-3-dev libxtst-dev libidn2-dev zlib1g-dev libselinux1-dev libssl-dev libcurl4-openssl-dev xvfb
+            libgtk-3-dev libxtst-dev libidn2-dev zlib1g-dev libselinux1-dev libssl-dev libcurl4-openssl-dev xvfb xdotool
           clang++-20 --version
 
       - name: Restore libraries
@@ -213,14 +214,15 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .build/deps
-          key: deps-clang20-libcxx-ubuntu-24.04-x86_64-${{ hashFiles('.github/build/common.sh', '.github/build/build-libssh2.sh', '.github/build/build-wxwidgets.sh', '.github/build/patches/**') }}
+          # the compiler and wxWidgets flags are set in this file, so they are part of the key
+          key: deps-${{ env.CC }}-${{ env.CXX }}-${{ env.WX_FLAGS }}-ubuntu-24.04-x86_64-${{ hashFiles('.github/build/common.sh', '.github/build/build-libssh2.sh', '.github/build/build-wxwidgets.sh', '.github/build/patches/**') }}
 
       # libssh2 is C: built with clang-20 against the system OpenSSL. wxWidgets is C++ and must use the same C++ library as FreeFileSync
       - name: Build patched libssh2 and wxWidgets
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           .github/build/build-libssh2.sh
-          CXXFLAGS=-stdlib=libc++ LDFLAGS=-stdlib=libc++ .github/build/build-wxwidgets.sh
+          CXXFLAGS="$WX_FLAGS" LDFLAGS="$WX_FLAGS" .github/build/build-wxwidgets.sh
 
       - name: Save libraries
         if: steps.cache.outputs.cache-hit != 'true'
@@ -239,11 +241,14 @@ jobs:
           grep -q -- "-stdlib=libc++" build.log || { echo "::error::the makefiles did not add -stdlib=libc++"; exit 1; }
           if grep -q "lacks the wxColorHook patch" build.log; then echo "::error::the makefiles built the wxColorHook fallback"; exit 1; fi
           for app in FreeFileSync RealTimeSync; do
-            bin="FreeFileSync/Build/Bin/${app}_x86_64"
+            bin="FreeFileSync/Build/Bin/${app}_x86_64-clang-libc++"
             readelf -d "$bin" | grep NEEDED | tee needed.txt
             grep -q 'libc++.so' needed.txt || { echo "::error::$app is not linked against libc++"; exit 1; }
             if grep -q 'libstdc++' needed.txt; then echo "::error::$app is linked against libstdc++ directly"; exit 1; fi
-            # smoke test: the app must still be running after 10 seconds (timeout's exit code 124)
-            rc=0; HOME="$RUNNER_TEMP/home-$app" xvfb-run -a timeout 10 "$bin" || rc=$?
-            [ "$rc" -eq 124 ] || { echo "::error::$app exited early with code $rc"; exit 1; }
           done
+
+      # main window shown, no error popup, no error on stderr, still running (fresh HOME, Xvfb)
+      - name: Check the apps start
+        run: |
+          .github/build/check-app-starts.sh FreeFileSync/Build/Bin/FreeFileSync_x86_64-clang-libc++ '^FreeFileSync [0-9.]+ '
+          .github/build/check-app-starts.sh FreeFileSync/Build/Bin/RealTimeSync_x86_64-clang-libc++ '^RealTimeSync [0-9.]+ '
