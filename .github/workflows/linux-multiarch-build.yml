@@ -163,13 +163,19 @@ jobs:
       - name: Build RealTimeSync
         run: CXXFLAGS="$FFS_CXXFLAGS" make -C FreeFileSync/Source/RealTimeSync -j"$(nproc)"
 
-      - name: List binaries
+      - name: Check binaries
         run: |
           ls -l FreeFileSync/Build/Bin
           for bin in FreeFileSync/Build/Bin/FreeFileSync_* FreeFileSync/Build/Bin/RealTimeSync_*; do
             test -x "$bin"
             echo "== $bin"
-            ldd "$bin" | grep -E 'curl|ssh2|ssl|idn2|gtk-3' || true
+            deps=$(ldd "$bin")
+            echo "$deps" | grep -E 'curl|ssh2|ssl|idn2|gtk-3' || true
+            # fail instead of uploading a binary that cannot start
+            if echo "$deps" | grep 'not found'; then
+              echo "::error::$bin has unresolved shared libraries"
+              exit 1
+            fi
           done
 
       # upload-artifact zips files without Unix permissions, so pack the binaries into a tarball to keep them executable
