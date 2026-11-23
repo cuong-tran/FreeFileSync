@@ -117,6 +117,11 @@ RUN wget -q https://github.com/wxWidgets/wxWidgets/releases/download/v${WX_VERSI
 	&& make install \
 	&& cd /build && rm -rf wxWidgets-${WX_VERSION}* wx-settings.patch
 
+# glib 2.78+ (Ubuntu 26.04 ships 2.88) turns g_free() into a function-like macro, which breaks the "::g_free(...)" calls
+# in afs/ftp.cpp, base/icon_loader.cpp and zen/zstring.cpp. Capping the glib API at 2.76 keeps it a plain function;
+# the makefiles append their own flags to this CXXFLAGS.
+ENV CXXFLAGS="-DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_76 -DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_2_76"
+
 WORKDIR /src
 
 CMD ["sh", "-c", "make -C FreeFileSync/Source -j\"$(nproc)\" && make -C FreeFileSync/Source/RealTimeSync -j\"$(nproc)\""]
