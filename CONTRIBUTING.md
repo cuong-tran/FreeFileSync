@@ -53,11 +53,11 @@ Drop `--dry-run` to publish. It needs an authenticated `gh` CLI, skips releases 
 
 ## Building
 
-The source ships Linux makefiles only (`FreeFileSync/Source/Makefile` and `FreeFileSync/Source/RealTimeSync/Makefile`); there are no Windows or macOS project files and no test suite. Upstream recommends building against current library versions with the patches from `Bugs.txt` applied, and that file names the versions it was written for (for 14.13: wxWidgets 3.3.4, libcurl 8.21.0, libssh2 1.11.2).
+The source ships Linux makefiles only (`FreeFileSync/Source/Makefile` and `FreeFileSync/Source/RealTimeSync/Makefile`); there are no Windows or macOS project files and no test suite. Upstream recommends building against current library versions with the patches from `Bugs.txt` applied, and that file names the versions it was written for (for 14.13: wxWidgets 3.3.4, libcurl 8.21.0, a libssh2 1.11.2 development snapshot).
 
 ### Requirements
 
-- A g++ that accepts `-std=c++26` (GCC 14 or newer). The makefiles also pass GCC-only warning flags such as `-Wlogical-op`.
+- A g++ that accepts `-std=c++26`, which means GCC 14 or newer (GCC 14 is the oldest that takes the flag; whether all of 14.13 compiles with it is untested here). The makefiles also pass GCC-only warning flags such as `-Wlogical-op`.
 - `pkg-config` and the development packages for GTK 3, OpenSSL, libcurl, libssh2 and libidn2. libselinux is optional: the makefile enables SELinux support when `pkg-config` finds it.
 - wxWidgets 3.3 built for GTK 3, with `wx-config` on the `PATH`.
 
@@ -71,7 +71,13 @@ Add `libselinux1-dev` for SELinux support. GTK 2 (`libgtk2.0-dev`) is not needed
 
 ### wxWidgets
 
-Distributions mostly package wxWidgets 3.2, which is older than upstream supports, so build wxWidgets from source. Download the release from [wxWidgets releases](https://github.com/wxWidgets/wxWidgets/releases) (the `wxWidgets-<version>.tar.bz2` archive already includes the bundled third-party libraries that a plain git clone needs submodules for), apply the wxWidgets patches from `Bugs.txt`, then:
+Distributions mostly package wxWidgets 3.2, which is older than upstream supports, so build wxWidgets from source. Download the release from [wxWidgets releases](https://github.com/wxWidgets/wxWidgets/releases) (the `wxWidgets-<version>.tar.bz2` archive already includes the bundled third-party libraries that a plain git clone needs submodules for), then unpack it:
+
+```bash
+tar xf wxWidgets-<version>.tar.bz2 && cd wxWidgets-<version>
+```
+
+Apply the wxWidgets patches from `Bugs.txt` to that tree, then configure and build in a subfolder:
 
 ```bash
 mkdir buildgtk && cd buildgtk
