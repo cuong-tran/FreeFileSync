@@ -2,7 +2,8 @@
 # Build and run the zen platform layer unit tests (Tests/zen/*.cpp against the zen/*.cpp they need)
 #
 # usage: Tests/zen/run.sh [<test name>...]      (default: all tests; "--list" lists them)
-#   CXX:          compiler (default g++; needs C++26, i.e. g++ 14 or newer)
+#   CXX:          compiler (default g++; needs C++26, i.e. g++ 14 or newer, or clang 20 or newer)
+#   STDLIB:       "libc++" to build against LLVM's libc++ instead of the compiler's default C++ library (like the makefiles' STDLIB)
 #   CXXFLAGS, LDFLAGS: appended to the compile/link commands
 #   ZEN_TEST_BIN: build into this folder instead of a temporary one and keep it (the build always runs), e.g. to debug zen_test;
 #                 run directly, zen_test skips the tests that need run.sh's sandbox (see main.cpp)
@@ -33,9 +34,19 @@ esac
 CXXFLAGS_TEST=(-std=c++26 -O1 -g -pthread -DWXINTL_NO_GETTEXT_MACRO -I"$ROOT" -include "zen/i18n.h"
     -Wall -Wfatal-errors -Wshadow -Wmissing-include-dirs -Wswitch-enum -Wcast-align -Wnon-virtual-dtor -Wimplicit-fallthrough -Wundef -Wpedantic -Wredundant-decls
     -Wno-unused-function -Wno-deprecated-enum-enum-conversion)
-if "$CXX" --version | grep -q -i 'g++\|gcc'; then
+# compiler family and STDLIB: same flags as the makefiles
+if "$CXX" --version | grep -q clang; then
+    CXXFLAGS_TEST+=(-Wtautological-overlap-compare -Wno-potentially-evaluated-expression -Wno-unused-const-variable -Wno-unused-lambda-capture)
+else
     CXXFLAGS_TEST+=(-Wno-maybe-uninitialized -Wno-free-nonheap-object -Wno-restrict -Wduplicated-cond -Wlogical-op)
 fi
+STDLIB_FLAGS=()
+case "${STDLIB:-}" in
+    "")     ;;
+    libc++) STDLIB_FLAGS=(-stdlib=libc++) ;;
+    *)      echo "STDLIB must be empty or \"libc++\", not \"$STDLIB\"" >&2; exit 2 ;;
+esac
+CXXFLAGS_TEST+=("${STDLIB_FLAGS[@]}")
 # glib >= 2.78 can make g_free() a function-like macro, which breaks "::g_free(ptr)" in zen/zstring.cpp:
 # cap the glib API at 2.76 like .github/build/build-free-file-sync.sh (older glib doesn't define GLIB_VERSION_2_76 and needs no cap)
 if [ "$(uname -s)" = Linux ] && pkg-config --atleast-version=2.76 glib-2.0; then
@@ -47,7 +58,7 @@ read -r -a LDFLAGS_USER  <<< "${LDFLAGS:-}"
 
 ZEN_SOURCES=(file_access file_io file_traverser file_path resolve_path zstring dir_watcher recycler sys_info sys_version process_exec thread sys_error format_unit legacy_compiler)
 
-echo "== build ($("$CXX" --version | head -n 1))"
+echo "== build ($("$CXX" --version | head -n 1)${STDLIB:+, $STDLIB})"
 FAILED_LIST="$WORK/failed-compiles"
 : > "$FAILED_LIST"
 OBJECTS=()
@@ -72,7 +83,7 @@ if [ -s "$FAILED_LIST" ]; then
     exit 1
 fi
 # shellcheck disable=SC2086
-"$CXX" -pthread "${CXXFLAGS_USER[@]}" "${OBJECTS[@]}" $PLATFORM_LIBS "${LDFLAGS_USER[@]}" -o "$BIN/zen_test"
+"$CXX" -pthread "${STDLIB_FLAGS[@]}" "${CXXFLAGS_USER[@]}" "${OBJECTS[@]}" $PLATFORM_LIBS "${LDFLAGS_USER[@]}" -o "$BIN/zen_test"
 
 echo "== test"
 SANDBOX="$WORK/sandbox"

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Build and run the ZIP AbstractFileSystem test (Linux only, like the app: needs a C++26 g++, zlib, glib/gio, python3, zip)
+# Build and run the ZIP AbstractFileSystem test (Linux only, like the app: needs a C++26 compiler, zlib, glib/gio, python3, zip)
+#   CXX:    compiler (default g++; g++ 14 or newer, or clang 20 or newer)
+#   STDLIB: "libc++" to build against LLVM's libc++ instead of the compiler's default C++ library (like the makefiles' STDLIB)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -14,14 +16,25 @@ GLIB_CAP=()
 if pkg-config --atleast-version=2.76 glib-2.0; then
     GLIB_CAP=(-DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_76 -DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_2_76)
 fi
+#compiler family and STDLIB: same flags as the makefiles
+if "$CXX" --version | grep -q clang; then
+    COMPILER_FLAGS=(-Wtautological-overlap-compare -Wno-potentially-evaluated-expression -Wno-unused-const-variable -Wno-unused-lambda-capture)
+else
+    COMPILER_FLAGS=(-Wno-maybe-uninitialized -Wno-free-nonheap-object -Wno-restrict -Wduplicated-cond -Wlogical-op)
+fi
+case "${STDLIB:-}" in
+    "")     ;;
+    libc++) COMPILER_FLAGS+=(-stdlib=libc++) ;;
+    *)      echo "STDLIB must be empty or \"libc++\", not \"$STDLIB\"" >&2; exit 2 ;;
+esac
 read -r -a CXXFLAGS_USER <<< "${CXXFLAGS:-}"
 read -r -a LDFLAGS_USER  <<< "${LDFLAGS:-}"
 
-echo "== build"
+echo "== build ($("$CXX" --version | head -n 1)${STDLIB:+, $STDLIB})"
 #same language standard and warnings as FreeFileSync/Source/Makefile; zen/sys_error.cpp needs glib + gio (GError)
 "$CXX" -std=c++26 -O1 -g -pthread -DNDEBUG -DWXINTL_NO_GETTEXT_MACRO -I"$ROOT" -I"$ROOT/zenXml" -include "zen/i18n.h" \
     -Wall -Wfatal-errors -Wshadow -Wmissing-include-dirs -Wswitch-enum -Wcast-align -Wnon-virtual-dtor -Wimplicit-fallthrough -Wundef -Wpedantic -Wredundant-decls \
-    -Wno-unused-function -Wno-deprecated-enum-enum-conversion -Wno-maybe-uninitialized -Wno-free-nonheap-object -Wno-restrict -Wduplicated-cond -Wlogical-op \
+    -Wno-unused-function -Wno-deprecated-enum-enum-conversion "${COMPILER_FLAGS[@]}" \
     "${GLIB_CAP[@]}" $(pkg-config --cflags glib-2.0 gio-2.0 zlib) "${CXXFLAGS_USER[@]}" \
     "$ROOT/Tests/zip_afs/zip_afs_test.cpp" \
     "$ROOT/FreeFileSync/Source/afs/zip.cpp" \
