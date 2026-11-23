@@ -35,7 +35,7 @@ Zstring normalizeName(const Zstring& name)
 }
 
 //recursive traversal of "dirPath", keyed by relative path with '/' as separator
-void traverseRecursive(const Zstring& dirPath, const Zstring& relPath, std::map<Zstring, Entry>& entries)
+void traverseRecursive(const Zstring& dirPath, const Zstring& relPath, std::map<Zstring, Entry>& entries) //throw FileError
 {
     auto rel = [&](const Zstring& itemName) { return (relPath.empty() ? Zstring() : relPath + Zstr('/')) + normalizeName(itemName); };
     std::vector<std::pair<Zstring, Zstring>> subFolders;
@@ -77,19 +77,19 @@ TEST_CASE(fileTraverser)
     const Zstring nameDot       = ".hidden";
 
     std::map<Zstring, Entry> expected;
-    auto addFile = [&](const Zstring& relPath, size_t size, time_t modTime)
+    auto addFile = [&](const Zstring& relPath, size_t size, time_t modTime) //throw FileError
     {
         const Zstring filePath = appendPath(testDir, nativeRelPath(relPath));
         writeFile(filePath, std::string(size, 'x'));
         setFileTime(filePath, modTime, ProcSymlink::follow); //throw FileError
         expected[normalizeName(relPath)] = {Kind::file, size, modTime};
     };
-    auto addFolder = [&](const Zstring& relPath)
+    auto addFolder = [&](const Zstring& relPath) //throw FileError
     {
         createDirectory(appendPath(testDir, nativeRelPath(relPath))); //throw FileError
         expected[normalizeName(relPath)] = {Kind::folder};
     };
-    auto addSymlink = [&](const Zstring& relPath, const Zstring& target, bool isDir)
+    auto addSymlink = [&](const Zstring& relPath, const Zstring& target, bool isDir) //throw FileError
     {
         const Zstring linkPath = appendPath(testDir, nativeRelPath(relPath));
         if (isDir)

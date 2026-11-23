@@ -16,7 +16,7 @@ const auto eventTimeout = std::chrono::seconds(10); //generous for slow CI machi
 //poll fetchChanges() until a change accepted by "pred" arrives or the timeout is reached
 //changes fetched but not matched stay in "backlog" for the next call: one fetch may return the events of several file operations
 template <class Predicate>
-bool waitForChange(DirWatcher& watcher, Predicate pred, std::vector<DirWatcher::Change>& backlog)
+bool waitForChange(DirWatcher& watcher, Predicate pred, std::vector<DirWatcher::Change>& backlog) //throw FileError
 {
     const auto stopTime = std::chrono::steady_clock::now() + eventTimeout;
     for (;;)
@@ -57,7 +57,7 @@ TEST_CASE(dirWatcher)
         return;
 
     std::vector<DirWatcher::Change> backlog;
-    auto expectChange = [&](const char* what, DirWatcher::ChangeType type, const Zstring& itemPath, bool anyType)
+    auto expectChange = [&](const char* what, DirWatcher::ChangeType type, const Zstring& itemPath, bool anyType) //throw FileError
     {
         const bool found = waitForChange(*watcher, [&](const DirWatcher::Change& c)
         {

@@ -98,8 +98,9 @@ TEST_CASE(processExec)
 
     //timeout
     const auto startTime = std::chrono::steady_clock::now();
-    CHECK_THROWS(SysErrorTimeOut, (void)consoleExecute("sleep 10", 200));
-    CHECK(std::chrono::steady_clock::now() - startTime < std::chrono::seconds(5));
+    //"SysErrorTimeOut leaves zombie process behind": keep the child short-lived, so it doesn't outlive the test by more than a moment
+    CHECK_THROWS(SysErrorTimeOut, (void)consoleExecute("sleep 1", 200));
+    CHECK(std::chrono::steady_clock::now() - startTime < std::chrono::milliseconds(900)); //returned at the timeout, not when the child ended
 #else
     //Windows: "cmd.exe returns exit code 1 if file not found (instead of throwing SysError)"
     {

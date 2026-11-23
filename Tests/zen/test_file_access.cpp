@@ -15,8 +15,9 @@ namespace
 //2024-02-29 13:37:42 UTC
 const time_t testTime = 1709213862;
 
-std::optional<time_t> getSymlinkModTime(const Zstring& linkPath) //through zen's traverser: std::filesystem has no lstat-like time
+std::optional<time_t> getSymlinkModTime(const Zstring& linkPath) //throw FileError
 {
+    //through zen's traverser: std::filesystem has no lstat-like time
     std::optional<time_t> modTime;
     traverseFolder(*getParentFolderPath(linkPath), nullptr, nullptr, [&](const SymlinkInfo& si)
     {
