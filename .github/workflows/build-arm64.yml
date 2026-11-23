@@ -62,6 +62,8 @@ jobs:
         ls -l FreeFileSync/Build/Bin
 
     - name: Create DEB package
+      env:
+        SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }} # not the temporary merge commit of a PR
       run: |
         set -euo pipefail
         ffsVersion=$(sed -n 's/^const char ffsVersion\[\] = "\([^"]*\)".*/\1/p' FreeFileSync/Source/version/version.h)
@@ -114,7 +116,7 @@ jobs:
         Homepage: https://github.com/${GITHUB_REPOSITORY}
         Description: Folder comparison and synchronization (unofficial build)
          FreeFileSync and RealTimeSync built from https://github.com/${GITHUB_REPOSITORY}
-         at commit ${GITHUB_SHA}.
+         at commit ${SOURCE_SHA}.
         EOF
         cat "${pkg}/DEBIAN/control"
 
