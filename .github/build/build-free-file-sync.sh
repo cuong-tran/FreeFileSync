@@ -8,6 +8,12 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 
 command -v wx-config >/dev/null && [ "$(command -v wx-config)" = "$INSTALL_DIR/bin/wx-config" ] ||
     die "wx-config not found in $INSTALL_DIR/bin, run build.sh first"
+# pkg-config falls back to the system's .pc files for anything missing from the prefix, which would
+# link an unpatched system library without a word
+for pc in openssl libssh2 libcurl; do
+    [ "$(pkg-config --variable=prefix "$pc" 2>/dev/null)" = "$INSTALL_DIR" ] ||
+        die "$pc is not installed in $INSTALL_DIR (pkg-config would use the system's), run build.sh first"
+done
 
 # glib >= 2.78 makes g_free() a function-like macro when sized free is available, which breaks the
 # "::g_free(ptr)" calls in afs/ftp.cpp, base/icon_loader.cpp and zen/zstring.cpp. Capping the glib API
