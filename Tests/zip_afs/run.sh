@@ -24,7 +24,7 @@ REF="$WORK/ref"
 mkdir -p "$REF/sub dir/nested" "$REF/empty folder" "$REF/Données été"
 echo "hello" > "$REF/a.txt"
 head -c 300000 /dev/urandom > "$REF/sub dir/random.bin"                            # incompressible
-yes "compressible line" | head -n 50000 > "$REF/sub dir/nested/big.txt"            # multiple inflate blocks
+{ yes "compressible line" || true; } | head -n 50000 > "$REF/sub dir/nested/big.txt"  # multiple inflate blocks; "|| true": yes gets SIGPIPE, fatal with pipefail
 : > "$REF/sub dir/empty.txt"
 echo "accents" > "$REF/Données été/fichier é.txt"
 touch -d "2024-02-29 13:37:42" "$REF/a.txt"
