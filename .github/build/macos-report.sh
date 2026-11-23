@@ -17,8 +17,8 @@ SDK="$(xcrun --show-sdk-path)"
 # the deployment target the libraries are built for (common.sh; read, not sourced: sourcing takes the build locks)
 DEPLOYMENT_TARGET="$(sed -nE 's/^FFS_MACOS_DEPLOYMENT_TARGET=([0-9.]+).*/\1/p' "$ROOT/.github/build/common.sh")"
 
-# same language and warning flags as the makefiles' clang block, plus the macOS SDK
-BASE_FLAGS=(-isysroot "$SDK" -fsyntax-only -I"$ROOT" -I"$ROOT/zenXml" -include zen/i18n.h -DWXINTL_NO_GETTEXT_MACRO -DNDEBUG
+# same language and warning flags as the makefiles' clang block (the SDK is added per compiler: -isysroot "$SDK")
+BASE_FLAGS=(-fsyntax-only -I"$ROOT" -I"$ROOT/zenXml" -include zen/i18n.h -DWXINTL_NO_GETTEXT_MACRO -DNDEBUG
     -Wall -Wfatal-errors -Wshadow -Wmissing-include-dirs -Wswitch-enum -Wcast-align -Wnon-virtual-dtor -Wimplicit-fallthrough -Wundef -Wpedantic -Wredundant-decls
     -Wno-unused-function -Wno-deprecated-enum-enum-conversion -Wtautological-overlap-compare -Wno-potentially-evaluated-expression
     -Wno-unused-const-variable -Wno-unused-lambda-capture)
@@ -37,21 +37,42 @@ std_flag() {
     echo "-std=c++2b"
 }
 
-# check_file <compiler> <file> <flags...>: syntax-check a .cpp, or a header on its own; prints "ok" or the first error
-check_file() {
-    local cxx="$1" file="$2" log
-    shift 2
-    log="$(mktemp)"
+# standard headers zen code commonly relies on getting transitively; pre-including them separates a missing #include
+# (easy to fix) from a real gap of the toolchain
+STD_INCLUDES=()
+for header in type_traits utility cstdlib cmath cstring cstdint limits memory string string_view vector algorithm functional; do
+    STD_INCLUDES+=(-include "$header")
+done
+
+# compile_file <log> <compiler> <file> <flags...>: syntax-check a .cpp, or a header on its own
+compile_file() {
+    local log="$1" cxx="$2" file="$3"
+    shift 3
     if [[ "$file" == *.h ]]; then
         (cd "$ROOT" && "$cxx" "$@" -x c++ -include "$file" /dev/null) >"$log" 2>&1
     else
         (cd "$ROOT" && "$cxx" "$@" "$file") >"$log" 2>&1
     fi
-    if grep -q 'error:' "$log"; then
+    ! grep -q 'error:' "$log"
+}
+
+# check_file <compiler> <file> <flags...>: prints "ok" or the first error; after a failure, the first error once the
+# common standard headers are pre-included as well ("with std includes")
+check_file() {
+    local cxx="$1" file="$2" log
+    shift 2
+    log="$(mktemp)"
+    if compile_file "$log" "$cxx" "$file" "$@"; then
+        echo "    $file: ok"
+    else
         echo "    $file: FAILED"
         first_error "$log"
-    else
-        echo "    $file: ok"
+        if compile_file "$log" "$cxx" "$file" "${STD_INCLUDES[@]}" "$@"; then
+            echo "        with std includes: ok (only missing #includes)"
+        else
+            echo "        with std includes: FAILED"
+            first_error "$log" | sed 's/^/    /'
+        fi
     fi
     rm -f "$log"
 }
@@ -77,21 +98,30 @@ int main() { std::jthread t([](std::stop_token) {}); }'
         'shared_mutex|#include <shared_mutex>
 int main() { std::shared_mutex m; m.lock_shared(); m.unlock_shared(); }'
     )
-    local compilers=("Xcode clang|$(xcrun -f clang++)")
+    # name|compiler|SDK
+    local compilers=("Xcode clang (selected Xcode)|$(xcrun -f clang++)|$SDK")
+    # the newest Xcode installed, if it isn't the selected one, with its own SDK
+    local newestXcode
+    newestXcode="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)"
+    if [ -n "$newestXcode" ] && [ "$(DEVELOPER_DIR="$newestXcode/Contents/Developer" xcrun -f clang++)" != "$(xcrun -f clang++)" ]; then
+        compilers+=("Xcode clang ($(basename "$newestXcode"))|$(DEVELOPER_DIR="$newestXcode/Contents/Developer" xcrun -f clang++)|$(DEVELOPER_DIR="$newestXcode/Contents/Developer" xcrun --show-sdk-path)")
+    fi
     if command -v brew >/dev/null && [ -x "$(brew --prefix)/opt/llvm/bin/clang++" ]; then
-        compilers+=("Homebrew LLVM|$(brew --prefix)/opt/llvm/bin/clang++")
+        compilers+=("Homebrew LLVM|$(brew --prefix)/opt/llvm/bin/clang++|$SDK")
     else
-        compilers+=("Homebrew LLVM|(not installed)")
+        compilers+=("Homebrew LLVM|(not installed)|$SDK")
     fi
 
     echo "macOS $(sw_vers -productVersion), SDK $(xcrun --show-sdk-version), Xcode $(xcodebuild -version 2>/dev/null | head -n 1)"
     echo "deployment target in common.sh: $DEPLOYMENT_TARGET"
-    local entry name cxx std dt log file
+    local entry name cxx std dt log file rest
     for entry in "${compilers[@]}"; do
         name="${entry%%|*}"
-        cxx="${entry#*|}"
+        rest="${entry#*|}"
+        cxx="${rest%%|*}"
+        SDK="${rest#*|}"
         echo
-        echo "== $name: $cxx"
+        echo "== $name: $cxx (SDK $SDK)"
         [ -x "$cxx" ] || { echo "    not available"; continue; }
         echo "    $("$cxx" --version | head -n 1)"
         echo "    libc++: $(echo '#include <version>' | "$cxx" -isysroot "$SDK" -std=c++2c -x c++ -dM -E - 2>/dev/null | awk '$2 == "_LIBCPP_VERSION" { print $3 }')"
@@ -105,9 +135,9 @@ int main() { std::shared_mutex m; m.lock_shared(); m.unlock_shared(); }'
         std="$(std_flag "$cxx")"
         echo "    zen probe ($std, -mmacosx-version-min=$DEPLOYMENT_TARGET):"
         for file in "${probeFiles[@]}"; do
-            check_file "$cxx" "$file" "$std" -mmacosx-version-min="$DEPLOYMENT_TARGET" "${BASE_FLAGS[@]}"
+            check_file "$cxx" "$file" "$std" -isysroot "$SDK" -mmacosx-version-min="$DEPLOYMENT_TARGET" "${BASE_FLAGS[@]}"
         done
-        check_file "$cxx" zen/json.h "$std" -mmacosx-version-min="$DEPLOYMENT_TARGET" -include zen/utf.h "${BASE_FLAGS[@]}"
+        check_file "$cxx" zen/json.h "$std" -isysroot "$SDK" -mmacosx-version-min="$DEPLOYMENT_TARGET" -include zen/utf.h "${BASE_FLAGS[@]}"
         echo "    oldest deployment target (of 11.0 ... 26.0) that each library feature compiles for:"
         log="$(mktemp)"
         local feature fname code oldest
@@ -136,7 +166,7 @@ port_todo() {
     local arch="${1:?usage: macos-report.sh port-todo <arch> [<deps prefix>]}" prefix="${2:-}"
     local cxx="${CXX:-$(xcrun -f clang++)}" std file
     std="$(std_flag "$cxx")"
-    local flags=("$std" -arch "$arch" -mmacosx-version-min="$DEPLOYMENT_TARGET" "${BASE_FLAGS[@]}")
+    local flags=("$std" -isysroot "$SDK" -arch "$arch" -mmacosx-version-min="$DEPLOYMENT_TARGET" "${BASE_FLAGS[@]}")
     [ -n "$prefix" ] && flags+=(-I"$prefix/include")
     echo "zen/*.cpp on macOS $arch: $("$cxx" --version | head -n 1), $std, deployment target $DEPLOYMENT_TARGET${prefix:+, libraries from $prefix}"
     local ok=0 failed=0 out
