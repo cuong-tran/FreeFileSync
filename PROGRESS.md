@@ -8,14 +8,10 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 |---|---|---|---|---|
 | M1 Foundation | Plan and architecture | done | | n/a (docs) |
 | M1 Foundation | 1. Platform macros, `Tests/zen` | done | `d1e9037^..128099a`, fixes `584a353^..90c338a` | 8 findings: 7 fixed, 1 kept |
-<<<<<<< HEAD
 | M1 Foundation | 2. Clang + libc++ on Linux | done | `9a0f61e^..8f3c1fd`, fixes `f36f54a`, `62e5860`, `8b96471`, `bbfdcb8`, `b12fa57`, `a2ac5e0`, `a3a3741` | 6 findings: 5 fixed, 1 kept |
-| M1 Foundation | 3. macOS dependency builds in CI | in progress | | |
-=======
-| M1 Foundation | 2. Clang + libc++ on Linux | done, review fixes in progress | `9a0f61e^..8f3c1fd` | 6 findings, see below |
-| M1 Foundation | 3. macOS dependency builds in CI | done, review fixes in progress | `8f3c1fd..5ef2d42` | 7 findings, see below |
->>>>>>> 15fee4b (PROGRESS.md: record M1 step 3, its decisions and review findings)
-| M2 Sentry | | | | |
+| M1 Foundation | 3. macOS dependency builds in CI | done | `8f3c1fd..5ef2d42`, fixes `93c562e^..c28f8f2` | 7 findings: all fixed |
+| M1 Foundation | Pull request | open, work paused until it is merged | | |
+| M2 Sentry | | next | | |
 | M3 macOS | | | | |
 | M4 Windows | | | | |
 
@@ -93,10 +89,10 @@ Result of the step: `.github/workflows/macos-build.yml` builds and caches the li
 
 | # | Finding | Severity | Outcome |
 |---|---|---|---|
-| 1 | `package.sh` does not know the toolchain-suffixed binary names | important | sent for fixing |
-| 2 | Compiler detection in `build-free-file-sync.sh` can fail randomly (SIGPIPE under `pipefail`) | important | sent for fixing |
-| 3 | `otool | awk ... exit` can abort a local macOS library build silently | important | sent for fixing |
-| 4 | Start check does not report the exit code of an app that dies after showing its window | nit | sent for fixing |
-| 5 | Start check can time out when run as root with saved settings | nit | sent for fixing |
-| 6 | Hard-coded Xcode 26.3 path in the macOS workflow | nit | sent for fixing |
-| 7 | `CLAUDE.md` describes the old compiler detection | nit | sent for fixing |
+| 1 | `package.sh` does not know the toolchain-suffixed binary names | important | fixed in `93c562e`: shared `toolchain_suffix()` in `common.sh`; default package names unchanged |
+| 2 | Compiler detection in `build-free-file-sync.sh` can fail randomly (SIGPIPE under `pipefail`) | important | fixed in `93c562e`, `e939de1`; all M1 scripts and workflows audited for the same pattern |
+| 3 | `otool | awk ... exit` can abort a local macOS library build silently | important | fixed in `93c562e`, `e939de1` |
+| 4 | Start check does not report the exit code of an app that dies after showing its window | nit | fixed in `147bdfd` |
+| 5 | Start check can time out when run as root with saved settings | nit | fixed in `147bdfd`: as root, the app runs as `nobody` |
+| 6 | Hard-coded Xcode 26.3 path in the macOS workflow | nit | fixed in `e939de1`: newest installed Xcode 26.x is selected at run time |
+| 7 | `CLAUDE.md` describes the old compiler detection | nit | fixed in `c28f8f2` |
