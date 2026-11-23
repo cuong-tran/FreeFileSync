@@ -72,6 +72,8 @@ echo "== test"
 for archive in py_deflate py_stored infozip infozip64; do
     "$WORK/zip_afs_test" "$WORK/$archive.zip" "$REF"
 done
+cp "$WORK/py_deflate.zip" "$WORK/pipe|name.zip"       # '|' in the archive name must not be taken as the inner path separator
+"$WORK/zip_afs_test" "$WORK/pipe|name.zip" "$REF"
 "$WORK/zip_afs_test" --expect-read-error "$WORK/corrupt.zip" corrupt.txt
 "$WORK/zip_afs_test" --expect-item-count "$WORK/many.zip" 65540
 

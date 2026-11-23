@@ -907,8 +907,18 @@ AbstractPath fff::createItemPathZip(const Zstring& itemPathPhrase) //noexcept
     if (startsWithAsciiNoCase(pathPhrase, zipPrefix))
         pathPhrase = pathPhrase.c_str() + zipPrefix.size();
 
-    const Zstring archivePhrase = beforeFirst(pathPhrase, zipInnerPathSeparator, IfNotFoundReturn::all);
-    const Zstring innerPath     =  afterFirst(pathPhrase, zipInnerPathSeparator, IfNotFoundReturn::none);
+    /* '|' is legal in Linux file names: split after the archive name, i.e. at the first '|' following ".zip";
+       none, and the whole phrase ends with ".zip" => no inner path; otherwise (other file extension): first '|'   */
+    const ZstringView phraseView = pathPhrase;
+    size_t sepPos = endsWithAsciiNoCase(phraseView, Zstr(".zip")) ? ZstringView::npos : phraseView.find(zipInnerPathSeparator);
+    for (size_t pos = 0; (pos = phraseView.find(zipInnerPathSeparator, pos)) != ZstringView::npos; ++pos)
+        if (endsWithAsciiNoCase(phraseView.substr(0, pos), Zstr(".zip")))
+        {
+            sepPos = pos;
+            break;
+        }
+    const Zstring archivePhrase(phraseView.substr(0, sepPos));
+    const Zstring innerPath = sepPos != ZstringView::npos ? Zstring(phraseView.substr(sepPos + 1)) : Zstring();
 
     const Zstring archivePath = trimCpy(archivePhrase).empty() ? Zstring() : getResolvedFilePath(archivePhrase);
 
