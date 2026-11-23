@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build a static wxWidgets for FreeFileSync into $WX_PREFIX (used by .github/workflows/build-arm64.yml).
-# Needs WX_VERSION, WX_SHA256 and WX_PREFIX; CC/CXX are taken from the environment.
+# Needs WX_VERSION, WX_SHA256 and WX_PREFIX; CC/CXX, if set, come from the environment.
 # FreeFileSync needs wxWidgets 3.3 with the wxColorHook patch from Bugs.txt and without
 # wxWidgets' own exception handling (application.cpp refuses to build if wxUSE_EXCEPTIONS is set).
 set -euo pipefail
@@ -8,7 +8,7 @@ set -euo pipefail
 
 workDir=$(mktemp -d)
 cd "${workDir}"
-curl -fsSLo wx.tar.bz2 "https://github.com/wxWidgets/wxWidgets/releases/download/v${WX_VERSION}/wxWidgets-${WX_VERSION}.tar.bz2"
+curl -fsSL --retry 3 --retry-all-errors -o wx.tar.bz2 "https://github.com/wxWidgets/wxWidgets/releases/download/v${WX_VERSION}/wxWidgets-${WX_VERSION}.tar.bz2"
 echo "${WX_SHA256}  wx.tar.bz2" | sha256sum -c -
 tar xf wx.tar.bz2
 cd "wxWidgets-${WX_VERSION}"
