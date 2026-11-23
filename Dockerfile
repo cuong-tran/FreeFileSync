@@ -20,6 +20,8 @@ FROM ubuntu:26.04
 # last libssh2 master commit before the FreeFileSync 14.13 release (2026-10-16)
 ARG LIBSSH2_COMMIT=83284a05a1add34722c1fa36fa706fe7aced87b6
 ARG LIBSSH2_SHA256=03e70390ceafcde9ceb98654d9e55f05c705c2e62c05863d5284e4e11f51b8a7
+# curl publishes signatures, not checksums: this SHA-256 is of the tarball verified against its .asc signature
+# (Daniel Stenberg, key 27EDEAF22F3ABCEB50DB9A125CC908FDB71E12C2)
 ARG CURL_VERSION=8.21.0
 ARG CURL_SHA256=d9b327997999045a24cda50f3983e69e51c516bd8be6ef9842fc7f99135e33bb
 ARG WX_VERSION=3.3.4
