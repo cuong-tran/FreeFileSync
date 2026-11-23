@@ -114,8 +114,8 @@ void compareWithReference(const Zstring& archivePath, const fs::path& refRoot)
     check(AFS::getItemTypeIfExists(rootPath) == AFS::ItemType::folder, "archive root must be a folder");
     check(!AFS::getItemTypeIfExists(AFS::appendRelPath(rootPath, Zstr("does/not/exist"))), "missing item must not exist");
     //missing archive: "does not exist" (not an error) for the root and for inner paths
-    check(!AFS::getItemTypeIfExists(createItemPathZip(Zstr("zip:") + archivePath + Zstr(".missing"))), "missing archive root must not exist");
-    check(!AFS::getItemTypeIfExists(createItemPathZip(Zstr("zip:") + archivePath + Zstr(".missing|sub dir"))), "inner path of missing archive must not exist");
+    check(!AFS::getItemTypeIfExists(createItemPathZip(Zstr("zip:") + archivePath + Zstr(".missing.zip"))), "missing archive root must not exist");
+    check(!AFS::getItemTypeIfExists(createItemPathZip(Zstr("zip:") + archivePath + Zstr(".missing.zip|sub dir"))), "inner path of missing archive must not exist");
 
     const std::map<std::string, ItemDetails> items = traverse(rootPath);
 
