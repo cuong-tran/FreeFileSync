@@ -46,65 +46,11 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/wx-install
-        key: wx-${{ env.WX_VERSION }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/build-arm64.yml') }}
+        key: wx-${{ env.WX_VERSION }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/scripts/build-wxwidgets.sh') }}
 
-    # FreeFileSync needs wxWidgets 3.3 with the wxColorHook patch from Bugs.txt and without
-    # wxWidgets' own exception handling (application.cpp refuses to build if wxUSE_EXCEPTIONS is set)
     - name: Build wxWidgets ${{ env.WX_VERSION }}
       if: steps.wx-cache.outputs.cache-hit != 'true'
-      working-directory: ${{ runner.temp }}
-      run: |
-        set -euo pipefail
-        curl -fsSLo wx.tar.bz2 "https://github.com/wxWidgets/wxWidgets/releases/download/v${WX_VERSION}/wxWidgets-${WX_VERSION}.tar.bz2"
-        echo "${WX_SHA256}  wx.tar.bz2" | sha256sum -c -
-        tar xf wx.tar.bz2
-        cd "wxWidgets-${WX_VERSION}"
-
-        echo '=== Applying the wxColorHook patch from Bugs.txt to include/wx/settings.h ==='
-        python3 -I - include/wx/settings.h <<'EOF'
-        import sys
-        path = sys.argv[1]
-        src = open(path).read()
-
-        def insert(anchor, before='', after=''):
-            global src
-            if src.count(anchor) != 1:
-                sys.exit(f'patch anchor not found exactly once: {anchor!r}')
-            src = src.replace(anchor, before + anchor + after)
-
-        insert('#include "wx/font.h"\n', after='#include <memory>\n')
-        insert('class WXDLLIMPEXP_CORE wxSystemSettings : public wxSystemSettingsNative\n{\npublic:\n',
-               before='struct wxColorHook\n'
-                      '{\n'
-                      '    virtual ~wxColorHook() {}\n'
-                      '    virtual wxColor getColor(wxSystemColour index) const = 0;\n'
-                      '};\n'
-                      'WXDLLIMPEXP_CORE inline std::unique_ptr<wxColorHook>& refGlobalColorHook()\n'
-                      '{\n'
-                      '    static std::unique_ptr<wxColorHook> globalColorHook;\n'
-                      '    return globalColorHook;\n'
-                      '}\n\n',
-               after='    static wxColour GetColour(wxSystemColour index)\n'
-                     '    {\n'
-                     '        if (refGlobalColorHook())\n'
-                     '            return refGlobalColorHook()->getColor(index);\n'
-                     '\n'
-                     '        return wxSystemSettingsNative::GetColour(index);\n'
-                     '    }\n\n')
-        open(path, 'w').write(src)
-        EOF
-
-        ./configure \
-          --prefix="${WX_PREFIX}" \
-          --disable-shared \
-          --with-gtk=3 \
-          --disable-exceptions \
-          --disable-stc \
-          --disable-webview \
-          --disable-mediactrl \
-          --without-opengl
-        make -j"$(nproc)"
-        make install
+      run: .github/scripts/build-wxwidgets.sh
 
     - name: Build FreeFileSync and RealTimeSync
       run: |
