@@ -5,6 +5,7 @@
 // *****************************************************************************
 
 #include "darkmode.h"
+#include <memory>
 #include <zen/sys_version.h>
 #include <wx/settings.h>
 #include <wx/window.h>
@@ -17,8 +18,6 @@ using namespace zen;
 #ifdef ZEN_WX_NO_COLOR_HOOK //set by the Makefile if wx/settings.h lacks the wxColorHook patch from Bugs.txt
 //declare the hook ourselves so that unpatched wxWidgets builds still compile: wxSystemSettings::GetColour() will not consult it,
 //so the enhanced contrast for wxSYS_COLOUR_GRAYTEXT is lost, but the color theme otherwise works as usual
-#include <memory>
-
 struct wxColorHook
 {
     virtual ~wxColorHook() {}
