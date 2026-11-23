@@ -1,7 +1,8 @@
 #!/bin/bash
 # Build a static GTK 3 wxWidgets with wxUSE_EXCEPTIONS=0 (FreeFileSync's application.cpp
 # refuses wx's uncaught exception handling), with the Bugs.txt fixes applied. The dark mode fix adds the
-# wxColorHook API that wx+/darkmode.cpp needs, so FreeFileSync doesn't compile without it.
+# wxColorHook API that wx+/darkmode.cpp uses for full dark mode support; without it the makefiles warn and
+# build a fallback without the higher-contrast gray text.
 # Usage: build-wxwidgets.sh [version]   (or set WXWIDGETS_VERSION)
 # Not --enable-no_exceptions: that also puts -fno-exceptions into wx-config --cxxflags,
 # and FreeFileSync itself uses C++ exceptions.

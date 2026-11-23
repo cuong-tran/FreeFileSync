@@ -32,7 +32,7 @@ Each library has its own script (`build-openssl.sh`, `build-libssh2.sh`, `build-
 | `LIBSSH2_COMMIT` | `83284a05…` | libssh2 commit to build; 14.13 needs the unreleased 1.11.2_DEV API, so this is a pinned master snapshot from just before the 14.13 release |
 | `FFS_BUILD_DIR` | `<repo>/.build` | Downloads, unpacked sources and build trees |
 | `FFS_DEPS_PREFIX` | `$FFS_BUILD_DIR/deps` | Install prefix of the libraries |
-| `FFS_SKIP_PATCHES` | unset | Set to `1` to build a version that has no patch in `patches/` |
+| `FFS_SKIP_PATCHES` | unset | Set to `1` to build a version that has no patch in `patches/`. An unpatched wxWidgets still compiles: the makefiles detect the missing `wxColorHook`, warn, and build without the dark mode contrast fix |
 | `JOBS` | `nproc` | Parallel make jobs |
 
 wxWidgets is linked statically. OpenSSL, libssh2 and libcurl are shared libraries found through an rpath to `.build/deps/lib`, so the binaries only run on the machine that built them unless those libraries are copied along.
