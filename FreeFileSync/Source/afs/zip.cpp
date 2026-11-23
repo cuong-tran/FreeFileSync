@@ -293,7 +293,7 @@ ZipIndex parseZipArchive(const Zstring& archivePath) //throw SysError
         {
             const uint64_t zip64EocdOffset = readLE64(locator + 8);
             unsigned char zip64Eocd[56] = {};
-            if (zip64EocdOffset + sizeof(zip64Eocd) > details.fileSize)
+            if (details.fileSize < sizeof(zip64Eocd) || zip64EocdOffset > details.fileSize - sizeof(zip64Eocd)) //untrusted offset: avoid overflow
                 throw SysError(_("ZIP archive is corrupted.") + L" (Zip64 EOCD)");
             archive.readAt(zip64EocdOffset, zip64Eocd, sizeof(zip64Eocd)); //throw SysError
 
