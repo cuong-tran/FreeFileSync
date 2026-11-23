@@ -48,8 +48,8 @@ check_name() {
 
 # is_installed <name-version> [dependency name...]: true if this version was installed with the
 # current patch and build script, and against the dependency versions installed now (e.g.
-# "openssl" matches the stamp of whichever openssl-<version> was built), so changing any of
-# them rebuilds it.
+# "openssl" matches the stamp of the openssl-<version> in the prefix; fetch_source keeps only
+# one stamp per library), so changing any of them rebuilds it.
 is_installed() {
     check_name "$1"
     [ -f "$STAMP_DIR/$1" ] && [ "$(cat "$STAMP_DIR/$1")" = "$(install_id "$@")" ]
@@ -80,6 +80,9 @@ install_id() {
 fetch_source() {
     local name="$1" file="$2" url="$3" patchMode="${4:-}"
     check_name "$name"
+    # this install replaces whatever version of the library is in the prefix: drop the stamps of all
+    # its versions now, so neither switching back to an older version nor a failed build reuses one
+    rm -f "$STAMP_DIR/${name%-*}"-*
     local archive="$ARCHIVE_DIR/$file"
     local patch="$PATCH_DIR/$name.patch"
 
