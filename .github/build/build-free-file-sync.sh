@@ -10,8 +10,10 @@ command -v wx-config >/dev/null && [ "$(command -v wx-config)" = "$INSTALL_DIR/b
 
 # glib >= 2.78 makes g_free() a function-like macro when sized free is available, which breaks the
 # "::g_free(ptr)" calls in afs/ftp.cpp, base/icon_loader.cpp and zen/zstring.cpp. Capping the glib API
-# level at 2.76 keeps it a plain function.
-export CXXFLAGS="-DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_76 -DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_2_76${CXXFLAGS:+ $CXXFLAGS}"
+# level at 2.76 keeps it a plain function. Older glib doesn't define GLIB_VERSION_2_76 and needs no cap.
+if pkg-config --atleast-version=2.76 glib-2.0; then
+    export CXXFLAGS="-DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_76 -DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_2_76${CXXFLAGS:+ $CXXFLAGS}"
+fi
 
 # The makefiles append to CXXFLAGS/LDFLAGS from the environment, which carries the rpath to $INSTALL_DIR/lib.
 make -C "$REPO_ROOT/FreeFileSync/Source" -j "$JOBS"
