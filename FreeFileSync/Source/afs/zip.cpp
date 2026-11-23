@@ -482,7 +482,7 @@ public:
 
         if (entry.method != ZIP_METHOD_STORED &&
             entry.method != ZIP_METHOD_DEFLATE)
-            throw SysError(replaceCpy<std::wstring>(L"Unsupported ZIP compression method: %x", L"%x", numberTo<std::wstring>(entry.method)));
+            throw SysError(replaceCpy(_("Unsupported ZIP compression method: %x"), L"%x", numberTo<std::wstring>(entry.method)));
 
         unsigned char localHeader[30] = {};
         archive_.readAt(entry.localHeaderOffset, localHeader, sizeof(localHeader)); //throw SysError
@@ -593,7 +593,7 @@ private:
             throw SysError(_("Unexpected size of data stream:") + L' ' + formatNumber(totalOut_) + L'\n' +
                            _("Expected:") + L' ' + formatNumber(entry_.uncompressedSize));
         if (crc_ != entry_.crc32)
-            throw SysError(L"CRC32 mismatch: ZIP archive is corrupted.");
+            throw SysError(_("ZIP archive is corrupted.") + L" (CRC32)");
     }
 
     const ArchiveFile archive_;
@@ -687,7 +687,7 @@ private:
     //----------------------------------------------------------------------------------------------------------------
     [[noreturn]] void throwReadOnly(const std::wstring& msg) const //throw FileError
     {
-        throw FileError(msg, _("Operation not supported by device.") + L" (ZIP archives are read-only)");
+        throw FileError(msg, _("Operation not supported by device.") + L' ' + _("ZIP archives are read-only."));
     }
 
     void createFolderPlain(const AfsPath& folderPath) const override //throw FileError
