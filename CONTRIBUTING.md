@@ -53,10 +53,50 @@ Drop `--dry-run` to publish. It needs an authenticated `gh` CLI, skips releases 
 
 ## Building
 
-The source ships Linux makefiles only (`FreeFileSync/Source/Makefile` and `FreeFileSync/Source/RealTimeSync/Makefile`). They need a C++23 compiler and the development packages for wxWidgets (GTK 3), OpenSSL, libcurl, libssh2 and libidn2 (libselinux is optional). Upstream recommends building against current library versions with the patches from `Bugs.txt` applied.
+The source ships Linux makefiles only (`FreeFileSync/Source/Makefile` and `FreeFileSync/Source/RealTimeSync/Makefile`); there are no Windows or macOS project files and no test suite. Upstream recommends building against current library versions with the patches from `Bugs.txt` applied, and that file names the versions it was written for (for 14.13: wxWidgets 3.3.4, libcurl 8.21.0, libssh2 1.11.2).
+
+### Requirements
+
+- A g++ that accepts `-std=c++26` (GCC 14 or newer). The makefiles also pass GCC-only warning flags such as `-Wlogical-op`.
+- `pkg-config` and the development packages for GTK 3, OpenSSL, libcurl, libssh2 and libidn2. libselinux is optional: the makefile enables SELinux support when `pkg-config` finds it.
+- wxWidgets 3.3 built for GTK 3, with `wx-config` on the `PATH`.
+
+On Debian or Ubuntu:
+
+```bash
+sudo apt install build-essential pkgconf libgtk-3-dev libssl-dev libcurl4-openssl-dev libssh2-1-dev libidn2-dev
+```
+
+Add `libselinux1-dev` for SELinux support. GTK 2 (`libgtk2.0-dev`) is not needed.
+
+### wxWidgets
+
+Distributions mostly package wxWidgets 3.2, which is older than upstream supports, so build wxWidgets from source. Download the release from [wxWidgets releases](https://github.com/wxWidgets/wxWidgets/releases) (the `wxWidgets-<version>.tar.bz2` archive already includes the bundled third-party libraries that a plain git clone needs submodules for), apply the wxWidgets patches from `Bugs.txt`, then:
+
+```bash
+mkdir buildgtk && cd buildgtk
+```
+
+```bash
+../configure --with-gtk=3
+```
+
+```bash
+make -j"$(nproc)" && sudo make install && sudo ldconfig
+```
+
+`wx-config --version` should then report the version you built, and `wx-config --selected-config` should start with `gtk3`. Don't configure wxWidgets with `--enable-no_exceptions`: it puts `-fno-exceptions` into `wx-config --cxxflags`, and FreeFileSync reports errors through C++ exceptions. See [wxWidgets' GTK install notes](https://github.com/wxWidgets/wxWidgets/blob/master/docs/gtk/install.md) for other options.
+
+### FreeFileSync and RealTimeSync
 
 ```bash
 make -C FreeFileSync/Source -j"$(nproc)"
 ```
 
-The binary is written to `FreeFileSync/Build/Bin/FreeFileSync_<arch>`.
+```bash
+make -C FreeFileSync/Source/RealTimeSync -j"$(nproc)"
+```
+
+The binaries are written to `FreeFileSync/Build/Bin/FreeFileSync_<arch>` and `FreeFileSync/Build/Bin/RealTimeSync_<arch>`, and object files go to a `<exe>_Make` folder in the system temp directory (`make clean` removes both).
+
+To use a compiler other than the default `g++`, set `CXX` in the environment, for example `CXX=g++-14 make -C FreeFileSync/Source -j"$(nproc)"`. Don't pass it as a make argument (`make CXX=g++-14`): a command-line variable overrides the makefiles' `CXX += -pthread`.
