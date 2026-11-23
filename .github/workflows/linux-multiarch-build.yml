@@ -5,12 +5,13 @@
 # Run it by hand from the Actions tab; it also runs on pull requests that touch this workflow or the Makefiles.
 # It is not a general CI check: pull requests that only change C++ sources do not trigger it.
 #
-# The binaries are CI build products, not release packages: they link against the glibc, GTK 3, libcurl,
-# libssh2 and OpenSSL of Ubuntu 26.04 and may not start on older distributions.
+# The binaries are CI build products, not release packages: they link against the glibc, GTK 3, libcurl
+# and OpenSSL of Ubuntu 26.04 and against a libssh2 built here, and may not start on other systems.
 #
 # Library setup follows Bugs.txt: wxWidgets is built from source with the settings.h color hook
-# that wx+/darkmode.cpp needs and without exception handling (application.cpp has an #error for that),
-# and the MAX_SFTP_* constants that afs/sftp.cpp expects are added to the installed libssh2_sftp.h.
+# that wx+/darkmode.cpp needs and without exception handling (application.cpp has an #error for that).
+# libssh2 is built from a pinned development commit ("1.11.2_DEV", which libssh2/libssh2_wrap.h needs for
+# LIBSSH2_ERROR_STORE_OVERFLOW) with the MAX_SFTP_* constants that afs/sftp.cpp expects added to libssh2_sftp.h.
 # The other Bugs.txt patches only change runtime behavior and are not applied.
 
 name: Linux multi-arch build
@@ -45,6 +46,9 @@ env:
   WX_VERSION: '3.3.4'
   WX_SHA256: '815c16cafa4fcbfcf25c5c0a3418309c62257b8a3b6f91d85a1367a134f98c98'
   WX_PREFIX: /opt/wx
+  # last libssh2 master commit before the FreeFileSync 14.13 release (2026-10-16)
+  LIBSSH2_COMMIT: '83284a05a1add34722c1fa36fa706fe7aced87b6'
+  LIBSSH2_SHA256: '03e70390ceafcde9ceb98654d9e55f05c705c2e62c05863d5284e4e11f51b8a7'
   # glib >= 2.78 turns g_free() into a function-like macro when sized free is available, which breaks the
   # "::g_free(ptr)" calls in FreeFileSync (afs/ftp.cpp, base/icon_loader.cpp, zen/zstring.cpp). Capping the
   # glib API level at 2.76 keeps g_free a plain function. Passed through the environment so the Makefiles' "+=" appends to it.
@@ -71,21 +75,35 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            ca-certificates curl git bzip2 make g++ pkg-config perl \
-            libgtk-3-dev libssl-dev libcurl4-openssl-dev libssh2-1-dev libidn2-dev libselinux1-dev
+            ca-certificates curl git bzip2 make cmake g++ pkg-config perl \
+            libgtk-3-dev libssl-dev zlib1g-dev libcurl4-openssl-dev libidn2-dev libselinux1-dev
           g++ --version
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Add MAX_SFTP_* constants to libssh2_sftp.h (Bugs.txt)
+      # installed to /usr/local, which pkg-config, the compiler and the dynamic loader search before the system paths
+      - name: Build libssh2 ${{ env.LIBSSH2_COMMIT }} (patched per Bugs.txt)
+        working-directory: ${{ runner.temp }}
         run: |
-          header=$(pkg-config --variable=includedir libssh2)/libssh2_sftp.h
-          test -f "$header"
-          if ! grep -q 'define MAX_SFTP_OUTGOING_SIZE' "$header"; then
-            printf '\n#ifndef MAX_SFTP_OUTGOING_SIZE\n#define MAX_SFTP_OUTGOING_SIZE 30000\n#endif\n#ifndef MAX_SFTP_READ_SIZE\n#define MAX_SFTP_READ_SIZE 30000\n#endif\n' >> "$header"
-          fi
-          grep -n 'MAX_SFTP_' "$header"
+          curl -fsSL --retry 3 --retry-all-errors -o libssh2.tar.gz "https://github.com/libssh2/libssh2/archive/${LIBSSH2_COMMIT}.tar.gz"
+          echo "${LIBSSH2_SHA256}  libssh2.tar.gz" | sha256sum -c -
+          tar -xzf libssh2.tar.gz
+          cd "libssh2-${LIBSSH2_COMMIT}"
+
+          # Bugs.txt: make MAX_SFTP_OUTGOING_SIZE and MAX_SFTP_READ_SIZE (src/sftp.h) public
+          header=include/libssh2_sftp.h
+          printf '\n#ifndef MAX_SFTP_OUTGOING_SIZE\n#define MAX_SFTP_OUTGOING_SIZE 30000\n#endif\n#ifndef MAX_SFTP_READ_SIZE\n#define MAX_SFTP_READ_SIZE 30000\n#endif\n' >> "$header"
+          grep -n 'MAX_SFTP_' "$header" src/sftp.h
+
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DBUILD_SHARED_LIBS=ON -DBUILD_STATIC_LIBS=OFF -DCRYPTO_BACKEND=OpenSSL -DENABLE_ZLIB_COMPRESSION=ON \
+            -DBUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF
+          cmake --build build -j"$(nproc)"
+          cmake --install build
+          ldconfig
+          pkg-config --modversion libssh2
+          pkg-config --cflags --libs libssh2
 
       # restore and save are separate steps so a wxWidgets build is kept even when the FreeFileSync build fails
       - name: Restore wxWidgets build
