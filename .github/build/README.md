@@ -24,6 +24,8 @@ Build FreeFileSync and RealTimeSync into `FreeFileSync/Build/Bin`:
 CXX=g++-14 .github/build/build-free-file-sync.sh
 ```
 
+Its object files go to `.build/obj`, not the makefiles' `FreeFileSync/Build/Obj`, so they never mix with objects from the Docker or manual builds, and the binaries are relinked on every run. With `BUILD=debug` in the environment it builds the makefiles' debug FreeFileSync into `FreeFileSync/Build/Debug/Bin` (RealTimeSync has no debug mode).
+
 Each library has its own script (`build-openssl.sh`, `build-libssh2.sh`, `build-curl.sh`, `build-wxwidgets.sh`), so one can be rebuilt alone. `build.sh` skips a library whose version and patch are already installed.
 
 | Variable | Default | Meaning |
