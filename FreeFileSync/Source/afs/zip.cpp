@@ -641,20 +641,19 @@ private:
     //----------------------------------------------------------------------------------------------------------------
     std::optional<ItemType> getItemTypeIfExistsImpl(const AfsPath& itemPath) const //throw SysError
     {
-        if (itemPath.value.empty()) //archive root
+        //missing archive => neither the root nor any item inside exists (e.g. base folder "zip:/media/usb/backup.zip|docs" on an unmounted drive)
+        struct stat fileInfo = {};
+        if (::stat(archivePath_.c_str(), &fileInfo) != 0)
         {
-            struct stat fileInfo = {};
-            if (::stat(archivePath_.c_str(), &fileInfo) != 0)
-            {
-                if (errno == ENOENT)
-                    return std::nullopt;
-                THROW_LAST_SYS_ERROR("stat");
-            }
-            getZipIndex(archivePath_); //throw SysError => access test
-            return ItemType::folder;
+            if (errno == ENOENT)
+                return std::nullopt;
+            THROW_LAST_SYS_ERROR("stat");
         }
 
-        const std::shared_ptr<const ZipIndex> index = getZipIndex(archivePath_); //throw SysError
+        const std::shared_ptr<const ZipIndex> index = getZipIndex(archivePath_); //throw SysError => also access test for the archive root
+
+        if (itemPath.value.empty()) //archive root
+            return ItemType::folder;
 
         const Zstring parentPath = beforeLast(itemPath.value, FILE_NAME_SEPARATOR, IfNotFoundReturn::none);
         const Zstring itemName   = getItemName(itemPath);
