@@ -15,20 +15,11 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M2 Sentry | 2. Scrubbing, opt-out, first-start notice, test crash, symbol upload | done | `304f86f..51829b2`, fixes `c2b91b5^..b80eb4e` | 9 findings: all fixed |
 | M2 Sentry | Pull request | merged as [#12](https://github.com/cuong-tran/FreeFileSync/pull/12) (squash, `fea5409`) | | no review threads |
 | M3 macOS | 1. `zen` core compiles and `Tests/zen` passes on macOS | done | `a0b5c3f..50065e4`, fixes in `50065e4..292907c` | 8 findings: all fixed |
-| M3 macOS | 2. `zen` features: FSEvents watcher, recycle bin, shutdown, network | coded and green in CI; **paused by the owner before its review** | `50065e4..292907c` | not reviewed yet |
-| M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | not started (paused) | | |
+| M3 macOS | 2. `zen` features: FSEvents watcher, recycle bin, shutdown, network | done, review fixes in progress | `50065e4..292907c` | 8 findings, see below |
+| M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | in progress | | |
 | M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | | | |
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | | | |
 | M4 Windows | | | | |
-
-## Paused
-
-Paused on 2026-11-24 at the owner's request, at the end of M3 step 2. To resume:
-
-1. Run `/code-review medium 50065e4..292907c` (M3 step 2 and the step 1 fixes), send the findings to a coder session, record the outcomes here.
-2. Start M3 step 3 with a fresh coder session. Carry over from the step 2 report: `afs/native.cpp` needs `st_mtim`, creation time, volume and file ids; `ffs_paths` for the app bundle and `~/Library/Application Support/FreeFileSync`; a macOS block in both makefiles (`.mm` rule with ARC, frameworks, the `*_mac` files instead of the Linux ones); `Tests/sync`; the ZIP AFS test on macOS; `crash_report_sentry.cpp`'s pipe should take `lockFdInheritance()` on macOS.
-
-Untested on macOS so far: shut down and sleep, the "no recycle bin" mapping, the watcher's unmount path, socket code.
 
 ## How the work runs
 
@@ -62,6 +53,9 @@ Untested on macOS so far: shut down and sleep, the "no recycle bin" mapping, the
 | 2026-11-24 | macOS file copies use the portable read/write loop, not `clonefile`; extended attributes and ACLs are copied separately | Keeps the progress callback and byte counts identical to Linux. |
 | 2026-11-24 | Floating-point `from_chars` falls back to `strtod_l` in the C locale where libc++ lacks it (macOS before 26) | Chosen by libc++'s availability macro; matches libstdc++ and libc++ on 53 edge inputs. |
 | 2026-11-24 | Milestone PRs are squash-merged by the coordinator once all checks pass, without waiting for the owner | Asked by the owner. |
+| 2026-11-24 | Work was paused by the owner at the end of M3 step 2 and resumed the same day | |
+| 2026-11-24 | macOS: extended attributes are copied only to volumes that support them natively | Otherwise macOS writes visible `._name` sidecar files, which the next comparison would treat as extra files. |
+| 2026-11-24 | macOS: copying permissions copies the source's explicit ACL entries and keeps entries the target inherited from its folder | Replacing the whole ACL would remove access the target folder grants by inheritance. |
 
 ## Needed from the repository owner
 
@@ -80,6 +74,8 @@ Marked `KNOWN_ISSUE` in `Tests/zen`, not fixed (upstream code):
 - `Resources/Animal.dat` is not in the upstream source zip, so every build from these sources (the Linux packages included) shows "Failed to load image" on first start, when the welcome dialog opens. Found by the new start check. CI uses a placeholder image for now. To do in M3 packaging: ship an own image in its place (decided over copying it from the official binaries, whose artwork license is unclear).
 - FreeFileSync sometimes does not end on SIGTERM (about 1 in 50 in the test loop): upstream's signal handler is not async-signal-safe and the main thread can block in it. Present before the Sentry work. The tests fall back to SIGKILL after 10 s; upstream's handler is left alone.
 - Not exercised yet, because the repository secrets are missing: a real upload to Sentry and `sentry-cli debug-files upload`.
+- Untested on macOS: shut down and sleep, the "no recycle bin on this volume" mapping, socket code.
+- Natural sort of 100,000 mixed names takes about 3.5 s on macOS arm64 versus 1.8 s on Linux (normalization per comparison); accepted for now.
 
 ## Review findings
 
@@ -170,3 +166,18 @@ Result of the step: all of `zen/` compiles on macOS with Apple clang, warning-fr
 | 6 | Natural sort and path comparison allocate on every non-ASCII comparison | nit | fixed in `5a7a838`, `292907c`: case mapping through a table built once, normalization skipped where not needed. 100k mixed names: natural sort 3.5 s on macOS arm64 versus 1.8 s on Linux |
 | 7 | `Tests/zen/run.sh` accepts bash 4.3 but needs 4.4 | nit | fixed in `4a14e9e` |
 | 8 | A deployment-target change does not re-run the zen tests | nit | fixed in `4a14e9e` |
+
+### M3 step 2 (`50065e4..292907c`, `/code-review medium`)
+
+Result of the step: FSEvents directory watcher (`zen/dir_watcher_mac.cpp`), recycle bin through `NSFileManager` (`zen/recycler_mac.mm`), shut down and sleep; every `Tests/zen` test runs on macOS arm64 and x86_64 (38 cases, 1750 checks), the watcher test 20 times in a row.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | Copying extended attributes to FAT/exFAT/SMB creates visible `._name` sidecar files | important | sent for fixing |
+| 2 | Ejecting a disk mounted inside the watched folder is reported as the watched folder being unavailable | important | sent for fixing |
+| 3 | Watcher drops all events when the watched path and the on-disk path differ in Unicode form | important | sent for fixing |
+| 4 | ACL copy fails on volumes that reject ACL calls with anything but `ENOTSUP`, even with no ACL to copy | important | sent for fixing |
+| 5 | ACL copy removes entries the target inherited from its folder | important | sent for fixing |
+| 6 | Folder attribute copy throws when the folder cannot be opened for reading | nit | sent for fixing |
+| 7 | Modified files can be reported as created (FSEvents accumulates flags) | nit | sent for fixing |
+| 8 | An empty trash path is returned silently after a successful move | nit | sent for fixing |
