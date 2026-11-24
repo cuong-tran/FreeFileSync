@@ -7,6 +7,7 @@
 //macOS implementation of dir_watcher.h: FSEvents with file-level events (Linux: dir_watcher.cpp)
 #include "dir_watcher.h"
 #include <mutex>
+#include <unordered_set>
 #include <sys/stat.h>
 #include <stdlib.h> //realpath
 #include <CoreServices/CoreServices.h> //FSEvents
@@ -22,7 +23,8 @@ using namespace zen;
       come as two "renamed" events (old and new path), decided the same way
     - paths are reported resolved (no symlinks, e.g. /private/var instead of /var) and in their on-disk case: they are mapped
       back to the path the watcher was created with
-    - removal, renaming and unmounting of the watched folder itself: ChangeType::baseFolderUnavailable (kFSEventStreamCreateFlagWatchRoot) */
+    - removal, renaming and unmounting of the watched folder itself (or of the volume it is on): ChangeType::baseFolderUnavailable
+      (kFSEventStreamCreateFlagWatchRoot); a volume unmounted from a folder below it is an update/remove of that folder         */
 
 namespace
 {
@@ -32,20 +34,44 @@ struct WatchState //accessed by the FSEvents callback on the stream's dispatch q
     Zstring baseDirPathReal; //realpath(): as reported by FSEvents
     std::mutex lockChanges;
     std::vector<DirWatcher::Change> changes; //protected by lockChanges
+
+    std::unordered_set<Zstring> reportedCreated; //callback only: items reported as created since they last didn't exist
 };
+
+
+std::vector<Zstring> splitPath(const Zstring& path)
+{
+    std::vector<Zstring> components;
+    split(path, FILE_NAME_SEPARATOR, [&](ZstringView comp) { if (!comp.empty()) components.emplace_back(comp); });
+    return components;
+}
+
+
+//"path" equals "ancestor" or is below it: component by component, like the file system compares names (case- and normalization-
+//insensitive on default APFS volumes: spellings may differ in length, e.g. NFC vs NFD); returns the components below "ancestor"
+std::optional<std::vector<Zstring>> getRelativeComponents(const Zstring& path, const Zstring& ancestor)
+{
+    std::vector<Zstring> comps = splitPath(path);
+    const std::vector<Zstring> ancestorComps = splitPath(ancestor);
+    if (comps.size() < ancestorComps.size())
+        return std::nullopt;
+    for (size_t i = 0; i < ancestorComps.size(); ++i)
+        if (!equalNativePath(comps[i], ancestorComps[i]))
+            return std::nullopt;
+    comps.erase(comps.begin(), comps.begin() + ancestorComps.size());
+    return comps;
+}
 
 
 std::optional<Zstring> mapEventPath(const Zstring& eventPath, const WatchState& shared)
 {
-    //compare like the file system: case-insensitive and normalization-insensitive on default APFS volumes
     for (const Zstring* base : {&shared.baseDirPathReal, &shared.baseDirPath})
-        if (eventPath.size() >= base->size() &&
-            equalNativePath(Zstring(eventPath.begin(), eventPath.begin() + base->size()), *base))
+        if (const std::optional<std::vector<Zstring>> relComps = getRelativeComponents(eventPath, *base))
         {
-            if (eventPath.size() == base->size())
-                return shared.baseDirPath;
-            if (eventPath[base->size()] == FILE_NAME_SEPARATOR)
-                return appendPath(shared.baseDirPath, Zstring(eventPath.begin() + base->size() + 1, eventPath.end()));
+            Zstring itemPath = shared.baseDirPath;
+            for (const Zstring& comp : *relComps)
+                itemPath = appendPath(itemPath, comp);
+            return itemPath;
         }
     return std::nullopt; //e.g. a parent folder for kFSEventStreamEventFlagRootChanged
 }
@@ -74,12 +100,16 @@ void eventCallback(ConstFSEventStreamRef /*streamRef*/,
         const FSEventStreamEventFlags flags = eventFlags[i];
         const Zstring eventPath = paths[i];
 
-        if (flags & (kFSEventStreamEventFlagRootChanged | //watched folder removed, renamed, or (parent) moved
-                     kFSEventStreamEventFlagUnmount))     //volume unmounted: path is the mount point
+        if (flags & kFSEventStreamEventFlagUnmount) //path is the mount point
         {
-            if ((flags & kFSEventStreamEventFlagUnmount) && !mapEventPath(eventPath, shared) &&
-                !startsWith(appendSeparator(shared.baseDirPathReal), appendSeparator(eventPath))) //another volume
-                continue;
+            if (getRelativeComponents(shared.baseDirPathReal, eventPath)) //the watched folder was on it
+                changes.push_back({DirWatcher::ChangeType::baseFolderUnavailable, shared.baseDirPath});
+            else if (const std::optional<Zstring> itemPath = mapEventPath(eventPath, shared)) //a volume mounted below the watched folder
+                changes.push_back({existsNoFollow(*itemPath) ? DirWatcher::ChangeType::update : DirWatcher::ChangeType::remove, *itemPath});
+            continue; //else: another volume
+        }
+        if (flags & kFSEventStreamEventFlagRootChanged) //watched folder removed, renamed, or (parent) moved
+        {
             changes.push_back({DirWatcher::ChangeType::baseFolderUnavailable, shared.baseDirPath});
             continue;
         }
@@ -88,6 +118,13 @@ void eventCallback(ConstFSEventStreamRef /*streamRef*/,
         if (!itemPath)
             continue;
 
+        const bool modifyFlags = flags & (kFSEventStreamEventFlagItemModified      |
+                                          kFSEventStreamEventFlagItemInodeMetaMod  |
+                                          kFSEventStreamEventFlagItemFinderInfoMod |
+                                          kFSEventStreamEventFlagItemChangeOwner   |
+                                          kFSEventStreamEventFlagItemXattrMod      |
+                                          kFSEventStreamEventFlagItemCloned);
+
         if (flags & (kFSEventStreamEventFlagMustScanSubDirs | //events were dropped: something changed somewhere below itemPath
                      kFSEventStreamEventFlagUserDropped |
                      kFSEventStreamEventFlagKernelDropped))
@@ -95,13 +132,23 @@ void eventCallback(ConstFSEventStreamRef /*streamRef*/,
         else if (flags & (kFSEventStreamEventFlagItemCreated |
                           kFSEventStreamEventFlagItemRemoved |
                           kFSEventStreamEventFlagItemRenamed))
-            changes.push_back({existsNoFollow(*itemPath) ? DirWatcher::ChangeType::create : DirWatcher::ChangeType::remove, *itemPath});
-        else if (flags & (kFSEventStreamEventFlagItemModified      |
-                          kFSEventStreamEventFlagItemInodeMetaMod  |
-                          kFSEventStreamEventFlagItemFinderInfoMod |
-                          kFSEventStreamEventFlagItemChangeOwner   |
-                          kFSEventStreamEventFlagItemXattrMod      |
-                          kFSEventStreamEventFlagItemCloned))
+        {
+            /*  flags accumulate per path: a later modification still carries "created" => report "create" once per lifetime of the
+                item (until it is seen missing), "update" afterwards; a file created and written within one coalescing window still
+                yields its "create"                                                                                                */
+            if (existsNoFollow(*itemPath))
+            {
+                if (shared.reportedCreated.size() >= 100'000) //bound the memory of a long-running watch: worst case a repeated "create"
+                    shared.reportedCreated.clear();
+                changes.push_back({shared.reportedCreated.insert(*itemPath).second ? DirWatcher::ChangeType::create : DirWatcher::ChangeType::update, *itemPath});
+            }
+            else
+            {
+                shared.reportedCreated.erase(*itemPath);
+                changes.push_back({DirWatcher::ChangeType::remove, *itemPath});
+            }
+        }
+        else if (modifyFlags)
             changes.push_back({DirWatcher::ChangeType::update, *itemPath});
         //else: kFSEventStreamEventFlagHistoryDone, kFSEventStreamEventFlagEventIdsWrapped, kFSEventStreamEventFlagMount, ...
     }
