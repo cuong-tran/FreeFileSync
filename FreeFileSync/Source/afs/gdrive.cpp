@@ -560,6 +560,11 @@ GdriveAccessInfo gdriveAuthorizeAccess(const std::string& gdriveLoginHint, const
     if (::listen(socket, SOMAXCONN) != 0)
         THROW_LAST_SYS_ERROR_WSA("listen");
 
+#if defined ZEN_MAC //accept() below must not block: see there
+    if (const int flags = ::fcntl(socket, F_GETFL); flags == -1 || ::fcntl(socket, F_SETFL, flags | O_NONBLOCK) != 0)
+        THROW_LAST_SYS_ERROR("fcntl(O_NONBLOCK)");
+#endif
+
 
     //"A code_verifier is a high-entropy cryptographic random string using the unreserved characters:"
     //[A-Z] / [a-z] / [0-9] / "-" / "." / "_" / "~", with a minimum length of 43 characters and a maximum length of 128 characters.
@@ -605,13 +610,21 @@ GdriveAccessInfo gdriveAuthorizeAccess(const std::string& gdriveLoginHint, const
             //else: time-out!
         }
         //potential race! if the connection is gone right after ::select() and before ::accept(), latter will hang
-#if defined ZEN_MAC //no accept4(): like getBoundSocket() above
+#if defined ZEN_MAC /* no accept4(): FD_CLOEXEC right after accept(), with forks by zen locked out in between (like getBoundSocket() above).
+           The listening socket is non-blocking (set below), so accept() never waits with the process-wide lock held: a connection
+           that is gone again after poll() gives EWOULDBLOCK/ECONNABORTED and it's back to waiting.                             */
         std::unique_lock fdLock = lockFdInheritance();
         const int clientSocket = ::accept(socket,   //int sockfd
                                           nullptr,  //sockaddr* addr
                                           nullptr); //socklen_t* addrlen
         if (clientSocket == invalidSocket)
-            THROW_LAST_SYS_ERROR_WSA("accept");
+        {
+            const ErrorCode ec = getLastError();
+            fdLock.unlock();
+            if (ec == EWOULDBLOCK || ec == EAGAIN || ec == ECONNABORTED || ec == EINTR)
+                continue;
+            throw SysError(formatSystemError("accept", ec));
+        }
         if (::fcntl(clientSocket, F_SETFD, FD_CLOEXEC) != 0)
         {
             const ErrorCode ec = getLastError(); //before closeSocket() changes errno
@@ -619,6 +632,13 @@ GdriveAccessInfo gdriveAuthorizeAccess(const std::string& gdriveLoginHint, const
             throw SysError(formatSystemError("fcntl(FD_CLOEXEC)", ec));
         }
         fdLock.unlock();
+        //the accepted socket inherits O_NONBLOCK from the listening one on BSD: the code below reads blocking, as on Linux
+        if (const int flags = ::fcntl(clientSocket, F_GETFL); flags == -1 || ::fcntl(clientSocket, F_SETFL, flags & ~O_NONBLOCK) != 0)
+        {
+            const ErrorCode ec = getLastError();
+            closeSocket(clientSocket);
+            throw SysError(formatSystemError("fcntl(O_NONBLOCK)", ec));
+        }
         //writing to a socket the browser has closed must fail with EPIPE, not raise SIGPIPE (zen/socket.h does the same for its sockets)
         if (const int noSigPipe = 1; ::setsockopt(clientSocket, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, sizeof(noSigPipe)) != 0)
         {
