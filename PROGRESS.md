@@ -14,8 +14,8 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M2 Sentry | 1. Interface, empty implementation, sentry-native build, Makefile switch, init | done | `cf27254^..304f86f`, fixes `7c0f9bc`, `07ce91b`, `c48509d`, `51829b2` | 10 findings: all fixed |
 | M2 Sentry | 2. Scrubbing, opt-out, first-start notice, test crash, symbol upload | done | `304f86f..51829b2`, fixes `c2b91b5^..b80eb4e` | 9 findings: all fixed |
 | M2 Sentry | Pull request | merged as [#12](https://github.com/cuong-tran/FreeFileSync/pull/12) (squash, `fea5409`) | | no review threads |
-| M3 macOS | 1. `zen` core compiles and `Tests/zen` passes on macOS | in progress | | |
-| M3 macOS | 2. `zen` features: FSEvents watcher, recycle bin, shutdown, network | | | |
+| M3 macOS | 1. `zen` core compiles and `Tests/zen` passes on macOS | done, review fixes in progress | `a0b5c3f..50065e4` | 8 findings, see below |
+| M3 macOS | 2. `zen` features: FSEvents watcher, recycle bin, shutdown, network | in progress | | |
 | M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | | | |
 | M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | | | |
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | | | |
@@ -48,6 +48,9 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | 2026-11-24 | After each merged milestone PR, `dev` is recreated from `main` | The PRs are squash-merged and the remote `dev` branch is deleted on merge. |
 | 2026-11-24 | Crash reports: nothing is uploaded until the user has answered the first-start notice; its default choice is to send. Batch runs with no stored answer send nothing. `FFS_NO_CRASH_REPORT=1` always wins | A Sentry build must not upload before the user knows; stricter than the plan's plain opt-out. |
 | 2026-11-24 | sentry-native 0.17.6, static, Crashpad backend, curl transport, in its own prefix `.build/sentry` | Cached separately from the other libraries; built only for `FFS_SENTRY=1`. |
+| 2026-11-24 | macOS path comparison is always case- and Unicode-normalization-insensitive, whatever the volume | APFS/HFS+ default and what upstream's header documents; deterministic. A case-sensitive APFS volume is treated as insensitive. |
+| 2026-11-24 | macOS file copies use the portable read/write loop, not `clonefile`; extended attributes and ACLs are copied separately | Keeps the progress callback and byte counts identical to Linux. |
+| 2026-11-24 | Floating-point `from_chars` falls back to `strtod_l` in the C locale where libc++ lacks it (macOS before 26) | Chosen by libc++'s availability macro; matches libstdc++ and libc++ on 53 edge inputs. |
 
 ## Needed from the repository owner
 
@@ -141,3 +144,18 @@ Result of the step: `zen/crash_scrub.*` removes paths, URLs, user and host names
 | 7 | `make clean FFS_SENTRY=1` for one app removes the crash handler of the other | nit | fixed in `b80eb4e` |
 | 8 | `make clean all FFS_SENTRY=1` builds without the Sentry makefile part | nit | fixed in `b80eb4e` |
 | 9 | `FFS_SENTRY=0` skips the stale-handler cleanup | nit | fixed in `b80eb4e` |
+
+### M3 step 1 (`a0b5c3f..50065e4`, `/code-review medium`)
+
+Result of the step: all of `zen/` compiles on macOS with Apple clang, warning-free, for arm64 and x86_64; `Tests/zen` passes on both (x86_64 under Rosetta) in about a minute per job. The Linux command lines are unchanged. Directory watcher and recycle bin were marked "not ported yet" for this step only.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | Copying permissions can leave a read-only target writable (`copyfile(COPYFILE_ACL)` after `chmod`) | important | sent for fixing |
+| 2 | A file copy fails entirely when its extended attributes cannot be copied | important | sent for fixing |
+| 3 | Opening a file for reading fails where read-ahead cannot be set | important | sent for fixing |
+| 4 | A new socket can leak into a child process started by another thread | important | sent for fixing |
+| 5 | A failed sleep request can be reported as success | nit | sent for fixing |
+| 6 | Natural sort and path comparison allocate on every non-ASCII comparison | nit | sent for fixing |
+| 7 | `Tests/zen/run.sh` accepts bash 4.3 but needs 4.4 | nit | sent for fixing |
+| 8 | A deployment-target change does not re-run the zen tests | nit | sent for fixing |
