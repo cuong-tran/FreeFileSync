@@ -6,6 +6,9 @@ SHELL := /bin/bash
 #-c  execute the subsequent command string passed by Make
 CXX ?= g++
 
+#TARGET_OS ("linux", "mac") and ARCH: see ../platform.mk
+include ../platform.mk
+
 #compiler family, detected positively from the compiler's predefined macros: "gcc", "clang" or empty (unknown: no family-specific flags)
 compilerMacros := $(shell $(CXX) -dM -E -x c++ /dev/null 2>/dev/null)
 compilerFamily := $(if $(findstring __clang__,$(compilerMacros)),clang,$(if $(findstring __GNUC__,$(compilerMacros)),gcc))
@@ -13,7 +16,11 @@ compilerFamily := $(if $(findstring __clang__,$(compilerMacros)),clang,$(if $(fi
 #toolchains other than the default g++ + libstdc++ get their own binary name and object folder (exeName is part of both),
 #so switching a checkout between toolchains never links objects of another C++ library or keeps another toolchain's binary
 toolchainSuffix := $(if $(filter clang,$(compilerFamily)),-clang)$(if $(STDLIB),-$(STDLIB))
+ifeq ($(TARGET_OS),linux)
 exeName := RealTimeSync_$(shell arch)$(toolchainSuffix)
+else ifeq ($(TARGET_OS),mac) #Apple clang + libc++ is the default toolchain there: no suffix for it
+exeName := RealTimeSync_$(ARCH)$(if $(STDLIB),-$(STDLIB))
+endif
 
 CXXFLAGS += -std=c++26 -pipe -I../../.. -I../../../zenXml -include "zen/i18n.h" \
            -DWXINTL_NO_GETTEXT_MACRO -DwxNO_IMPLICIT_WXSTRING_ENCODING -DwxNO_IMPLICIT_WXSTRING_CONV_TO_PTR \
@@ -52,12 +59,25 @@ endif
 
 CXX += -pthread
 
+ifeq ($(TARGET_OS),linux)
 CXXFLAGS += $(shell wx-config --cxxflags --debug=no)
 LDFLAGS  += $(shell wx-config --libs std, aui, richtext --debug=no)
 
 CXXFLAGS += $(shell pkg-config --cflags gtk+-3.0)
 #treat as system headers so that warnings are hidden:
 CXXFLAGS += -isystem/usr/include/gtk-3.0
+
+else ifeq ($(TARGET_OS),mac)
+#wxWidgets from FFS_DEPS_PREFIX (../platform.mk) for ARCH and the deployment target
+CXXFLAGS += $(macTargetFlags)
+LDFLAGS  += $(macTargetFlags)
+
+CXXFLAGS += $(shell $(macWxConfig) --cxxflags --debug=no)
+LDFLAGS  += $(shell $(macWxConfig) --libs std, aui, richtext --debug=no)
+
+#CoreServices: FSEvents (zen/dir_watcher_mac.cpp); Foundation: NSError; AppKit, ImageIO, UniformTypeIdentifiers: base/icon_loader_mac.mm
+LDFLAGS  += -framework CoreFoundation -framework CoreServices -framework Foundation -framework AppKit -framework ImageIO -framework UniformTypeIdentifiers
+endif
 
 #wxWidgets without the wxColorHook patch from Bugs.txt (e.g. stock release or distro packages): let wx+/darkmode.cpp declare the hook itself
 #(YES/NO, or empty if the preprocessor run itself fails => leave it to the real compile to report the error)
@@ -110,13 +130,28 @@ else
 cppFiles += ../../../zen/crash_report_none.cpp
 endif
 
+#macOS: the platform's own implementations (*_mac.*) in place of the Linux-only files
+ifeq ($(TARGET_OS),mac)
+cppFiles := $(filter-out ../../../zen/dir_watcher.cpp ../base/icon_loader.cpp,$(cppFiles))
+cppFiles += ../../../zen/dir_watcher_mac.cpp
+cppFiles += ../../../zen/sys_error_mac.mm
+cppFiles += ../base/icon_loader_mac.mm
+endif
+
 #object files stay inside this checkout instead of a fixed folder in the shared temp directory:
 #builds of different checkouts never mix their objects, and other users can't plant files or symlinks there
 objPath := ../../Build/Obj/$(exeName)$(crashReportSuffix)
 
 objFiles := $(cppFiles:%=$(objPath)/ffs/src/rts/%.o)
 
+ifeq ($(TARGET_OS),linux)
 all: ../../Build/Bin/$(exeName)
+else
+#the GUI is not ported yet (M3 step 4 of docs/PORTING_PLAN.md)
+all:
+	@echo 'RealTimeSync does not build for TARGET_OS=$(TARGET_OS) yet (the wxWidgets UI is ported in M3 step 4)' >&2
+	@exit 1
+endif
 
 #relink after switching between the default and the FFS_SENTRY=1 build (see ../Makefile)
 crashReportStamp := $(patsubst %-sentry,%,$(objPath)).crashreport
@@ -135,6 +170,9 @@ endif
 $(objPath)/ffs/src/rts/%.o : %
 	mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+#Objective-C++ (macOS *_mac.mm files) with automatic reference counting
+$(filter %.mm.o,$(objFiles)): CXXFLAGS += -fobjc-arc
 
 #recompile wx+/darkmode.cpp when the wxColorHook check above changes its result (e.g. after switching between a patched and a stock wxWidgets):
 #make doesn't track compiler flags, so keep the result in a stamp file that is rewritten only when the result changes
