@@ -11,7 +11,10 @@
 #include <wx/dirdlg.h>
 #include <wx+/popup_dlg.h>
 #include <zen/resolve_path.h>
+#include <zen/build_info.h>
+#if defined ZEN_LINUX
     #include <gtk/gtk.h>
+#endif
 
 using namespace zen;
 using namespace rts;
@@ -59,9 +62,13 @@ FolderSelector2::FolderSelector2(wxWindow*     parent,
     folderLastSelected_(folderLastSelected),
     staticText_(staticText)
 {
+#if defined ZEN_LINUX
     //file drag and drop directly into the text control unhelpfully inserts in format "file://..<cr><nl>"; see folder_history_box.cpp
     if (GtkWidget* widget = folderPathCtrl.GetConnectWidget())
         ::gtk_drag_dest_unset(widget);
+#elif defined ZEN_MAC
+    //nothing to do (to be checked): the native NSTextField has no GTK "file://" text/uri-list drop handling
+#endif
 
     setupFileDrop(dropWindow_);
     dropWindow_.Bind(EVENT_DROP_FILE, &FolderSelector2::onFilesDropped, this);

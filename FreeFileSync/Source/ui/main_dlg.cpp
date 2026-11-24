@@ -779,10 +779,14 @@ imgFileManagerSmall_([]
 
     setLastOperationLog(ProcessSummary(), nullptr /*errorLog*/);
 
+#if defined ZEN_LINUX
     //we have to use the OS X naming convention by default, because wxMac permanently populates the display menu when the wxMenuItem is created for the first time!
     //=> other wx ports are not that badly programmed; therefore revert:
     assert(m_menuItemOptions->GetItemLabel() == _("&Preferences") + L"\tCtrl+,"); //"Ctrl" is automatically mapped to command button!
     m_menuItemOptions->SetItemLabel(_("&Options"));
+#elif defined ZEN_MAC
+    //keep "Preferences" + Cmd+, (wxID_PREFERENCES): wxOSX shows it in the application menu, as macOS apps do
+#endif
 
     //---------------- support for dockable gui style --------------------------------
     bSizerPanelHolder->Detach(m_panelTopButtons);
@@ -1073,6 +1077,14 @@ imgFileManagerSmall_([]
     //drag and drop .ffs_gui and .ffs_batch on main dialog
     setupFileDrop(*this);
     Bind(EVENT_DROP_FILE, [this](FileDropEvent& event) { onDialogFilesDropped(event); });
+
+#if defined ZEN_MAC
+    //wxOSX moves About/Preferences/Quit into the application menu: their events reach this frame, but not the wxMenu handlers of
+    //gui_generated.cpp; the application menu stays enabled during comparison/sync (see UiInputDisabler) => check operationInProgress_
+    Bind(wxEVT_MENU, [this](wxCommandEvent& event) { if (!operationInProgress_) onMenuAbout  (event); }, wxID_ABOUT);
+    Bind(wxEVT_MENU, [this](wxCommandEvent& event) { if (!operationInProgress_) onMenuOptions(event); }, wxID_PREFERENCES);
+    Bind(wxEVT_MENU, [this](wxCommandEvent& event) { onMenuQuit(event); /*onClose() vetoes during comparison/sync*/ }, wxID_EXIT);
+#endif
 
     //calculate witdh of folder pair manually (if scrollbars are visible)
     m_panelTopLeft->Bind(wxEVT_SIZE, [this](wxSizeEvent& event) { onResizeLeftFolderWidth(event); });
@@ -3242,6 +3254,22 @@ void MainDialog::onDialogFilesDropped(FileDropEvent& event)
     loadConfiguration(event.itemPaths_);
     //event.Skip();
 }
+
+
+#if defined ZEN_MAC
+void MainDialog::openConfigFilesFromFinder(const std::vector<Zstring>& filePaths)
+{
+    if (operationInProgress_) //comparison/sync running: don't replace the configuration underneath
+        return;
+
+    if (IsIconized())
+        Iconize(false);
+    Raise();
+
+    if (!filePaths.empty())
+        loadConfiguration(filePaths);
+}
+#endif
 
 
 void MainDialog::onFolderSelected(wxCommandEvent& event)

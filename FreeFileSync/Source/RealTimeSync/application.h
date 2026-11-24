@@ -5,6 +5,9 @@
 // *****************************************************************************
 #pragma once
 
+#include <vector>
+#include <zen/zstring.h>
+#include <zen/build_info.h>
 #include <wx/app.h>
 
 namespace rts
@@ -18,5 +21,11 @@ private:
     wxLayoutDirection GetLayoutDirection() const override;
 
     void onEnterEventLoop();
+
+#if defined ZEN_MAC
+    void MacOpenFiles(const wxArrayString& fileNames) override; //Finder: open .ffs_real/.ffs_batch files (double-click, Dock icon drop)
+    std::vector<Zstring> macOpenFilesAtLaunch_; //received before onEnterEventLoop()
+    bool eventLoopEntered_ = false;
+#endif
 };
 }

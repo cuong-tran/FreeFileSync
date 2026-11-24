@@ -6,6 +6,7 @@
 #pragma once
 
 #include <zen/scope_guard.h>
+#include <zen/build_info.h>
 #include <wx/toplevel.h>
 #include <wx/display.h>
 #include <wx/spinctrl.h>
@@ -14,7 +15,9 @@
 #include <wx/settings.h>
 #include "color_tools.h"
 #include "dc.h"
+#if defined ZEN_LINUX
     #include <gtk/gtk.h>
+#endif
 
 namespace zen
 {
@@ -80,6 +83,7 @@ void fixSpinCtrl(wxSpinCtrl& spinCtrl)
         spinCtrl.SetSelection(-1, -1); //select all
         event.Skip();
     });
+#if defined ZEN_LINUX
     //-----------------------------------------------------------------------
     //
     //text field <-> spin button out-of-sync bugs:
@@ -114,6 +118,10 @@ void fixSpinCtrl(wxSpinCtrl& spinCtrl)
     ::g_object_set_property(G_OBJECT(spinCtrl.m_widget), "visibility", &bval);
 #endif
 
+#elif defined ZEN_MAC
+    //nothing to fix: wxOSX uses the generic wxSpinCtrl (wxTextCtrl + wxSpinButton), not GTK's GtkSpinButton with its
+    //out-of-sync and default width problems
+#endif
 }
 
 

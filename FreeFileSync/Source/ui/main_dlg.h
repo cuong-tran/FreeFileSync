@@ -6,6 +6,7 @@
 #pragma once
 
 //#include <memory>
+#include <zen/build_info.h>
 #include <wx/aui/aui.h>
 #include <wx+/async_task.h>
 #include <wx+/file_drop.h>
@@ -39,6 +40,11 @@ public:
     static void create(const FfsGuiConfig& guiCfg, const std::vector<Zstring>& cfgFilePaths,
                        const GlobalConfig& globalCfg, const Zstring& globalCfgFilePath, //take over ownership => save on exit
                        bool startComparison);
+
+#if defined ZEN_MAC
+    //Finder asked the running app to open config files (Application::MacOpenFiles()): like dropping them on the main window
+    void openConfigFilesFromFinder(const std::vector<Zstring>& filePaths);
+#endif
 
 private:
     MainDialog(const FfsGuiConfig& guiCfg, const std::vector<Zstring>& cfgFilePaths,

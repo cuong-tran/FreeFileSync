@@ -20,7 +20,9 @@
     #include <zen/symlink_target.h>
     #include <zen/build_info.h>
     #include <wx/uilocale.h>
+#if defined ZEN_LINUX
     #include <gtk/gtk.h>
+#endif
 
 
 using namespace zen;
@@ -100,7 +102,13 @@ std::vector<std::pair<std::string, std::string>> geHttpPostParameters() //throw 
     params.emplace_back("ffs_version", ffsVersion);
 
 
+#if defined ZEN_LINUX
     params.emplace_back("os_name", "Linux");
+#elif defined ZEN_MAC
+    params.emplace_back("os_name", "macOS");
+#else
+    #error "not implemented for this platform"
+#endif
 
     const OsVersionDetail verDetail = getOsVersion();
     params.emplace_back("os_version",
