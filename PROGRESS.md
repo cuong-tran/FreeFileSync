@@ -16,8 +16,8 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M2 Sentry | Pull request | merged as [#12](https://github.com/cuong-tran/FreeFileSync/pull/12) (squash, `fea5409`) | | no review threads |
 | M3 macOS | 1. `zen` core compiles and `Tests/zen` passes on macOS | done | `a0b5c3f..50065e4`, fixes in `50065e4..292907c` | 8 findings: all fixed |
 | M3 macOS | 2. `zen` features: FSEvents watcher, recycle bin, shutdown, network | done | `50065e4..292907c`, fixes `292907c..f5c9b53` | 8 findings: all fixed |
-| M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | in progress | | |
-| M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | | | |
+| M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | done, review fixes in progress | `b4b35bb..3289e88` | 7 findings, see below |
+| M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | in progress | | |
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | | | |
 | M4 Windows | | | | |
 
@@ -56,6 +56,10 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | 2026-11-24 | Work was paused by the owner at the end of M3 step 2 and resumed the same day | |
 | 2026-11-24 | macOS: extended attributes are copied only to volumes that support them natively | Otherwise macOS writes visible `._name` sidecar files, which the next comparison would treat as extra files. |
 | 2026-11-24 | macOS: copying permissions copies the source's explicit ACL entries and keeps entries the target inherited from its folder | Replacing the whole ACL would remove access the target folder grants by inheritance. |
+| 2026-11-24 | The engine has no slot for a file's creation time, so it is not copied on macOS | The AFS interface carries only the modification time; nothing was invented. |
+| 2026-11-24 | Files that include AppKit are compiled as C++23, behind headers with standard types | The macOS 26 SDK's CoreGraphics headers are not valid C++26. |
+| 2026-11-24 | Mac bundle ids are `io.github.cuong-tran.freefilesync` and `.realtimesync` | This is a fork; upstream's ids are not used. |
+| 2026-11-24 | Scheduled pause at 23:00 UTC (06:00 UTC+7 on 2026-11-25) | Asked by the owner. |
 
 ## Needed from the repository owner
 
@@ -77,6 +81,8 @@ Marked `KNOWN_ISSUE` in `Tests/zen`, not fixed (upstream code):
 - Untested on macOS: shut down and sleep, the "no recycle bin on this volume" mapping, socket code.
 - Natural sort of 100,000 mixed names takes about 3.5 s on macOS arm64 versus 1.8 s on Linux (normalization per comparison); accepted for now.
 - GitHub's macOS arm64 runners are short of capacity: jobs wait 10 minutes or more, and some are cancelled as "not acquired by Runner". A re-run fixes it.
+- Network file systems (FTP, SFTP, Google Drive) are only compiled on macOS, not run.
+- `afs/gdrive.cpp` (upstream): the OAuth login loop never closes the accepted client socket. Left as is.
 
 ## Review findings
 
@@ -182,3 +188,17 @@ Result of the step: FSEvents directory watcher (`zen/dir_watcher_mac.cpp`), recy
 | 6 | Folder attribute copy throws when the folder cannot be opened for reading | nit | fixed: never throws on macOS; unreadable folders are skipped, other errors logged |
 | 7 | Modified files can be reported as created (FSEvents accumulates flags) | nit | fixed: the watcher remembers paths already reported as created; exactly one `create` per new file in the test |
 | 8 | An empty trash path is returned silently after a successful move | nit | fixed: falls back to the URL's path; documented in `recycler.h` |
+
+### M3 step 3 (`b4b35bb..3289e88`, `/code-review medium`)
+
+Result of the step: `make engine` builds `libffs_engine.a` (everything but the UI) on Linux and macOS through the new `FreeFileSync/Source/platform.mk`; `Tests/sync` runs real comparisons and synchronizations headlessly (19 cases on Linux, 22 on macOS) in the new `sync-tests.yml`; the ZIP test runs on macOS; `crash_report_sentry.cpp` compiles on macOS. The engine needs no wx initialization. Files outside the UI that still compile against wx: `config.*`, `localization.*`, `icon_buffer.*`, `base_tools.cpp`, the icon loader, `afs/native.cpp` (inventory in `CONTRIBUTING.md`).
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | Google Drive login on macOS holds the process-wide descriptor lock across a blocking `accept()` | important | sent for fixing |
+| 2 | Icon loading can crash on a file name that is not valid UTF-8 (nil path into AppKit) | important | sent for fixing |
+| 3 | The macOS recycle bin sync test looks only in `~/.Trash` and can leave items in a real trash | important | sent for fixing |
+| 4 | `sync-tests.yml` does not run for UI and `wx+` headers the engine includes | nit | sent for fixing |
+| 5 | `afs/ftp.cpp` platform branches have no `#else`, so Windows would compile functions without a return | nit | sent for fixing |
+| 6 | `Tests/zip_afs/run.sh` needs bash 4.4 on macOS but does not check | nit | sent for fixing |
+| 7 | The makefiles stop on hosts other than Linux and macOS | nit | no change needed: intended, like the `#error` in `zen/build_info.h` |
