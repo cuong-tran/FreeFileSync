@@ -443,6 +443,8 @@ void Application::onEnterEventLoop()
         try { colorThemeInit(*this, globalCfg.appColorTheme); } //throw FileError
         catch (const FileError& e) { logExtraError(e.toString()); } //not critical in this context
 
+        applyCrashReportSetting("FreeFileSync", globalCfg.crashReports);
+
 
         //-----------------------------------------------------------
         //distinguish sync scenarios:

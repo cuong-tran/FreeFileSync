@@ -83,6 +83,8 @@ bool Application::OnInit()
     try { globalCfg = getGlobalConfig(); } //throw FileError
     catch (const FileError& e) { logExtraError(e.toString()); }
 
+    fff::applyCrashReportSetting("RealTimeSync", globalCfg.crashReports);
+
     try { fff::setLanguage(globalCfg.programLanguage); } //throw FileError
     catch (const FileError& e) { logExtraError(e.toString()); }
 

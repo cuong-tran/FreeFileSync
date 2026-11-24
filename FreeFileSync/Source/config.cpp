@@ -1580,6 +1580,14 @@ void readConfig(const XmlIn& in, GlobalConfig& cfg, int formatVer)
 
     in["WelcomeDialogVersion"](cfg.welcomeDialogLastVersion);
 
+    //optional: missing in older files and in files of builds without crash reporting
+    if (in["CrashReports"].hasAttribute("Enabled"))
+    {
+        bool enabled = true;
+        in["CrashReports"].attribute("Enabled", enabled);
+        cfg.crashReports = enabled;
+    }
+
     //cfg.dpiLayouts.clear(); -> NO: honor migration code above!
 
     in["DpiLayouts"].visitChildren([&](const XmlIn& inLayout)
@@ -2059,6 +2067,9 @@ void writeConfig(const GlobalConfig& cfg, XmlOut& out)
     out["LastOnlineVersion"](cfg.lastOnlineVersion);
 
     out["WelcomeDialogVersion"](cfg.welcomeDialogLastVersion);
+
+    if (cfg.crashReports)
+        out["CrashReports"].attribute("Enabled", *cfg.crashReports);
 
 
     for (const auto& [scalePercent, layout] : cfg.dpiLayouts)

@@ -211,6 +211,12 @@ GlobalConfig rts::getGlobalConfig() //throw FileError
 
     in["Language"].attribute("Code", globalCfg.programLanguage);
     in["ColorTheme"].attribute("Appearance", globalCfg.appColorTheme);
+    if (in["CrashReports"].hasAttribute("Enabled")) //optional, see FreeFileSync's config.cpp
+    {
+        bool enabled = true;
+        in["CrashReports"].attribute("Enabled", enabled);
+        globalCfg.crashReports = enabled;
+    }
 
     if (const std::wstring& errors = in.getErrors();
         !errors.empty())

@@ -5,6 +5,7 @@
 // *****************************************************************************
 #pragma once
 
+#include <optional>
 #include <vector>
 #include <zen/zstring.h>
 #include <wx+/darkmode.h>
@@ -31,6 +32,7 @@ struct GlobalConfig
 {
     wxLanguage programLanguage = fff::getDefaultLanguage();
     zen::ColorTheme appColorTheme = zen::ColorTheme::System;
+    std::optional<bool> crashReports; //FreeFileSync's setting (fff::GlobalConfig::crashReports), read only
 };
 GlobalConfig getGlobalConfig(); //throw FileError
 }

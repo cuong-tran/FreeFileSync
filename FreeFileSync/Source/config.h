@@ -250,6 +250,10 @@ struct GlobalConfig
 
     std::string welcomeDialogLastVersion;
 
+    //crash reporting (zen/crash_report.h): nullopt until decided in the first-start notice of a build with crash reporting
+    //(meaning "on"); read and written back by every build, so a build without reporting keeps the user's choice
+    std::optional<bool> crashReports;
+
     std::unordered_map<int /*scale percent*/, DpiLayout> dpiLayouts;
 };
 
