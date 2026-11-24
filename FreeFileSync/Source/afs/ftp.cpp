@@ -13,6 +13,8 @@
 #include "init_curl_libssh2.h"
 #include "ftp_common.h"
 #include "abstract_impl.h"
+#include <zen/build_info.h>
+#include <zen/utf.h>
     //#include <glib.h>
     #include <fcntl.h>
 
@@ -101,6 +103,7 @@ Zstring ansiToUtfEncoding(const std::string_view str) //throw SysError
 {
     if (str.empty()) return {};
 
+#if defined ZEN_LINUX
     gsize bytesWritten = 0; //not including the terminating null
 
     GError* error = nullptr;
@@ -120,7 +123,12 @@ Zstring ansiToUtfEncoding(const std::string_view str) //throw SysError
 
     return {utfStr, bytesWritten};
 
-
+#elif defined ZEN_MAC //no glib: every Latin-1 byte is the code point of the same value
+    std::wstring codePoints; //UTF-32 (wchar_t is 32 bit on macOS)
+    for (const char c : str)
+        codePoints += static_cast<wchar_t>(static_cast<unsigned char>(c));
+    return utfTo<Zstring>(codePoints);
+#endif
 }
 
 
@@ -130,6 +138,7 @@ std::string utfToAnsiEncoding(const Zstring& str) //throw SysError
 
     const Zstring& strNorm = getUnicodeNormalForm(str); //convert to pre-composed *before* attempting conversion
 
+#if defined ZEN_LINUX
     gsize bytesWritten = 0; //not including the terminating null
 
     GError* error = nullptr;
@@ -149,6 +158,20 @@ std::string utfToAnsiEncoding(const Zstring& str) //throw SysError
 
     return {ansiStr, bytesWritten};
 
+#elif defined ZEN_MAC //no glib: fails like g_convert() for 1. broken UTF-8 2. not-ANSI-encodable Unicode
+    if (!isValidUtf(strNorm))
+        throw SysError(formatSystemError("utfToAnsiEncoding(" + utfTo<std::string>(strNorm) + ", UTF-8 -> LATIN1)", L"", L"Invalid UTF-8 input."));
+
+    std::string ansiStr;
+    for (const wchar_t codePoint : utfTo<std::wstring>(strNorm)) //UTF-32 (wchar_t is 32 bit on macOS)
+    {
+        if (static_cast<uint32_t>(codePoint) > 0xff)
+            throw SysError(formatSystemError("utfToAnsiEncoding(" + utfTo<std::string>(strNorm) + ", UTF-8 -> LATIN1)", L"",
+                                             L"Character cannot be represented in Latin-1."));
+        ansiStr += static_cast<char>(codePoint);
+    }
+    return ansiStr;
+#endif
 }
 
 

@@ -7,6 +7,7 @@
 #include "ffs_paths.h"
 #include <zen/file_access.h>
 #include <zen/sys_info.h>
+#include <zen/build_info.h>
 
     #include <iostream> //std::cerr
 
@@ -30,6 +31,9 @@ Zstring getProcessParentFolderPath()
             assert(getItemType(                     processPath)  != ItemType::symlink); //throw FileError
             assert(getItemType(*getParentFolderPath(processPath)) != ItemType::symlink); //throw FileError
 
+            /*  Linux: <install>/Bin/FreeFileSync_<arch>                 => <install>, resources in <install>/Resources
+                macOS: <bundle>.app/Contents/MacOS/<app>                 => <bundle>.app/Contents, resources in Contents/Resources (the bundle layout)
+                       unbundled (tests, development): Build/Bin/<app>   => Build, as on Linux                                       */
             return *getParentFolderPath(*getParentFolderPath(processPath)); //no parent folder!!? => let it crash!
         }
         catch (const FileError& e)
@@ -92,6 +96,10 @@ Zstring fff::getConfigDirPath()
 //this function is called by RealTimeSync!!!
 Zstring fff::getFreeFileSyncLauncherPath() //throw FileError
 {
+#if defined ZEN_MAC //the executable in the same bundle (Contents/MacOS); where RealTimeSync.app goes is decided with the app bundles (M3 step 4)
+    return appendPath(getInstallDirPath(), Zstr("MacOS/FreeFileSync"));
+#else
     return appendPath(getInstallDirPath(), Zstr("FreeFileSync"));
+#endif
 
 }

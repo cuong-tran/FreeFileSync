@@ -6,7 +6,11 @@
 #pragma once
 
 #include <memory>
+#include <cstdlib> //malloc, free
+#include <zen/build_info.h>
+#if defined ZEN_LINUX
     #include <gio/gio.h>
+#endif
 //used by fs/abstract.h => check carefully before adding dependencies!
 //DO NOT add any wx/wx+ includes!
 
@@ -47,6 +51,7 @@ private:
 };
 
 
+#if defined ZEN_LINUX
 struct FileIconHolder
 {
     //- GTK is NOT thread-safe! The most we can do from worker threads is retrieve a GIcon and later *try*(!) to convert it on the MAIN THREAD! >:( what a waste
@@ -65,4 +70,22 @@ struct FileIconHolder
 
     explicit operator bool() const { return static_cast<bool>(gicon); }
 };
+
+#elif defined ZEN_MAC
+struct FileIconHolder
+{
+    //AppKit renders icons on worker threads (NSWorkspace, NSImage are thread-safe for this), so unlike GTK's GIcon
+    //the icon arrives as a finished image (base/icon_loader_mac.mm); only the conversion to wxImage is left for the main thread
+    FileIconHolder() {};
+
+    FileIconHolder(ImageHolder&& img, int maxSz) :
+        image(std::move(img)),
+        maxSize(maxSz) {}
+
+    ImageHolder image;
+    int maxSize = 0;
+
+    explicit operator bool() const { return static_cast<bool>(image); }
+};
+#endif
 }

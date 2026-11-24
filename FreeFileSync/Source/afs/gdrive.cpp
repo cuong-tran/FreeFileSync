@@ -23,6 +23,9 @@
 #include "abstract_impl.h"
 #include "init_curl_libssh2.h"
     #include <poll.h>
+#if defined ZEN_MAC
+    #include <fcntl.h> //FD_CLOEXEC
+#endif
 
 using namespace zen;
 using namespace fff;
@@ -481,6 +484,19 @@ GdriveAccessInfo gdriveAuthorizeAccess(const std::string& gdriveLoginHint, const
 
     const auto getBoundSocket = [](const auto& /*::addrinfo*/ ai)
     {
+#if defined ZEN_MAC //no SOCK_CLOEXEC: set FD_CLOEXEC right after creation, with forks by zen locked out in between (zen/process_exec.h)
+        std::unique_lock fdLock = lockFdInheritance();
+        SocketType testSocket = ::socket(ai.ai_family,    //int socket_family
+                                         ai.ai_socktype,  //int socket_type
+                                         ai.ai_protocol); //int protocol
+        if (testSocket == invalidSocket)
+            THROW_LAST_SYS_ERROR_WSA("socket");
+        ZEN_ON_SCOPE_FAIL(closeSocket(testSocket));
+
+        if (::fcntl(testSocket, F_SETFD, FD_CLOEXEC) != 0)
+            THROW_LAST_SYS_ERROR("fcntl(FD_CLOEXEC)");
+        fdLock.unlock();
+#else
         SocketType testSocket = ::socket(ai.ai_family,    //int socket_family
                                          SOCK_CLOEXEC |
                                          ai.ai_socktype,  //int socket_type
@@ -488,6 +504,7 @@ GdriveAccessInfo gdriveAuthorizeAccess(const std::string& gdriveLoginHint, const
         if (testSocket == invalidSocket)
             THROW_LAST_SYS_ERROR_WSA("socket");
         ZEN_ON_SCOPE_FAIL(closeSocket(testSocket));
+#endif
 
         if (::bind(testSocket, ai.ai_addr, static_cast<int>(ai.ai_addrlen)) != 0)
             THROW_LAST_SYS_ERROR_WSA("bind");
@@ -588,12 +605,35 @@ GdriveAccessInfo gdriveAuthorizeAccess(const std::string& gdriveLoginHint, const
             //else: time-out!
         }
         //potential race! if the connection is gone right after ::select() and before ::accept(), latter will hang
+#if defined ZEN_MAC //no accept4(): like getBoundSocket() above
+        std::unique_lock fdLock = lockFdInheritance();
+        const int clientSocket = ::accept(socket,   //int sockfd
+                                          nullptr,  //sockaddr* addr
+                                          nullptr); //socklen_t* addrlen
+        if (clientSocket == invalidSocket)
+            THROW_LAST_SYS_ERROR_WSA("accept");
+        if (::fcntl(clientSocket, F_SETFD, FD_CLOEXEC) != 0)
+        {
+            const ErrorCode ec = getLastError(); //before closeSocket() changes errno
+            closeSocket(clientSocket);
+            throw SysError(formatSystemError("fcntl(FD_CLOEXEC)", ec));
+        }
+        fdLock.unlock();
+        //writing to a socket the browser has closed must fail with EPIPE, not raise SIGPIPE (zen/socket.h does the same for its sockets)
+        if (const int noSigPipe = 1; ::setsockopt(clientSocket, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, sizeof(noSigPipe)) != 0)
+        {
+            const ErrorCode ec = getLastError();
+            closeSocket(clientSocket);
+            throw SysError(formatSystemError("setsockopt(SO_NOSIGPIPE)", ec));
+        }
+#else
         const int clientSocket = ::accept4(socket,        //int sockfd
                                            nullptr,       //sockaddr* addr
                                            nullptr,       //socklen_t* addrlen
                                            SOCK_CLOEXEC); //int flags
         if (clientSocket == invalidSocket)
             THROW_LAST_SYS_ERROR_WSA("accept");
+#endif
 
         //receive first line of HTTP request
         std::string reqLine;

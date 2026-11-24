@@ -22,6 +22,11 @@
 #include <fcntl.h>    //open
 #include <unistd.h>   //pread, close
 #include <sys/stat.h> //fstat, stat
+#include <zen/build_info.h>
+
+#if defined ZEN_MAC && !defined st_mtim
+    #define st_mtim st_mtimespec //macOS names the nanosecond time stamps of struct stat st_*timespec
+#endif
 
 using namespace zen;
 using namespace fff;

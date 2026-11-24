@@ -17,11 +17,20 @@
 #include "abstract_impl.h"
 #include "../base/icon_loader.h"
 
+#include <zen/build_info.h>
+#if defined ZEN_LINUX
     #include <sys/vfs.h> //statfs
+#elif defined ZEN_MAC
+    #include <sys/mount.h> //statfs
+#endif
 
     #include <sys/stat.h>
     #include <dirent.h>
     #include <fcntl.h> //fallocate, fcntl
+
+#if defined ZEN_MAC && !defined st_mtim
+    #define st_mtim st_mtimespec //macOS names the nanosecond time stamps of struct stat st_*timespec (as in zen/file_access.cpp)
+#endif
 
 using namespace zen;
 using namespace fff;
