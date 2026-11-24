@@ -29,7 +29,7 @@ namespace fff
 
     - release:  freefilesync@<ffsVersion>+<short commit hash> ("+dev" if the build passed none), the same for both apps
     - database: <config folder>/CrashReports/<app name>
-    - handler:  crashpad_handler next to the executable                                                                  */
+    - handler:  CrashReportBuildInfo::handlerFileName (crashpad_handler) next to the executable                  */
 inline void startCrashReporting(const char* appName)
 {
     using namespace zen;
@@ -56,7 +56,7 @@ inline void startCrashReporting(const char* appName)
             const std::optional<Zstring> exeFolderPath = getParentFolderPath(getProcessPath()); //throw FileError
             if (!exeFolderPath)
                 throw SysError(L"Executable has no parent folder.");
-            cfg.handlerPath = appendPath(*exeFolderPath, Zstr("crashpad_handler"));
+            cfg.handlerPath = appendPath(*exeFolderPath, utfTo<Zstring>(buildInfo.handlerFileName));
         }
         catch (const FileError& e) { throw SysError(e.toString()); }
         cfg.caCertPath = appendPath(getResourceDirPath(), Zstr("cacert.pem"));

@@ -26,6 +26,7 @@ struct CrashReportBuildInfo
     std::string dsn;
     std::string environment; //"ci", "release" or "dev"
     std::string gitSha;      //short commit hash, or empty if unknown
+    std::string handlerFileName; //the crash handler executable that ships next to the app, e.g. "crashpad_handler"
 };
 const CrashReportBuildInfo& getCrashReportBuildInfo();
 

@@ -162,6 +162,7 @@ const CrashReportBuildInfo& zen::getCrashReportBuildInfo()
         .dsn         = ZEN_CRASH_REPORT_DSN,
         .environment = ZEN_CRASH_REPORT_ENVIRONMENT,
         .gitSha      = ZEN_CRASH_REPORT_GIT_SHA,
+        .handlerFileName = "crashpad_handler", //here, not in the app: a default build mentions no crash handler at all
     };
     return info;
 }

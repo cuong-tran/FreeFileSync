@@ -33,10 +33,12 @@ if [ "${1:-}" = --default-build ]; then
     failed=0
     for bin in "$@"; do
         [ -f "$bin" ] || { echo "error: $bin not found" >&2; exit 2; }
-        # case-sensitive: wxWidgets has "HasEntry"; captured first, so grep -q can't kill strings/nm with SIGPIPE
+        # sentry-native's own markers only: not "sentry" alone, which is also in C++ library names (std::basic_ostream::sentry,
+        # mangled "...6sentryC1...") and, case-insensitively, in wxWidgets' "HasEntry". Captured first, so that grep -q can't
+        # kill strings/nm with SIGPIPE.
         strs="$(strings -a "$bin")"
         syms="$(nm -C "$bin" 2>/dev/null || true)" # nothing for a stripped binary: the strings check covers it
-        if grep -E 'sentry|crashpad_client|Crashpad' <<<"$strs" | head -5 | grep .; then echo "FAILED: $bin contains sentry strings" >&2; failed=1; fi
+        if grep -E 'sentry[_.-]|getsentry|[Cc]rashpad' <<<"$strs" | head -5 | grep .; then echo "FAILED: $bin contains sentry strings" >&2; failed=1; fi
         if grep -E 'sentry_|crashpad::' <<<"$syms" | head -5 | grep .; then echo "FAILED: $bin contains sentry symbols" >&2; failed=1; fi
         for dsn in "$DSN" "${SENTRY_DSN:-}"; do
             [ -n "$dsn" ] || continue
