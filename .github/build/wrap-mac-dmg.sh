@@ -45,8 +45,9 @@ mkdir -p "$(dirname "$out")"
 rm -f "$out"
 detachStale() # an earlier run's volume of the same name would make the new one mount as "<name> 1"
 {
+    local v
     for v in "/Volumes/$volName" "/Volumes/$volName "*; do
-        [ -e "$v" ] && { hdiutil detach -force "$v" >/dev/null 2>&1 || true; }
+        if [ -e "$v" ]; then hdiutil detach -force "$v" >/dev/null 2>&1 || true; fi
     done
 }
 detachStale
