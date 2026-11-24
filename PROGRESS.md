@@ -11,8 +11,8 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M1 Foundation | 2. Clang + libc++ on Linux | done | `9a0f61e^..8f3c1fd`, fixes `f36f54a`, `62e5860`, `8b96471`, `bbfdcb8`, `b12fa57`, `a2ac5e0`, `a3a3741` | 6 findings: 5 fixed, 1 kept |
 | M1 Foundation | 3. macOS dependency builds in CI | done | `8f3c1fd..5ef2d42`, fixes `93c562e^..c28f8f2` | 7 findings: all fixed |
 | M1 Foundation | Pull request | merged as [#11](https://github.com/cuong-tran/FreeFileSync/pull/11) (squash, `9b6221a`); `dev` restarted from `main` | | bot review: 1 doc fix (`1cf3840`), 3 findings not valid |
-| M2 Sentry | 1. Interface, empty implementation, sentry-native build, Makefile switch, init | in progress | | |
-| M2 Sentry | 2. Scrubbing, opt-out, first-start notice, test crash, symbol upload | | | |
+| M2 Sentry | 1. Interface, empty implementation, sentry-native build, Makefile switch, init | done, review fixes in progress | `cf27254^..304f86f` | 10 findings, see below |
+| M2 Sentry | 2. Scrubbing, opt-out, first-start notice, test crash, symbol upload | in progress | | |
 | M3 macOS | | | | |
 | M4 Windows | | | | |
 
@@ -41,6 +41,8 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | 2026-11-23 | `Resources/Animal.dat`: ship an own image, do not copy it from the official binaries | It is missing from the source zip; the license of upstream's artwork in the binary packages is unclear. |
 | 2026-11-23 | Commits are authored as `Cuong-Tran <16017808+cuong-tran@users.noreply.github.com>` | Asked by the owner; the address of their existing commits on `main`. |
 | 2026-11-24 | After each merged milestone PR, `dev` is recreated from `main` | The PRs are squash-merged and the remote `dev` branch is deleted on merge. |
+| 2026-11-24 | Crash reports: nothing is uploaded until the user has answered the first-start notice; its default choice is to send. Batch runs with no stored answer send nothing. `FFS_NO_CRASH_REPORT=1` always wins | A Sentry build must not upload before the user knows; stricter than the plan's plain opt-out. |
+| 2026-11-24 | sentry-native 0.17.6, static, Crashpad backend, curl transport, in its own prefix `.build/sentry` | Cached separately from the other libraries; built only for `FFS_SENTRY=1`. |
 
 ## Needed from the repository owner
 
@@ -99,3 +101,20 @@ Result of the step: `.github/workflows/macos-build.yml` builds and caches the li
 | 5 | Start check can time out when run as root with saved settings | nit | fixed in `147bdfd`: as root, the app runs as `nobody` |
 | 6 | Hard-coded Xcode 26.3 path in the macOS workflow | nit | fixed in `e939de1`: newest installed Xcode 26.x is selected at run time |
 | 7 | `CLAUDE.md` describes the old compiler detection | nit | fixed in `c28f8f2` |
+
+### M2 step 1 (`cf27254^..304f86f`, `/code-review medium`)
+
+Result of the step: `zen/crash_report.h` with a sentry-native and an empty implementation; `make FFS_SENTRY=1 SENTRY_DSN=...`; the DSN goes through a generated header, never a command line. The default build gains one empty object file and contains no Sentry code. Size with Sentry: about +0.9 MB per app plus a 1.3 MB `crashpad_handler`. sentry-native also builds for both macOS targets in CI.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | Consent is given unconditionally at start, so every Sentry build uploads without asking | important | sent for fixing (see the consent decision) |
+| 2 | Concurrent instances share one database folder and reset each other's consent state | important | sent for fixing |
+| 3 | Resetting consent before init probably discards reports stored by an earlier run | important | sent for fixing |
+| 4 | Reports are not flushed on exits through `terminateProcess()` | important | sent for fixing |
+| 5 | A non-Sentry build deletes the crash handler a Sentry binary of another toolchain needs | important | sent for fixing |
+| 6 | `FFS_TEST_CRASH` can crash release builds on start | important | sent for fixing |
+| 7 | Sentry uses libcurl outside FreeFileSync's curl init/cleanup order | important | sent for fixing |
+| 8 | Confusing build error when the pkg-config file has no handler path | nit | sent for fixing |
+| 9 | `make clean` fails or leaves files behind for Sentry builds | nit | sent for fixing |
+| 10 | `crash_report_init.h` relies on transitive includes | nit | sent for fixing |
