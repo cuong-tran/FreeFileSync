@@ -24,6 +24,7 @@
 #include "ui/main_dlg.h"
 #include "ui/small_dlgs.h"
 #include "base_tools.h"
+#include "crash_report_init.h"
 #include "ffs_paths.h"
 #include "return_codes.h"
 
@@ -138,6 +139,8 @@ bool Application::OnInit()
         }
         catch (const FileError& e) { assert(false); notifyAppError(e.toString()); }
     });
+
+    startCrashReporting("FreeFileSync"); //as early as possible, but after initExtraLog(): getConfigDirPath() may log
 
     //tentatively set program language to OS default until GlobalSettings.xml is read later
     try { localizationInit(appendPath(getResourceDirPath(), Zstr("Languages.zip"))); } //throw FileError
@@ -259,6 +262,7 @@ int Application::OnExit()
         imageResourcesCleanup();
         teardownAfs(); //bad_alloc possible when compressing large GDrive metadata stream
         colorThemeCleanup();
+        shutdownCrashReporting();
         return wxApp::OnExit();
 
 }

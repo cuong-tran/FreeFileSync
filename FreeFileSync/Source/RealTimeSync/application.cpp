@@ -15,6 +15,7 @@
 #include <wx+/darkmode.h>
 #include <wx+/image_resources.h>
 #include "config.h"
+#include "../crash_report_init.h"
 #include "../localization.h"
 #include "../ffs_paths.h"
 #include "../return_codes.h"
@@ -71,6 +72,8 @@ bool Application::OnInit()
         trim(msg);
         notifyAppError(msg);
     });
+
+    fff::startCrashReporting("RealTimeSync"); //as early as possible, but after initExtraLog(): getConfigDirPath() may log
 
     //tentatively set program language to OS default until GlobalSettings.xml is read later
     try { fff::localizationInit(appendPath(fff::getResourceDirPath(), Zstr("Languages.zip"))); } //throw FileError
@@ -213,6 +216,7 @@ int Application::OnExit()
     //assert(rv); -> fails if clipboard wasn't used
     fff::localizationCleanup();
     imageResourcesCleanup();
+    shutdownCrashReporting();
     return wxApp::OnExit();
 }
 
