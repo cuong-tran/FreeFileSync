@@ -37,6 +37,12 @@ crashReportHeader := $(objPath)/generated/crash_report_build.h
 $(crashReportObj): CXXFLAGS += $(shell $(sentryPkgConfig) --cflags sentry-native) -I$(dir $(crashReportHeader))
 $(crashReportObj): $(crashReportHeader)
 LDFLAGS += $(shell $(sentryPkgConfig) --libs sentry-native)
+ifeq ($(TARGET_OS),mac)
+    #sentry-native's curl transport (its .pc leaves libcurl to the app on macOS): RealTimeSync links no libcurl of its own
+    ifeq ($(filter -lcurl,$(LDFLAGS)),)
+        LDFLAGS += $(shell $(macPkgConfig) --static --libs libcurl) -framework Security -framework SystemConfiguration -framework CoreFoundation
+    endif
+endif
 
 #rewritten only when a value changes, so the object is recompiled exactly then
 $(crashReportHeader): FORCE
