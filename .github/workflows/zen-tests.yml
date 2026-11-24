@@ -1,0 +1,62 @@
+name: zen tests
+
+#builds the zen platform layer (zen/*.cpp) with the unit tests in Tests/zen and runs them
+#matrix: g++ and clang + libc++ on Ubuntu for now; macOS and Windows runners get their own entries once zen builds there (see docs/PORTING_PLAN.md)
+on:
+  push:
+    branches: [dev, main] #other branches: through their pull request (or run by hand), so a PR push doesn't test the same commit twice
+    paths:
+      - 'zen/**'
+      - 'Tests/zen/**'
+      - '.github/workflows/zen-tests.yml'
+  pull_request:
+    paths:
+      - 'zen/**'
+      - 'Tests/zen/**'
+      - '.github/workflows/zen-tests.yml'
+  workflow_dispatch:
+
+concurrency: #like the other workflows: a newer push cancels the run it supersedes
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  zen-tests:
+    name: zen tests (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu, g++
+            platform: ubuntu
+            runner: ubuntu-24.04
+            container: gcc:15 #FreeFileSync 14.13 is built with -std=c++26
+            cxx: g++
+            stdlib: ''
+          - name: ubuntu, clang + libc++ #the compiler and C++ library of the macOS and Windows ports
+            platform: ubuntu
+            runner: ubuntu-24.04
+            container: ''
+            cxx: clang++-20
+            stdlib: libc++
+    runs-on: ${{ matrix.runner }}
+    #entries without a container run directly on the runner; the g++ entry runs as root in its container, the clang entry as the
+    #unprivileged runner user, which covers both code paths where zen treats root differently (e.g. sys_info.cpp)
+    container: ${{ matrix.container }}
+    timeout-minutes: 30
+    env:
+      CXX: ${{ matrix.cxx }}
+      STDLIB: ${{ matrix.stdlib }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies (gcc container)
+        if: matrix.platform == 'ubuntu' && matrix.container != ''
+        run: apt-get update && apt-get install -y --no-install-recommends libglib2.0-dev pkg-config
+      - name: Install dependencies (runner)
+        if: matrix.platform == 'ubuntu' && matrix.container == ''
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-20 libc++-20-dev libc++abi-20-dev libglib2.0-dev pkg-config
+      - name: Build and run zen tests
+        run: bash Tests/zen/run.sh

@@ -55,11 +55,11 @@ Drop `--dry-run` to publish. It needs an authenticated `gh` CLI, skips releases 
 
 ## Building
 
-The source ships Linux makefiles only (`FreeFileSync/Source/Makefile` and `FreeFileSync/Source/RealTimeSync/Makefile`); there are no Windows or macOS project files. The only automated test is the standalone ZIP test described at the end of this section. Upstream recommends building against current library versions with the patches from `Bugs.txt` applied, and that file names the versions it was written for (for 14.13: wxWidgets 3.3.4, libcurl 8.21.0, a libssh2 1.11.2 development snapshot).
+The source ships Linux makefiles only (`FreeFileSync/Source/Makefile` and `FreeFileSync/Source/RealTimeSync/Makefile`); there are no Windows or macOS project files. The automated tests are the standalone ZIP test and the zen unit tests described at the end of this section. Upstream recommends building against current library versions with the patches from `Bugs.txt` applied, and that file names the versions it was written for (for 14.13: wxWidgets 3.3.4, libcurl 8.21.0, a libssh2 1.11.2 development snapshot).
 
 ### Build with the scripts in .github/build
 
-The scripts in [.github/build](.github/build/README.md) download OpenSSL, the pinned libssh2 snapshot, libcurl and wxWidgets, apply all the `Bugs.txt` patches, and install them into `.build/deps` in the repository, without root and without touching the system. They then build FreeFileSync and RealTimeSync against those libraries with the glib cap described below, keeping their objects in `.build/obj`. [.github/workflows/linux-patched-libs.yml](.github/workflows/linux-patched-libs.yml) runs them in CI.
+The scripts in [.github/build](.github/build/README.md) download OpenSSL, the pinned libssh2 snapshot, libcurl and wxWidgets, apply all the `Bugs.txt` patches, and install them into `.build/deps` in the repository, without root and without touching the system. They then build FreeFileSync and RealTimeSync against those libraries with the glib cap described below, keeping their objects in `.build/obj`. `.github/build/package.sh` packages the result as a `.deb` and a portable tar.gz with those libraries bundled. [.github/workflows/linux-build.yml](.github/workflows/linux-build.yml) runs them in CI: packages for x86_64 and aarch64, plus a compile-only build against the distribution's OpenSSL and libcurl and an unpatched libssh2 and wxWidgets.
 
 ### Build in Docker
 
@@ -83,7 +83,7 @@ libssh2 and libcurl are shared libraries inside the image, so the binaries run t
 
 ### Requirements
 
-- A g++ that accepts `-std=c++26`, which means GCC 14 or newer (GCC 14 is the oldest that takes the flag; whether all of 14.13 compiles with it is untested here). The makefiles also pass GCC-only warning flags such as `-Wlogical-op`.
+- A compiler that accepts `-std=c++26`: GCC 14 or newer (GCC 14 is the oldest that takes the flag), or clang 20 or newer (see [Building with clang and libc++](#building-with-clang-and-libc)). The makefiles detect the compiler from its predefined macros and pass GCC-only warning flags such as `-Wlogical-op` only to GCC.
 - `pkg-config` and the development packages for GTK 3, OpenSSL, libcurl, libidn2 and zlib. libselinux is optional: the makefile enables SELinux support when `pkg-config` finds it.
 - libssh2 built from a recent development commit, as below. The released 1.11.x versions that distributions package are not enough.
 - wxWidgets 3.3 built for GTK 3 with `--disable-exceptions`, as below, with `wx-config` on the `PATH`.
@@ -108,7 +108,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DCRYPTO_B
 cmake --build build -j"$(nproc)" && sudo cmake --install build && sudo ldconfig
 ```
 
-`pkg-config --modversion libssh2` should then report the development version. `.github/workflows/linux-multiarch-build.yml` pins the commit the CI builds use.
+`pkg-config --modversion libssh2` should then report the development version. `.github/build/build-libssh2.sh` pins the commit the CI builds use.
 
 ### wxWidgets
 
@@ -160,12 +160,42 @@ For a debug build of FreeFileSync, run `make -C FreeFileSync/Source BUILD=debug 
 
 To use a compiler other than the default `g++`, set `CXX` in the environment the same way, for example `export CXX=g++-14` before running make. Don't pass it as a make argument (`make CXX=g++-14`): a command-line variable overrides the makefiles' `CXX += -pthread`.
 
+### Building with clang and libc++
+
+The macOS and Windows ports are built with clang and LLVM's libc++, so the sources must also compile with them; on Linux this is checked with clang 20 (Ubuntu 24.04: `sudo apt-get install clang-20 libc++-20-dev libc++abi-20-dev`). The makefiles detect the compiler from its predefined macros (`$(CXX) -dM -E`): for GCC they pass the GCC-only warning flags as before, for clang `-Wtautological-overlap-compare` instead (neither set for an unknown compiler), plus `-Wno-potentially-evaluated-expression`, `-Wno-unused-const-variable` and `-Wno-unused-lambda-capture` for three clang-only style warnings on valid upstream code (`typeid` operands evaluated on purpose, constants of features this edition doesn't compile in, captures of constants). `STDLIB=libc++` adds `-stdlib=libc++` to compiling and linking. A toolchain other than g++ with libstdc++ gets its own binary and object folder names, e.g. `FreeFileSync_x86_64-clang-libc++` and `Build/Obj/FreeFileSync_x86_64-clang-libc++`, so one checkout can switch between toolchains without mixing objects or keeping a stale binary:
+
+```bash
+export CXX=clang++-20
+make -C FreeFileSync/Source -j"$(nproc)" STDLIB=libc++
+make -C FreeFileSync/Source/RealTimeSync -j"$(nproc)" STDLIB=libc++
+```
+
+wxWidgets is C++, so it has to be built against the same C++ library: with the scripts in `.github/build`, `CC=clang-20 CXX=clang++-20 CXXFLAGS=-stdlib=libc++ LDFLAGS=-stdlib=libc++ .github/build/build-wxwidgets.sh`, then `CXX=clang++-20 STDLIB=libc++ .github/build/build-free-file-sync.sh` (use a separate `FFS_BUILD_DIR` if you also build with g++; OpenSSL, libssh2 and libcurl are C libraries and work with either). The `clang + libc++` job of the Linux build workflow does exactly this, links both apps, checks that they use libc++ and starts each one with `.github/build/check-app-starts.sh <binary> <title regex>` (needs `xvfb` and `xdotool`), which fails unless the main window shows up without an error popup or error output. Both test scripts take the same `CXX` and `STDLIB` variables (`CXX=clang++-20 STDLIB=libc++ bash Tests/zen/run.sh`), and both test workflows run a clang + libc++ entry next to the g++ one.
+
+### macOS libraries
+
+FreeFileSync itself doesn't build on macOS yet, but the libraries it needs do: `FFS_TARGET=macos-arm64 .github/build/build.sh` (or `FFS_TARGET=macos-x86_64`) builds static OpenSSL, libssh2, libidn2, libcurl and wxWidgets (wxOSX/Cocoa) for one architecture and macOS 13.3 or later into `.build/deps/<target>`, with Xcode's clang; x86_64 is cross-compiled on Apple silicon. It needs `brew install bash coreutils flock pkgconf`. Details, the toolchain findings and the CI workflow (`macos-build.yml`, which also reports what of `zen/` compiles on macOS) are in [.github/build/README.md](.github/build/README.md#macos).
+
+When something compiles with libstdc++ but not with libc++, the usual causes are a missing `#include` that libstdc++ happened to provide transitively, and integer types that differ between the libraries (`std::chrono` durations use `long long` in libc++ and `long` in libstdc++). Fix the source in standard form; for a library feature libc++ lacks, add a fallback to `zen/legacy_compiler.h` keyed on its `__cpp_lib_*` macro rather than on the compiler name.
+
 ### ZIP archive test
 
-`Tests/zip_afs/run.sh` builds the read-only ZIP file system (`afs/zip.cpp`) with the zen sources it needs, without wxWidgets, and checks it against archives it generates with Python's `zipfile` and Info-ZIP `zip`: listing, sizes, timestamps and content, the `zip:<archive>|<folder>` syntax, read-only behavior, a missing archive, a corrupted entry and an archive with more than 65535 entries. It needs a C++26 g++, the zlib and glib dev packages, `python3` and `zip`; set `CXX` to pick the compiler:
+`Tests/zip_afs/run.sh` builds the read-only ZIP file system (`afs/zip.cpp`) with the zen sources it needs, without wxWidgets, and checks it against archives it generates with Python's `zipfile` and Info-ZIP `zip`: listing, sizes, timestamps and content, the `zip:<archive>|<folder>` syntax, read-only behavior, a missing archive, a corrupted entry and an archive with more than 65535 entries. It needs a C++26 compiler (g++ 14+ or clang 20+), the zlib and glib dev packages, `python3` and `zip`; set `CXX` to pick the compiler and `STDLIB=libc++` to use libc++:
 
 ```bash
 bash Tests/zip_afs/run.sh
 ```
 
-The `ZIP AFS test` workflow runs it in a `gcc:15` container on pull requests and pushes to `dev` and `main` that touch `afs/`, `zen/` or the test.
+The `ZIP AFS test` workflow runs it with g++ in a `gcc:15` container and with clang 20 + libc++ on the Ubuntu runner, on pull requests and pushes to `dev` and `main` that touch `afs/`, `zen/` or the test.
+
+### zen unit tests
+
+`Tests/zen/run.sh` builds the platform layer in `zen/` (only the sources the tests need, with `assert()` enabled) together with the tests in `Tests/zen/` and runs them. They cover file and folder creation, removal, moving and copying, modification times, sizes, item types, symlinks, permissions, free disk space, buffered and plain file I/O, folder traversal with Unicode and long names, the path helpers and macro expansion, `Zstring` comparison, case conversion, natural sorting and Unicode normalization, the directory watcher, the recycle bin, system and OS information, running a child process, the thread helpers and system error texts. Every test runs in a new temporary folder, and `run.sh` points `HOME` and `XDG_DATA_HOME` into its own temporary folder, so the recycle bin test never touches your trash; nothing is left behind. It needs a C++26 compiler (g++ 14+ or clang 20+) and the glib dev packages (`libglib2.0-dev pkg-config`); set `CXX` to pick the compiler and `STDLIB=libc++` to use libc++ (`CXXFLAGS` and `LDFLAGS` are appended), and pass test names to run only those:
+
+```bash
+bash Tests/zen/run.sh              # all tests
+bash Tests/zen/run.sh --list       # names
+bash Tests/zen/run.sh dirWatcher   # one test
+```
+
+The summary line counts checks, failures and known issues. A known issue is an upstream bug the test documents with `KNOWN_ISSUE` instead of failing; the tests don't change `zen/` to make it pass. The tests use no Linux-only calls, so they can run on macOS and Windows once `zen/` builds there; where the expected behavior differs per platform they branch on `ZEN_LINUX`, `ZEN_MAC` and `ZEN_WIN`, which `zen/build_info.h` derives from the compiler's predefined macros. Run directly from a kept build (`ZEN_TEST_BIN`), `zen_test` skips the tests that need `run.sh`'s sandbox (recycle bin, environment variables) and says so. The `zen tests` workflow runs them on pull requests and pushes to `dev` and `main` that touch `zen/` or the tests, as a matrix of g++ in a `gcc:15` container and clang 20 + libc++ on the Ubuntu runner.

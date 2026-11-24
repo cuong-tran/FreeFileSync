@@ -721,7 +721,7 @@ void Application::runBatchMode(const FfsBatchConfig& batchCfg, const Zstring& cf
     std::string startTimeStr = utfTo<std::string>(formatTime(Zstr("%Y-%m-%dT%H:%M:%S%z"), getLocalTime(std::chrono::system_clock::to_time_t(r.summary.startTime))));
     syncStats.objectVal.set("startTime", std::move(startTimeStr.insert(startTimeStr.size() - 2, ":"))); //ISO 8601 date/time with offset e.g. 2001-08-23T14:55:02+02:00
 
-    syncStats.objectVal.set("totalTimeSec", std::chrono::duration_cast<std::chrono::seconds>(r.summary.totalTime).count());
+    syncStats.objectVal.set("totalTimeSec", static_cast<int64_t>(std::chrono::duration_cast<std::chrono::seconds>(r.summary.totalTime).count())); //rep: "long" (libstdc++), "long long" (libc++)
 
     syncStats.objectVal.set("errors",   logStats.errors);
     syncStats.objectVal.set("warnings", logStats.warnings);

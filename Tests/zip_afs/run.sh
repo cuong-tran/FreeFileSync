@@ -1,23 +1,49 @@
 #!/usr/bin/env bash
-# Build and run the ZIP AbstractFileSystem test (Linux only, like the app: needs a C++26 g++, zlib, glib/gio, python3, zip)
+# Build and run the ZIP AbstractFileSystem test (Linux only, like the app: needs a C++26 compiler, zlib, glib/gio, python3, zip)
+#   CXX:    compiler (default g++; g++ 14 or newer, or clang 20 or newer)
+#   STDLIB: "libc++" to build against LLVM's libc++ instead of the compiler's default C++ library (like the makefiles' STDLIB)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 CXX="${CXX:-g++}"
+# CXXFLAGS, LDFLAGS from the environment are appended to the compile/link command
 
-echo "== build"
+#glib >= 2.78 can make g_free() a function-like macro, which breaks "::g_free(ptr)" in zen/zstring.cpp:
+#cap the glib API at 2.76 like .github/build/build-free-file-sync.sh (older glib doesn't define GLIB_VERSION_2_76 and needs no cap)
+GLIB_CAP=()
+if pkg-config --atleast-version=2.76 glib-2.0; then
+    GLIB_CAP=(-DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_2_76 -DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_2_76)
+fi
+#compiler family (detected positively from the predefined macros, like the makefiles) and STDLIB: same flags as the makefiles
+COMPILER_FLAGS=()
+COMPILER_MACROS="$("$CXX" -dM -E -x c++ /dev/null 2>/dev/null || true)"
+if grep -q __clang__ <<< "$COMPILER_MACROS"; then
+    COMPILER_FLAGS=(-Wtautological-overlap-compare -Wno-potentially-evaluated-expression -Wno-unused-const-variable -Wno-unused-lambda-capture)
+elif grep -q __GNUC__ <<< "$COMPILER_MACROS"; then
+    COMPILER_FLAGS=(-Wno-maybe-uninitialized -Wno-free-nonheap-object -Wno-restrict -Wduplicated-cond -Wlogical-op)
+fi
+case "${STDLIB:-}" in
+    "")     ;;
+    libc++) COMPILER_FLAGS+=(-stdlib=libc++) ;;
+    *)      echo "STDLIB must be empty or \"libc++\", not \"$STDLIB\"" >&2; exit 2 ;;
+esac
+read -r -a CXXFLAGS_USER <<< "${CXXFLAGS:-}"
+read -r -a LDFLAGS_USER  <<< "${LDFLAGS:-}"
+
+echo "== build ($("$CXX" --version | sed -n 1p)${STDLIB:+, $STDLIB})"
 #same language standard and warnings as FreeFileSync/Source/Makefile; zen/sys_error.cpp needs glib + gio (GError)
+# shellcheck disable=SC2046 # pkg-config output is meant to be split into words
 "$CXX" -std=c++26 -O1 -g -pthread -DNDEBUG -DWXINTL_NO_GETTEXT_MACRO -I"$ROOT" -I"$ROOT/zenXml" -include "zen/i18n.h" \
     -Wall -Wfatal-errors -Wshadow -Wmissing-include-dirs -Wswitch-enum -Wcast-align -Wnon-virtual-dtor -Wimplicit-fallthrough -Wundef -Wpedantic -Wredundant-decls \
-    -Wno-unused-function -Wno-deprecated-enum-enum-conversion -Wno-maybe-uninitialized -Wno-free-nonheap-object -Wno-restrict -Wduplicated-cond -Wlogical-op \
-    $(pkg-config --cflags glib-2.0 gio-2.0 zlib) \
+    -Wno-unused-function -Wno-deprecated-enum-enum-conversion "${COMPILER_FLAGS[@]}" \
+    "${GLIB_CAP[@]}" $(pkg-config --cflags glib-2.0 gio-2.0 zlib) "${CXXFLAGS_USER[@]}" \
     "$ROOT/Tests/zip_afs/zip_afs_test.cpp" \
     "$ROOT/FreeFileSync/Source/afs/zip.cpp" \
     "$ROOT/FreeFileSync/Source/afs/abstract.cpp" \
     "$ROOT"/zen/{zstring,file_path,resolve_path,file_access,file_io,file_traverser,sys_error,sys_info,sys_version,thread,format_unit,legacy_compiler,process_exec}.cpp \
-    $(pkg-config --libs glib-2.0 gio-2.0 zlib) -o "$WORK/zip_afs_test"
+    $(pkg-config --libs glib-2.0 gio-2.0 zlib) "${LDFLAGS_USER[@]}" -o "$WORK/zip_afs_test"
 
 echo "== fixtures"
 REF="$WORK/ref"

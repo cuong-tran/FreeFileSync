@@ -1,0 +1,274 @@
+# Linux CI build of FreeFileSync and RealTimeSync. Three jobs, all built with the scripts in .github/build:
+#
+# - "Packages": x86_64 and aarch64 on native runners with Ubuntu 24.04 and g++ 14, against OpenSSL, libssh2,
+#   libcurl and wxWidgets built from source with the Bugs.txt patches (the setup upstream uses). Packaged by
+#   package.sh as a .deb and a portable tar.gz with those libraries bundled (in .build/dist), uploaded as workflow artifacts.
+#   CI build products, not releases.
+# - "Stock libraries": compile-only check in an Ubuntu 26.04 container against the distribution's OpenSSL and
+#   libcurl and an unpatched libssh2 and wxWidgets. It keeps the fallbacks for unpatched libraries compiling
+#   (the wxColorHook declaration in wx+/darkmode.cpp, the MAX_SFTP_* values in afs/sftp.cpp, the libcurl version
+#   checks in libcurl/curl_wrap.cpp), which the patched build never uses.
+# - "clang + libc++": Ubuntu 24.04 with clang 20 and LLVM's libc++ (make STDLIB=libc++), the compiler and C++ library
+#   family of the macOS and Windows ports, against the patched libssh2 and a wxWidgets built with libc++ (the
+#   distribution's OpenSSL and libcurl are C libraries and work with either C++ library). Builds and links both apps
+#   (named <app>_x86_64-clang-libc++, see the makefiles), checks that they use libc++ and that they start (check-app-starts.sh).
+name: Linux build
+
+on:
+  push:
+    branches: [main, dev] # feature branches are built by their pull requests
+    paths: &build-paths
+      - ".github/build/**"
+      - ".github/workflows/linux-build.yml"
+      - "Bugs.txt"
+      - "FreeFileSync/Source/**"
+      - "zen/**"
+      - "wx+/**"
+      - "zenXml/**"
+      - "libcurl/**"
+      - "libssh2/**"
+      - "xBRZ/**"
+  pull_request:
+    paths: *build-paths
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  packages:
+    name: Packages (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash # the default run shell has no pipefail, and tee would hide a failed build
+    env:
+      CC: gcc-14
+      CXX: g++-14 # the sources use -std=c++26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-14 g++-14 make cmake pkg-config perl patch curl xz-utils bzip2 \
+            libgtk-3-dev libxtst-dev libidn2-dev zlib1g-dev libselinux1-dev \
+            dpkg-dev patchelf unzip
+
+      # restore and save are separate steps so the libraries are kept even when the FreeFileSync build fails
+      - name: Restore patched libraries
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .build/deps
+          # only the files that decide how the libraries are built, so editing build-free-file-sync.sh or package.sh keeps the cache
+          key: deps-ubuntu-24.04-${{ matrix.arch }}-gcc14-${{ hashFiles('.github/build/common.sh', '.github/build/build.sh', '.github/build/build-openssl.sh', '.github/build/build-libssh2.sh', '.github/build/build-curl.sh', '.github/build/build-wxwidgets.sh', '.github/build/patches/**') }}
+
+      - name: Build patched libraries
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: .github/build/build.sh
+
+      - name: Save patched libraries
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .build/deps
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
+      - name: Build FreeFileSync and RealTimeSync
+        run: .github/build/build-free-file-sync.sh 2>&1 | tee build.log
+
+      # the makefiles only warn (and build a fallback) when wxWidgets lacks the Bugs.txt color hook,
+      # so make sure the patched wxWidgets was actually used
+      - name: Check the wxWidgets color hook patch is used
+        run: |
+          grep -q refGlobalColorHook .build/deps/include/wx-3.*/wx/settings.h || { echo "::error::installed wx/settings.h lacks the wxColorHook patch"; exit 1; }
+          if grep -q "lacks the wxColorHook patch" build.log; then echo "::error::the makefiles built the wxColorHook fallback"; exit 1; fi
+
+      - name: Check the binaries use the patched libraries
+        run: |
+          ls -l FreeFileSync/Build/Bin
+          ldd "FreeFileSync/Build/Bin/FreeFileSync_${{ matrix.arch }}" | tee ldd.txt
+          for lib in libcurl libssh2 libssl libcrypto; do
+            grep -E "${lib}[^ ]* => $GITHUB_WORKSPACE/.build/deps/lib/" ldd.txt || { echo "::error::$lib is not taken from .build/deps"; exit 1; }
+          done
+
+      - name: Create packages
+        env:
+          DEB_VERSION_SUFFIX: +ci${{ github.run_number }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }} # not the temporary merge commit of a PR
+        run: .github/build/package.sh
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: freefilesync-linux-${{ matrix.arch }}
+          path: .build/dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  stock-libs:
+    name: Stock libraries (compile only)
+    runs-on: ubuntu-24.04
+    container: ubuntu:26.04 # wxWidgets 3.3 and libssh2 still come from source, the rest from the distribution
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl bzip2 xz-utils patch make cmake g++ pkg-config perl \
+            libgtk-3-dev libxtst-dev libidn2-dev zlib1g-dev libselinux1-dev libssl-dev libcurl4-openssl-dev
+          g++ --version
+          pkg-config --modversion openssl libcurl
+
+      - uses: actions/checkout@v4
+
+      - name: Restore unpatched libraries
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .build/deps
+          key: deps-unpatched-ubuntu-26.04-x86_64-${{ hashFiles('.github/build/common.sh', '.github/build/build-libssh2.sh', '.github/build/build-wxwidgets.sh') }}
+
+      # against the system OpenSSL: build-libssh2.sh points CMake at .build/deps, which has none here
+      - name: Build unpatched libssh2 and wxWidgets
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          FFS_UNPATCHED: 1
+        run: |
+          .github/build/build-libssh2.sh
+          .github/build/build-wxwidgets.sh
+
+      - name: Save unpatched libraries
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .build/deps
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
+      - name: Build FreeFileSync and RealTimeSync
+        env:
+          FFS_SYSTEM_LIBS: openssl libcurl
+        run: .github/build/build-free-file-sync.sh 2>&1 | tee build.log
+
+      - name: Check the stock libraries were used
+        run: |
+          # grep -r exits 2 on a missing folder, which "if" would take as "not patched"
+          test -d .build/deps/include || { echo "::error::.build/deps/include is missing"; exit 1; }
+          if grep -rq refGlobalColorHook .build/deps/include; then echo "::error::wxWidgets has the wxColorHook patch"; exit 1; fi
+          grep -q "lacks the wxColorHook patch" build.log || { echo "::error::the makefiles did not build the wxColorHook fallback"; exit 1; }
+          if grep -rq MAX_SFTP_READ_SIZE .build/deps/include; then echo "::error::libssh2 has the MAX_SFTP_* patch"; exit 1; fi
+          ldd FreeFileSync/Build/Bin/FreeFileSync_x86_64 | tee ldd.txt
+          grep -E "libssh2[^ ]* => $GITHUB_WORKSPACE/.build/deps/lib/" ldd.txt || { echo "::error::libssh2 is not taken from .build/deps"; exit 1; }
+          for lib in libcurl libssl libcrypto; do
+            grep -E "${lib}[^ ]* => /" ldd.txt || { echo "::error::$lib is not linked"; exit 1; }
+            if grep -E "${lib}[^ ]* => $GITHUB_WORKSPACE/" ldd.txt; then echo "::error::$lib is not the system's"; exit 1; fi
+          done
+          if grep 'not found' ldd.txt; then exit 1; fi
+
+  clang-libcxx:
+    name: clang + libc++
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      CC: clang-20
+      CXX: clang++-20
+      STDLIB: libc++ # read by the makefiles
+      WX_FLAGS: -stdlib=libc++ # CXXFLAGS and LDFLAGS for the wxWidgets build; part of the cache key
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang-20 libc++-20-dev libc++abi-20-dev make cmake pkg-config perl patch curl xz-utils bzip2 \
+            libgtk-3-dev libxtst-dev libidn2-dev zlib1g-dev libselinux1-dev libssl-dev libcurl4-openssl-dev xvfb xdotool imagemagick
+          clang++-20 --version
+
+      - name: Restore libraries
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .build/deps
+          # the compiler and wxWidgets flags are set in this file, so they are part of the key
+          key: deps-${{ env.CC }}-${{ env.CXX }}-${{ env.WX_FLAGS }}-ubuntu-24.04-x86_64-${{ hashFiles('.github/build/common.sh', '.github/build/build-libssh2.sh', '.github/build/build-wxwidgets.sh', '.github/build/patches/**') }}
+
+      # libssh2 is C: built with clang-20 against the system OpenSSL. wxWidgets is C++ and must use the same C++ library as FreeFileSync
+      - name: Build patched libssh2 and wxWidgets
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          .github/build/build-libssh2.sh
+          CXXFLAGS="$WX_FLAGS" LDFLAGS="$WX_FLAGS" .github/build/build-wxwidgets.sh
+
+      - name: Save libraries
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .build/deps
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
+      - name: Build FreeFileSync and RealTimeSync
+        env:
+          FFS_SYSTEM_LIBS: openssl libcurl
+        run: .github/build/build-free-file-sync.sh 2>&1 | tee build.log
+
+      - name: Check the binaries
+        run: |
+          grep -q -- "-stdlib=libc++" build.log || { echo "::error::the makefiles did not add -stdlib=libc++"; exit 1; }
+          if grep -q "lacks the wxColorHook patch" build.log; then echo "::error::the makefiles built the wxColorHook fallback"; exit 1; fi
+          for app in FreeFileSync RealTimeSync; do
+            bin="FreeFileSync/Build/Bin/${app}_x86_64-clang-libc++"
+            readelf -d "$bin" | grep NEEDED | tee needed.txt
+            grep -q 'libc++.so' needed.txt || { echo "::error::$app is not linked against libc++"; exit 1; }
+            if grep -q 'libstdc++' needed.txt; then echo "::error::$app is linked against libstdc++ directly"; exit 1; fi
+          done
+
+      # main window shown, no error popup, no error on stderr, still running (fresh HOME, Xvfb, and no network, so a first
+      # start's update check can't depend on what freefilesync.org answers a CI machine)
+      - name: Check the apps start
+        env:
+          OFFLINE: 1
+        run: |
+          # upstream's source zip has no Resources/Animal.dat (the welcome dialog's picture, part of the official binaries
+          # only), so a first start of any build from these sources shows "Failed to load image from file ...Animal.dat";
+          # a placeholder JPEG keeps that known gap from failing the check
+          res=FreeFileSync/Build/Resources
+          [ -f "$res/Animal.dat" ] || convert -size 64x64 xc:gray "jpg:$res/Animal.dat"
+          mkdir -p screenshots
+          rc=0
+          SCREENSHOT=screenshots/FreeFileSync.png .github/build/check-app-starts.sh FreeFileSync/Build/Bin/FreeFileSync_x86_64-clang-libc++ '^FreeFileSync [0-9.]+ ' || rc=1
+          SCREENSHOT=screenshots/RealTimeSync.png .github/build/check-app-starts.sh FreeFileSync/Build/Bin/RealTimeSync_x86_64-clang-libc++ '^RealTimeSync [0-9.]+ ' || rc=1
+          exit $rc
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-clang-libcxx
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 7
