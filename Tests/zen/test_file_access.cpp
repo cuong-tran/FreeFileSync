@@ -618,7 +618,7 @@ TEST_CASE(fileAccessMacSecondVolume)
     CHECK(trimCpy(runShell("xattr " + escapeCommandArg(appendPath(mountPath, "dir")))).empty());
     for (const Zstring& folder : {mountPath, appendPath(mountPath, "dir")})
         traverseFolder(folder,
-        [&](const FileInfo& fi) { CHECK(!startsWith(fi.itemName, "._")); if (startsWith(fi.itemName, "._")) std::cerr << "   AppleDouble file: " << fi.fullPath << '\n'; },
+        [&](const FileInfo& fi) { CHECK(!startsWith(fi.itemName, "._")); if (startsWith(fi.itemName, "._")) std::cerr << "   AppleDouble file: " << toPrintable(fi.fullPath) << '\n'; },
         [&](const FolderInfo& fi) { CHECK(!startsWith(fi.itemName, "._")); }, nullptr);
     for (const LogEntry& entry : fetchExtraLog())
         reportFailure(__FILE__, __LINE__, "logged: " + std::string(entry.message.begin(), entry.message.end()));
