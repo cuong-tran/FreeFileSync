@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 # Assemble and ad-hoc sign a macOS app bundle (called by the makefiles for TARGET_OS=mac; see CONTRIBUTING.md):
-#   mac_bundle.sh <bundle.app> <executable> <app name> <bundle id> <icon png> <minimum macOS> <document extensions> [<resources folder>]
+#   mac_bundle.sh <bundle.app> <executable> <app name> <bundle id> <icon png> <minimum macOS> <document extensions> [<resources folder> [<helper>...]]
 #     <bundle.app>           output folder, replaced
 #     <executable>           the linked binary: becomes Contents/MacOS/<app name>
 #     <icon png>             square PNG (e.g. 128 px from Resources/Icons.zip, extracted by the makefile): Contents/Resources/<app name>.icns
-#     <document extensions>  space-separated, e.g. "ffs_gui ffs_batch": the app opens them from Finder (wxApp::MacOpenFiles)
-#     <resources folder>     copied into Contents/Resources (FreeFileSync/Build/Resources), plus Animal.dat from .github/build/resources
-#   MAC_BUNDLE_HELPERS (environment): executables copied next to the main one, e.g. crashpad_handler of a Sentry build
+#     <document extensions>  space-separated, e.g. "ffs_gui ffs_batch": the app opens them from Finder (wxApp::MacOpenFiles); the app
+#                            owns them (LSHandlerRank Owner) unless an extension ends in ":Alternate", e.g. "ffs_batch:Alternate"
+#     <resources folder>     copied into Contents/Resources (FreeFileSync/Build/Resources), plus Animal.dat from .github/build/resources;
+#                            "" for none
+#     <helper>               executables copied next to the main one, one per argument, e.g. crashpad_handler of a Sentry build
 # The version comes from FreeFileSync/Source/version/version.h. Signing: ad-hoc ("-"), inner code first, then the bundle (no --deep),
 # without hardened runtime; not notarized.
 set -euo pipefail
 [ $# -ge 7 ] || { echo "usage: $0 <bundle.app> <executable> <app name> <bundle id> <icon png> <minimum macOS> <document extensions> [<resources folder>]" >&2; exit 2; }
 bundle="$1" exe="$2" appName="$3" bundleId="$4" iconPng="$5" minOs="$6" docExts="$7" resources="${8:-}"
+shift $(($# < 8 ? $# : 8)) # the rest: helpers
 srcDir="$(cd "$(dirname "$0")" && pwd)"
 repoRoot="$(cd "$srcDir/../.." && pwd)"
 
@@ -21,7 +24,7 @@ version="$(sed -nE 's/.*ffsVersion\[\] = "([0-9.]+)".*/\1/p' "$srcDir/version/ve
 rm -rf "$bundle"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 cp "$exe" "$bundle/Contents/MacOS/$appName"
-for helper in ${MAC_BUNDLE_HELPERS:-}; do
+for helper in "$@"; do
     cp "$helper" "$bundle/Contents/MacOS/"
 done
 
@@ -43,13 +46,15 @@ iconutil -c icns "$iconset" -o "$bundle/Contents/Resources/$appName.icns"
 
 docTypes=""
 for ext in $docExts; do
+    rank=Owner
+    case "$ext" in *:Alternate) ext="${ext%:Alternate}" rank=Alternate ;; esac
     docTypes+="
         <dict>
             <key>CFBundleTypeName</key><string>$appName configuration (.$ext)</string>
             <key>CFBundleTypeRole</key><string>Editor</string>
             <key>CFBundleTypeExtensions</key><array><string>$ext</string></array>
             <key>CFBundleTypeIconFile</key><string>$appName.icns</string>
-            <key>LSHandlerRank</key><string>Owner</string>
+            <key>LSHandlerRank</key><string>$rank</string>
         </dict>"
 done
 

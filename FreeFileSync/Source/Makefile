@@ -262,11 +262,16 @@ ifeq ($(TARGET_OS),mac)
 macBundle := $(buildRoot)/Bin/macos-$(ARCH)/FreeFileSync.app
 all: $(macBundle)
 
-$(macBundle): $(target) mac_bundle.sh version/version.h $(wildcard ../Build/Resources/*)
-	mkdir -p $(objPath)
-	unzip -p ../Build/Resources/Icons.zip FreeFileSync.png > $(objPath)/FreeFileSync.png
-	MAC_BUNDLE_HELPERS='$(if $(filter 1,$(FFS_SENTRY)),$(buildRoot)/Bin/crashpad_handler)' $(SHELL) mac_bundle.sh $@ $(target) FreeFileSync \
-	    io.github.cuong-tran.freefilesync $(objPath)/FreeFileSync.png $(macDeploymentTarget) "ffs_gui ffs_batch" ../Build/Resources
+#copied next to the main executable: crashpad_handler of a Sentry build (made by crash_report.mk)
+macBundleHelpers := $(if $(filter 1,$(FFS_SENTRY)),$(buildRoot)/Bin/crashpad_handler)
+
+#common.sh: the deployment target (LSMinimumSystemVersion); Animal.dat: copied when the resources lack it
+$(macBundle): $(target) mac_bundle.sh version/version.h $(wildcard ../Build/Resources/*) \
+              ../../.github/build/common.sh ../../.github/build/resources/Animal.dat $(macBundleHelpers)
+	mkdir -p "$(objPath)"
+	unzip -p ../Build/Resources/Icons.zip FreeFileSync.png > "$(objPath)/FreeFileSync.png"
+	$(SHELL) mac_bundle.sh "$@" "$(target)" FreeFileSync io.github.cuong-tran.freefilesync "$(objPath)/FreeFileSync.png" \
+	    $(macDeploymentTarget) "ffs_gui ffs_batch" ../Build/Resources $(foreach helper,$(macBundleHelpers),"$(helper)")
 endif
 
 engine: $(engineLib)

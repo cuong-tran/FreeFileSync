@@ -152,11 +152,17 @@ ifeq ($(TARGET_OS),mac)
 macBundle := ../../Build/Bin/macos-$(ARCH)/RealTimeSync.app
 all: $(macBundle)
 
-$(macBundle): ../../Build/Bin/$(exeName) ../mac_bundle.sh ../version/version.h $(wildcard ../../Build/Resources/*)
-	mkdir -p $(objPath)
-	unzip -p ../../Build/Resources/Icons.zip RealTimeSync.png > $(objPath)/RealTimeSync.png
-	MAC_BUNDLE_HELPERS='$(if $(filter 1,$(FFS_SENTRY)),../../Build/Bin/crashpad_handler)' $(SHELL) ../mac_bundle.sh $@ ../../Build/Bin/$(exeName) RealTimeSync \
-	    io.github.cuong-tran.realtimesync $(objPath)/RealTimeSync.png $(macDeploymentTarget) "ffs_real" ../../Build/Resources
+#copied next to the main executable: crashpad_handler of a Sentry build (made by ../crash_report.mk)
+macBundleHelpers := $(if $(filter 1,$(FFS_SENTRY)),../../Build/Bin/crashpad_handler)
+
+#common.sh: the deployment target (LSMinimumSystemVersion); Animal.dat: copied when the resources lack it
+#ffs_batch: RealTimeSync opens it too (MacOpenFiles()), as an alternative to FreeFileSync, the owner
+$(macBundle): ../../Build/Bin/$(exeName) ../mac_bundle.sh ../version/version.h $(wildcard ../../Build/Resources/*) \
+              ../../../.github/build/common.sh ../../../.github/build/resources/Animal.dat $(macBundleHelpers)
+	mkdir -p "$(objPath)"
+	unzip -p ../../Build/Resources/Icons.zip RealTimeSync.png > "$(objPath)/RealTimeSync.png"
+	$(SHELL) ../mac_bundle.sh "$@" "../../Build/Bin/$(exeName)" RealTimeSync io.github.cuong-tran.realtimesync "$(objPath)/RealTimeSync.png" \
+	    $(macDeploymentTarget) "ffs_real ffs_batch:Alternate" ../../Build/Resources $(foreach helper,$(macBundleHelpers),"$(helper)")
 endif
 
 #relink after switching between the default and the FFS_SENTRY=1 build (see ../Makefile)
