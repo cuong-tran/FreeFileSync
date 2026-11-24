@@ -40,6 +40,17 @@ else ifneq ($(STDLIB),)
     $(error STDLIB must be empty or "libc++", not "$(STDLIB)")
 endif
 
+#crash reporting (zen/crash_report.h): "make FFS_SENTRY=1 SENTRY_DSN=<dsn>" builds with sentry-native (crash_report.mk), the default
+#build without any reporting code (zen/crash_report_none.cpp). Same binary name, but its own object folder, so switching never mixes objects
+ifeq ($(FFS_SENTRY),1)
+    ifeq ($(strip $(SENTRY_DSN)),)
+        $(error FFS_SENTRY=1 needs a DSN: make FFS_SENTRY=1 SENTRY_DSN=<dsn>, or SENTRY_DSN in the environment)
+    endif
+    crashReportSuffix := -sentry
+else ifneq ($(FFS_SENTRY),)
+    $(error FFS_SENTRY must be empty or 1, not "$(FFS_SENTRY)")
+endif
+
 CXX += -pthread
 
 #build mode: "make" (default) for an optimized build into ../Build/Bin,
@@ -57,7 +68,7 @@ else
 endif
 #object files stay inside this checkout instead of a fixed folder in the shared temp directory:
 #builds of different checkouts never mix their objects, and other users can't plant files or symlinks there
-objPath := $(buildRoot)/Obj/$(exeName)
+objPath := $(buildRoot)/Obj/$(exeName)$(crashReportSuffix)
 
 CXXFLAGS += $(shell wx-config --cxxflags --debug=no)
 LDFLAGS  += $(shell wx-config --libs std, aui, richtext --debug=no)
@@ -181,6 +192,11 @@ cppFiles += ../../wx+/image_resources.cpp
 cppFiles += ../../wx+/popup_dlg.cpp
 cppFiles += ../../wx+/popup_dlg_generated.cpp
 cppFiles += ../../xBRZ/src/xbrz.cpp
+ifeq ($(FFS_SENTRY),1)
+cppFiles += ../../zen/crash_report_sentry.cpp
+else
+cppFiles += ../../zen/crash_report_none.cpp
+endif
 
 objFiles := $(cppFiles:%=$(objPath)/ffs/src/%.o)
 target   := $(buildRoot)/Bin/$(exeName)
@@ -189,9 +205,19 @@ target   := $(buildRoot)/Bin/$(exeName)
 
 all: $(target)
 
-$(target): $(objFiles)
+#relink after switching between the default and the FFS_SENTRY=1 build: same binary, objects from different folders
+#(a stamp shared by both object folders, rewritten only when the build switches; written while parsing, so make -n shows no command)
+crashReportStamp := $(patsubst %-sentry,%,$(objPath)).crashreport
+$(shell mkdir -p $(dir $(crashReportStamp)) && { echo '$(FFS_SENTRY)' | cmp -s - $(crashReportStamp) || echo '$(FFS_SENTRY)' > $(crashReportStamp); })
+
+$(target): $(objFiles) $(crashReportStamp)
 	mkdir -p $(dir $@)
-	$(CXX) -o $@ $^ $(LDFLAGS)
+	$(CXX) -o $@ $(objFiles) $(LDFLAGS)
+
+ifeq ($(FFS_SENTRY),1)
+binDir := $(buildRoot)/Bin
+include crash_report.mk
+endif
 
 ifeq ($(BUILD),debug)
 #the binary looks for its Resources folder next to its Bin folder: refresh the copy on every debug build

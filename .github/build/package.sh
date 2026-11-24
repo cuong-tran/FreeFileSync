@@ -9,6 +9,8 @@
 #   SOURCE_SHA          commit the build is from, named in the .deb description (default: git HEAD)
 #   GITHUB_REPOSITORY   owner/name for the .deb maintainer and homepage (set by GitHub Actions; default: the
 #                       GitHub repository of the "origin" remote)
+#   FFS_SENTRY          1 for a build with crash reporting (build-free-file-sync.sh with FFS_SENTRY=1): ships the
+#                       crashpad_handler from the Bin folder next to the binaries
 set -euo pipefail
 # shellcheck source=./common.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
@@ -42,6 +44,12 @@ mkdir -p "$stage/Bin"
 # same layout as upstream's Linux package: FreeFileSync looks for Resources next to the Bin folder of the
 # executable, and RealTimeSync starts batch jobs with "<install dir>/FreeFileSync" (getFreeFileSyncLauncherPath())
 cp -a "$BIN_DIR/$FFS_EXE" "$BIN_DIR/$RTS_EXE" "$stage/Bin/"
+# crash reporting: the apps look for crashpad_handler next to themselves (FreeFileSync/Source/crash_report_init.h); it loads
+# libcurl with dlopen("libcurl.so.4"), found through the $ORIGIN rpath set below
+if [ "${FFS_SENTRY:-}" = 1 ]; then
+    [ -x "$BIN_DIR/crashpad_handler" ] || die "FFS_SENTRY=1, but $BIN_DIR/crashpad_handler is missing"
+    cp -a "$BIN_DIR/crashpad_handler" "$stage/Bin/"
+fi
 cp -a "$RES_DIR" "$stage/"
 
 # bundle every library the binaries resolve from the prefix (ldd lists indirect dependencies too), under its soname

@@ -2,6 +2,10 @@
 # Build FreeFileSync and RealTimeSync with the upstream makefiles against the libraries
 # installed by build.sh. Binaries go to FreeFileSync/Build/Bin (debug FreeFileSync: Build/Debug/Bin),
 # objects to $FFS_BUILD_DIR/obj.
+#
+# With FFS_SENTRY=1 (and SENTRY_DSN in the environment) the apps are built with crash reporting against the sentry-native
+# from build-sentry-native.sh, and crashpad_handler is copied next to them. SENTRY_ENVIRONMENT (dev, ci, release; default
+# dev) and FFS_GIT_SHA (default: the short hash of HEAD) go into the release name; see FreeFileSync/Source/crash_report.mk.
 set -euo pipefail
 # shellcheck source=./common.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
@@ -48,7 +52,26 @@ FFS_BIN_DIR="$BIN_DIR"
 # (e.g. FreeFileSync_x86_64-clang-libc++ for CXX=clang++-20 STDLIB=libc++); empty for the default g++ build.
 TOOLCHAIN_SUFFIX="$(toolchain_suffix)"
 rm -f "$FFS_BIN_DIR/FreeFileSync_$ARCH$TOOLCHAIN_SUFFIX" "$BIN_DIR/RealTimeSync_$ARCH$TOOLCHAIN_SUFFIX"
+# only a Sentry build ships the crash handler; don't leave one from an earlier build next to binaries without reporting
+rm -f "$FFS_BIN_DIR/crashpad_handler" "$BIN_DIR/crashpad_handler"
+
+# Crash reporting: same binary names, but separate object folders (like the makefiles' own objPath)
+OBJ_SUFFIX=""
+case "${FFS_SENTRY:-}" in
+    "") ;;
+    1)  [ -n "${SENTRY_DSN:-}" ] || die "FFS_SENTRY=1 needs SENTRY_DSN in the environment"
+        [ -f "$SENTRY_PREFIX/lib/pkgconfig/sentry-native.pc" ] || die "sentry-native is not installed in $SENTRY_PREFIX, run build-sentry-native.sh first"
+        export PKG_CONFIG_PATH="$SENTRY_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH"
+        if [ -z "${FFS_GIT_SHA:-}" ]; then
+            FFS_GIT_SHA="$(git -C "$REPO_ROOT" rev-parse --short=12 HEAD 2>/dev/null || true)"
+            export FFS_GIT_SHA
+        fi
+        log "Building with crash reporting (sentry-native from $SENTRY_PREFIX, environment ${SENTRY_ENVIRONMENT:-dev}, commit ${FFS_GIT_SHA:-unknown})"
+        OBJ_SUFFIX="-sentry" ;;
+    *)  die "FFS_SENTRY must be empty or 1, not \"$FFS_SENTRY\"" ;;
+esac
 
 # The makefiles append to CXXFLAGS/LDFLAGS from the environment, which carries the rpath to $INSTALL_DIR/lib.
-make -C "$REPO_ROOT/FreeFileSync/Source" -j "$JOBS" objPath="$OBJ_DIR/FreeFileSync_$ARCH$TOOLCHAIN_SUFFIX"
-make -C "$REPO_ROOT/FreeFileSync/Source/RealTimeSync" -j "$JOBS" objPath="$OBJ_DIR/RealTimeSync_$ARCH$TOOLCHAIN_SUFFIX"
+# FFS_SENTRY and SENTRY_DSN reach the makefiles through the environment, never through the command line.
+make -C "$REPO_ROOT/FreeFileSync/Source" -j "$JOBS" objPath="$OBJ_DIR/FreeFileSync_$ARCH$TOOLCHAIN_SUFFIX$OBJ_SUFFIX"
+make -C "$REPO_ROOT/FreeFileSync/Source/RealTimeSync" -j "$JOBS" objPath="$OBJ_DIR/RealTimeSync_$ARCH$TOOLCHAIN_SUFFIX$OBJ_SUFFIX"
