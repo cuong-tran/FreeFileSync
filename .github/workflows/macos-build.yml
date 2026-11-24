@@ -297,6 +297,8 @@ jobs:
       # each app starts with a fresh HOME, shows a window, ends on SIGTERM without crashing (x86_64 under Rosetta 2)
       - name: Start the apps
         if: ${{ !cancelled() && steps.apps.outcome == 'success' }}
+        env:
+          SCREENSHOT_TO_LOG: 1 # a small copy of each screenshot in the log as well (see check-mac-app-starts.sh)
         run: |
           if [ "${{ matrix.arch }}" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
             echo "::warning::Rosetta 2 not available: x86_64 apps not started"; exit 0

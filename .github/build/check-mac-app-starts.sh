@@ -38,6 +38,18 @@ for ((i = 0; i < timeout; ++i)); do
 done
 sleep 2 # let the window finish drawing
 screencapture -x "$shot" || echo "::warning::screencapture failed"
+#SCREENSHOT_TO_LOG=1: also print a small JPEG of it as base64 into the log, for readers who can reach the log but not the artifacts
+if [ "${SCREENSHOT_TO_LOG:-0}" = 1 ] && [ -f "$shot" ]; then
+    small="$(mktemp).jpg"
+    if sips -Z 900 -s format jpeg -s formatOptions 55 "$shot" --out "$small" >/dev/null; then
+        echo "::group::screenshot $(basename "$shot") (base64 JPEG)"
+        echo "-----BEGIN SCREENSHOT $(basename "$shot")-----"
+        base64 -i "$small" | fold -w 120
+        echo "-----END SCREENSHOT-----"
+        echo "::endgroup::"
+    fi
+    rm -f "$small"
+fi
 
 kill -TERM "$pid" 2>/dev/null || true
 for ((i = 0; i < 20 && $(kill -0 "$pid" 2>/dev/null && echo 1 || echo 0); ++i)); do sleep 0.5; done
