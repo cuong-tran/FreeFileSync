@@ -7,66 +7,180 @@
 #include "zstring.h"
     #include "sys_error.h"
 #if defined ZEN_MAC
+    #include <cstdlib> //malloc, free
     #include <CoreFoundation/CoreFoundation.h>
 #endif
 
 using namespace zen;
 
 
+#if defined ZEN_MAC
 namespace
 {
-#if defined ZEN_MAC
-//macOS: Unicode normalization and case mapping through CoreFoundation (no GLib); UTF-8 at the API boundary like everywhere else
-CFMutableStringRef createMutableCfString(const ZstringView& str) //throw SysError; caller must CFRelease()
+/*  macOS: the three GLib functions this file uses, implemented with CoreFoundation, so the code below is the same as on Linux:
+    - g_unichar_toupper(): simple (1:1) upper-case mapping per code point, like GLib (e.g. "ß" stays "ß"); a table for the BMP
+      is built once from CFStringUppercase(), other planes ask CoreFoundation per character (rare)
+    - g_utf8_normalize(): CFStringNormalize(), skipped for text that is normalized already (quick check below)              */
+using gchar    = char;
+using gunichar = impl::CodePoint;
+enum GNormalizeMode { G_NORMALIZE_NFD, G_NORMALIZE_NFC };
+
+void g_free(void* ptr) { ::free(ptr); }
+
+
+//code points with NFC_QC = Yes and canonical combining class 0 (UAX #15): a string of only these is in NFC/NFD;
+//covers ASCII, Latin-1, Cyrillic, kana, CJK, Hangul syllables (NFC), emoji; everything else goes through CoreFoundation
+bool isNormalizedCodePoint(impl::CodePoint cp, GNormalizeMode mode)
 {
-    CFStringRef cfStr = ::CFStringCreateWithBytes(nullptr,                                     //CFAllocatorRef alloc
-                                                  reinterpret_cast<const UInt8*>(str.data()), //const UInt8* bytes
-                                                  static_cast<CFIndex>(str.size()),            //CFIndex numBytes
-                                                  kCFStringEncodingUTF8,                       //CFStringEncoding encoding
-                                                  false);                                      //Boolean isExternalRepresentation
+    if (mode == G_NORMALIZE_NFC)
+        return cp < 0x300 ||
+               (0x400 <= cp && cp < 0x483) || //Cyrillic letters (no combining marks)
+               (0x3041 <= cp && cp < 0x3097) || //Hiragana (without U+3099/309A combining marks)
+               (0x30A1 <= cp && cp < 0x30FB) || //Katakana
+               (0x4E00 <= cp && cp < 0xA000) || //CJK Unified Ideographs
+               (0xAC00 <= cp && cp < 0xD7A4) || //Hangul syllables (precomposed)
+               (0x1F300 <= cp && cp < 0x1FB00);  //pictographs, emoji
+    else //NFD: no precomposed characters
+        return cp < 0xC0 ||
+               (0x4E00 <= cp && cp < 0xA000) ||
+               (0x1F300 <= cp && cp < 0x1FB00);
+}
+
+
+gchar* g_utf8_normalize(const gchar* str, ssize_t len, GNormalizeMode mode) //returns nullptr on error; caller must g_free()
+{
+    assert(len >= 0);
+    const std::string_view strView(str, len);
+
+    bool normalized = true; //valid UTF-8 expected (getValidUtf())
+    {
+        UtfDecoder<char> decoder(strView.data(), strView.size());
+        while (const std::optional<impl::CodePoint> cp = decoder.getNext())
+            if (!isNormalizedCodePoint(*cp, mode))
+            {
+                normalized = false;
+                break;
+            }
+    }
+
+    std::string_view output = strView;
+    std::vector<UInt8> buf;
+    if (!normalized)
+    {
+        CFStringRef cfStr = ::CFStringCreateWithBytesNoCopy(nullptr, reinterpret_cast<const UInt8*>(strView.data()), static_cast<CFIndex>(strView.size()),
+                                                            kCFStringEncodingUTF8, false /*isExternalRepresentation*/, kCFAllocatorNull /*don't free bytes*/);
+        if (!cfStr)
+            return nullptr;
+        ZEN_ON_SCOPE_EXIT(::CFRelease(cfStr));
+
+        CFMutableStringRef cfStrNorm = ::CFStringCreateMutableCopy(nullptr, 0 /*maxLength: unlimited*/, cfStr);
+        if (!cfStrNorm)
+            return nullptr;
+        ZEN_ON_SCOPE_EXIT(::CFRelease(cfStrNorm));
+
+        ::CFStringNormalize(cfStrNorm, mode == G_NORMALIZE_NFC ? kCFStringNormalizationFormC : kCFStringNormalizationFormD);
+
+        const CFRange range = CFRangeMake(0, ::CFStringGetLength(cfStrNorm));
+        CFIndex bufSize = 0;
+        ::CFStringGetBytes(cfStrNorm, range, kCFStringEncodingUTF8, 0 /*lossByte: fail*/, false, nullptr, 0, &bufSize);
+        buf.resize(bufSize);
+        CFIndex bytesWritten = 0;
+        if (::CFStringGetBytes(cfStrNorm, range, kCFStringEncodingUTF8, 0, false, buf.data(), bufSize, &bytesWritten) != range.length ||
+            bytesWritten != bufSize)
+            return nullptr;
+        output = std::string_view(reinterpret_cast<const char*>(buf.data()), buf.size());
+    }
+
+    gchar* outStr = static_cast<gchar*>(::malloc(output.size() + 1));
+    if (!outStr)
+        return nullptr;
+    std::copy(output.begin(), output.end(), outStr);
+    outStr[output.size()] = 0;
+    return outStr;
+}
+
+
+gunichar toUpperCf(gunichar cp) //code points without a 1:1 upper-case mapping are returned unchanged
+{
+    UniChar utf16[2] = {};
+    CFIndex utf16Len = 0;
+    codePointToUtf<UniChar>(cp, [&](UniChar c) { if (utf16Len < 2) utf16[utf16Len++] = c; });
+
+    CFMutableStringRef cfStr = ::CFStringCreateMutable(nullptr, 0);
     if (!cfStr)
-        throw SysError(formatSystemError("CFStringCreateWithBytes", L"", L"Conversion failed."));
+        return cp;
     ZEN_ON_SCOPE_EXIT(::CFRelease(cfStr));
-
-    CFMutableStringRef cfStrMut = ::CFStringCreateMutableCopy(nullptr, 0 /*maxLength: unlimited*/, cfStr);
-    if (!cfStrMut)
-        throw SysError(formatSystemError("CFStringCreateMutableCopy", L"", L"Conversion failed."));
-    return cfStrMut;
-}
-
-
-Zstring cfStringToUtf8(CFStringRef cfStr) //throw SysError
-{
-    const CFIndex len = ::CFStringGetLength(cfStr);
-    CFIndex bufSize = 0;
-    ::CFStringGetBytes(cfStr, CFRangeMake(0, len), kCFStringEncodingUTF8, 0 /*lossByte: fail*/, false, nullptr, 0, &bufSize);
-
-    Zstring output(bufSize, '\0');
-    CFIndex bytesWritten = 0;
-    if (::CFStringGetBytes(cfStr, CFRangeMake(0, len), kCFStringEncodingUTF8, 0, false,
-                           reinterpret_cast<UInt8*>(output.data()), bufSize, &bytesWritten) != len || bytesWritten != bufSize)
-        throw SysError(formatSystemError("CFStringGetBytes", L"", L"Conversion failed."));
-    return output;
-}
-
-
-void normalizeCfString(CFMutableStringRef cfStr, UnicodeNormalForm form)
-{
-    ::CFStringNormalize(cfStr, form == UnicodeNormalForm::nfc ? kCFStringNormalizationFormC : kCFStringNormalizationFormD);
-}
-
-
-//full Unicode case mapping, locale-independent (e.g. "ß" => "SS"); result in normal form "form"
-Zstring getUpperCaseCf(const ZstringView& str, UnicodeNormalForm form) //throw SysError
-{
-    CFMutableStringRef cfStr = createMutableCfString(str); //throw SysError
-    ZEN_ON_SCOPE_EXIT(::CFRelease(cfStr));
-
+    ::CFStringAppendCharacters(cfStr, utf16, utf16Len);
     ::CFStringUppercase(cfStr, nullptr /*locale: none => locale-independent mapping*/);
-    normalizeCfString(cfStr, form); //upper case of a normalized string is not necessarily normalized
-    return cfStringToUtf8(cfStr); //throw SysError
+
+    UniChar upper[3] = {};
+    const CFIndex upperLen = ::CFStringGetLength(cfStr);
+    if (upperLen > 2)
+        return cp;
+    ::CFStringGetCharacters(cfStr, CFRangeMake(0, upperLen), upper);
+
+    std::optional<impl::CodePoint> upperCp;
+    UtfDecoder<UniChar> decoder(upper, upperLen);
+    if (std::optional<impl::CodePoint> cp1 = decoder.getNext())
+        if (!decoder.getNext()) //exactly one code point
+            upperCp = cp1;
+    return upperCp ? *upperCp : cp;
+}
+
+
+gunichar g_unichar_toupper(gunichar cp)
+{
+    if (cp < 0x80)
+        return asciiToUpper(static_cast<char>(cp));
+
+    if (cp >= 0x10000)
+        return toUpperCf(cp);
+
+    static const std::vector<uint16_t> upperBmp = [] //thread-safe init
+    {
+        std::vector<uint16_t> table(0x10000);
+        for (size_t i = 0; i < table.size(); ++i)
+            table[i] = static_cast<uint16_t>(i);
+
+        //one CFStringUppercase() for all of the BMP (except surrogates): characters separated by U+0000, which maps to itself
+        std::vector<UniChar> chars;
+        chars.reserve(2 * 0x10000);
+        for (UniChar c = 0x80; c != 0; ++c)
+            if (c < 0xD800 || c > 0xDFFF)
+            {
+                chars.push_back(c);
+                chars.push_back(0);
+            }
+
+        CFMutableStringRef cfStr = ::CFStringCreateMutable(nullptr, 0);
+        if (!cfStr)
+            return table; //identity => compares case-sensitively for non-ASCII; never seen
+        ZEN_ON_SCOPE_EXIT(::CFRelease(cfStr));
+        ::CFStringAppendCharacters(cfStr, chars.data(), static_cast<CFIndex>(chars.size()));
+        ::CFStringUppercase(cfStr, nullptr /*locale: none*/);
+
+        std::vector<UniChar> upper(::CFStringGetLength(cfStr));
+        ::CFStringGetCharacters(cfStr, CFRangeMake(0, upper.size()), upper.data());
+
+        //"chars" and "upper" have the same number of separators: segment i of "upper" is the upper case of character i
+        auto itUpper = upper.begin();
+        for (auto itChar = chars.begin(); itChar != chars.end() && itUpper != upper.end(); itChar += 2)
+        {
+            const auto itSep = std::find(itUpper, upper.end(), 0);
+            if (itSep - itUpper == 1 && (*itUpper < 0xD800 || *itUpper > 0xDFFF)) //1:1 mappings within the BMP only
+                table[*itChar] = *itUpper;
+            itUpper = itSep == upper.end() ? itSep : itSep + 1;
+        }
+        return table;
+    }();
+    return upperBmp[cp];
+}
 }
 #endif
+
+
+namespace
+{
 
 Zstring getUnicodeNormalForm_NonAsciiValidUtf(const Zstring& str, UnicodeNormalForm form)
 {
@@ -77,19 +191,12 @@ Zstring getUnicodeNormalForm_NonAsciiValidUtf(const Zstring& str, UnicodeNormalF
 
     try
     {
-#if defined ZEN_LINUX
         gchar* strNorm = ::g_utf8_normalize(str.c_str(), str.size(), form == UnicodeNormalForm::nfc ? G_NORMALIZE_NFC : G_NORMALIZE_NFD);
         if (!strNorm)
             throw SysError(formatSystemError("g_utf8_normalize", L"", L"Conversion failed."));
         ZEN_ON_SCOPE_EXIT(::g_free(strNorm));
 
         const std::string_view strNormView(strNorm, strSize(strNorm));
-#elif defined ZEN_MAC
-        CFMutableStringRef cfStr = createMutableCfString(str); //throw SysError
-        ZEN_ON_SCOPE_EXIT(::CFRelease(cfStr));
-        normalizeCfString(cfStr, form);
-        const Zstring strNormView = cfStringToUtf8(cfStr); //throw SysError
-#endif
 
         if (equalString(str, strNormView)) //avoid extra memory allocation
             return str;
@@ -150,7 +257,6 @@ Zstring getUpperCaseNonAscii(const Zstring& str)
     const Zstring& strValidUtf = getValidUtf(str);
     try
     {
-#if defined ZEN_LINUX
         const Zstring strNorm = getUnicodeNormalForm_NonAsciiValidUtf(strValidUtf, UnicodeNormalForm::native);
 
         Zstring output;
@@ -162,9 +268,6 @@ Zstring getUpperCaseNonAscii(const Zstring& str)
 
         static_assert(sizeof(impl::CodePoint) == sizeof(gunichar));
         return output;
-#elif defined ZEN_MAC
-        return getUpperCaseCf(strValidUtf, UnicodeNormalForm::native); //throw SysError
-#endif
 
     }
     catch (const SysError& e)
@@ -207,24 +310,6 @@ std::weak_ordering compareNoCaseUtf8(const char* lhs, size_t lhsLen, const char*
     //- wcsncasecmp: https://opensource.apple.com/source/Libc/Libc-763.12/string/wcsncasecmp-fbsd.c
     // => re-implement comparison based on g_unichar_tolower() to avoid memory allocations
 
-#if defined ZEN_MAC
-    //CoreFoundation maps case on whole strings (e.g. "ß" => "SS"), not per code point: compare the upper-case strings,
-    //which are NFD like the input; byte-wise UTF-8 order == code point order, like the Linux implementation below
-    const ZstringView strL(lhs, lhsLen);
-    const ZstringView strR(rhs, rhsLen);
-    if (isAsciiString(strL) && isAsciiString(strR)) //fast path: same result as getUpperCaseCf()
-    {
-        for (size_t i = 0; i < lhsLen && i < rhsLen; ++i)
-            if (const Zchar upL = asciiToUpper(lhs[i]), upR = asciiToUpper(rhs[i]);
-                upL != upR)
-                return static_cast<unsigned char>(upL) <=> static_cast<unsigned char>(upR);
-        return lhsLen <=> rhsLen;
-    }
-    const Zstring upperL = getUpperCaseCf(strL, UnicodeNormalForm::nfd); //throw SysError
-    const Zstring upperR = getUpperCaseCf(strR, UnicodeNormalForm::nfd); //
-    return std::lexicographical_compare_three_way(upperL.begin(), upperL.end(), upperR.begin(), upperR.end(),
-                                                  [](char l, char r) { return static_cast<unsigned char>(l) <=> static_cast<unsigned char>(r); });
-#elif defined ZEN_LINUX
     UtfDecoder<char> decL(lhs, lhsLen);
     UtfDecoder<char> decR(rhs, rhsLen);
     for (;;)
@@ -243,7 +328,6 @@ std::weak_ordering compareNoCaseUtf8(const char* lhs, size_t lhsLen, const char*
         if (charL != charR)
             return charL <=> charR;
     }
-#endif
 }
 }
 
