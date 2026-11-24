@@ -25,6 +25,8 @@
     #include <sys/mount.h> //statfs
     #include <copyfile.h>  //fcopyfile: extended attributes
     #include <sys/acl.h>
+    #include <sys/attr.h> //getattrlist: volume capabilities
+    #include <map>
 #endif
 
 
@@ -494,13 +496,64 @@ void copySecurityContext(const Zstring& source, const Zstring& target, ProcSymli
 #endif
 
 #if defined ZEN_MAC
+enum class VolumeFeature
+{
+    nativeXattr, //extended attributes stored by the file system itself (not emulated by AppleDouble "._" files)
+    acl,
+};
+//capabilities of the volume a statfs() result belongs to; looked up once per volume (getattrlist() on the mount point)
+bool volumeSupports(const struct statfs& volInfo, VolumeFeature feature) //nothrow: false if unknown
+{
+    struct VolCapBuf
+    {
+        uint32_t length;
+        vol_capabilities_attr_t caps;
+    } __attribute__((aligned(4), packed));
+
+    using CacheKey = std::pair<std::string /*mount point*/, uint64_t /*fsid*/>;
+    static auto& volCapCache = *new Protected<std::map<CacheKey, std::optional<vol_capabilities_attr_t>>>; //never destroyed: used until exit
+
+    const CacheKey key{volInfo.f_mntonname, (static_cast<uint64_t>(static_cast<uint32_t>(volInfo.f_fsid.val[0])) << 32) | static_cast<uint32_t>(volInfo.f_fsid.val[1])};
+    std::optional<vol_capabilities_attr_t> caps;
+    const bool cached = volCapCache.access([&](auto& cache)
+    {
+        if (const auto it = cache.find(key); it != cache.end())
+        {
+            caps = it->second;
+            return true;
+        }
+        return false;
+    });
+    if (!cached)
+    {
+        attrlist attrList{.bitmapcount = ATTR_BIT_MAP_COUNT, .volattr = ATTR_VOL_INFO | ATTR_VOL_CAPABILITIES};
+        VolCapBuf buf = {};
+        if (::getattrlist(volInfo.f_mntonname, &attrList, &buf, sizeof(buf), 0) == 0)
+            caps = buf.caps;
+        volCapCache.access([&](auto& cache) { cache.emplace(key, caps); });
+    }
+    if (!caps)
+        return false;
+
+    const uint32_t bit = feature == VolumeFeature::nativeXattr ? VOL_CAP_INT_EXTENDED_ATTR : VOL_CAP_INT_EXTENDED_SECURITY;
+    return (caps->valid       [VOL_CAPABILITIES_INTERFACES] & bit) &&
+           (caps->capabilities[VOL_CAPABILITIES_INTERFACES] & bit);
+}
+
+
 /*  extended attributes: best-effort metadata, never a reason to fail (and discard) a copy whose data is complete
-    - silently skipped where the target can't take them: not supported (FAT/exFAT without AppleDouble, some SMB/NFS/FUSE),
-      not permitted (protected names, e.g. com.apple.rootless), invalid name or value for the target
+    - copied only to volumes that store them natively: elsewhere (FAT, exFAT, many SMB/NFS shares) macOS emulates them with
+      AppleDouble "._<name>" files, which the next comparison would see as target-only items
+    - silently skipped where the target can't take them: not supported, not permitted (protected names, e.g. com.apple.rootless),
+      invalid name or value for the target
     - any other error (e.g. ERANGE, E2BIG, ENOSPC, EIO) is reported through logExtraError() (the sync log), and the item is kept:
       file_access.h has no warning channel for a copy that succeeded                                                          */
 void copyExtendedAttributes(int fdSource, int fdTarget, const Zstring& targetPath) //nothrow
 {
+    struct statfs volInfo = {};
+    if (::fstatfs(fdTarget, &volInfo) != 0 || !volumeSupports(volInfo, VolumeFeature::nativeXattr))
+        return;
+
     if (::fcopyfile(fdSource, fdTarget, nullptr /*state*/, COPYFILE_XATTR) != 0)
     {
         const ErrorCode ec = errno;
@@ -512,59 +565,97 @@ void copyExtendedAttributes(int fdSource, int fdTarget, const Zstring& targetPat
 }
 
 
-//copy the extended ACL (macOS counterpart of the SELinux context), and remove the target's if the source has none;
-//acl_set_*() neither opens the target for writing nor changes owner or mode (unlike copyfile(COPYFILE_ACL))
-//symlinks: acl_*_link_np() fail with ENOTSUP on APFS, but a descriptor of the link itself (O_SYMLINK) works, like "chmod -h +a"
+/*  extended ACL (the macOS counterpart of the SELinux context):
+    - the target's ACL becomes the source's explicit entries followed by the target's own inherited ones (from its parent folder);
+      nothing is written if neither has explicit entries (e.g. a target with only inherited entries stays as it is)
+    - acl_set_*() neither opens the target for writing nor changes owner or mode (unlike copyfile(COPYFILE_ACL))
+    - volumes without ACLs: nothing to read is no ACL, nothing that can be written is skipped like extended attributes are
+    - symlinks: acl_*_link_np() fail with ENOTSUP on APFS, but a descriptor of the link itself (O_SYMLINK) works, like "chmod -h +a" */
 void copyAccessControlList(const Zstring& source, const Zstring& target, ProcSymlink procSl) //throw FileError
 {
     auto openLink = [](const Zstring& linkPath) { return ::open(linkPath.c_str(), O_RDONLY | O_SYMLINK | O_CLOEXEC); };
 
-    int fdSource = -1;
-    if (procSl == ProcSymlink::asLink)
+    //read an item's ACL; none (or not supported) => empty ACL
+    auto getAcl = [&](const Zstring& itemPath, int fdLink, const std::wstring& errorMsg) //throw FileError
     {
-        fdSource = openLink(source);
-        if (fdSource == -1)
-            THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot read permissions of %x."), L"%x", fmtPath(source)), "open(O_SYMLINK)");
-    }
-    ZEN_ON_SCOPE_EXIT(if (fdSource != -1) ::close(fdSource));
-
-    acl_t acl = fdSource != -1 ?
-                ::acl_get_fd_np(fdSource, ACL_TYPE_EXTENDED) :
-                ::acl_get_file(source.c_str(), ACL_TYPE_EXTENDED);
-    if (!acl)
-    {
-        const ErrorCode ec = errno;
-        if (ec == ENOTSUP) //file system without ACLs: nothing to copy
-            return;
-
-        struct stat sourceInfo = {};
-        if (ec != ENOENT || //"no ACL" is ENOENT, too: tell it from a missing source
-            (fdSource == -1 && ::stat(source.c_str(), &sourceInfo) != 0))
-            throw FileError(replaceCpy(_("Cannot read permissions of %x."), L"%x", fmtPath(source)),
-                            formatSystemError(fdSource != -1 ? "acl_get_fd_np" : "acl_get_file", ec));
-
-        acl = ::acl_init(0); //no ACL => empty ACL
+        acl_t acl = fdLink != -1 ?
+                    ::acl_get_fd_np(fdLink, ACL_TYPE_EXTENDED) :
+                    ::acl_get_file(itemPath.c_str(), ACL_TYPE_EXTENDED);
         if (!acl)
-            THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot read permissions of %x."), L"%x", fmtPath(source)), "acl_init");
-    }
-    ZEN_ON_SCOPE_EXIT(::acl_free(acl));
+        {
+            const ErrorCode ec = errno;
+            struct stat itemInfo = {};
+            if (!(ec == ENOTSUP || ec == EOPNOTSUPP || ec == EINVAL) && //file system without ACLs: like no ACL
+                (ec != ENOENT || //"no ACL" is ENOENT, too: tell it from a missing item
+                 (fdLink == -1 && ::stat(itemPath.c_str(), &itemInfo) != 0)))
+                throw FileError(errorMsg, formatSystemError(fdLink != -1 ? "acl_get_fd_np" : "acl_get_file", ec));
 
+            acl = ::acl_init(0);
+            if (!acl)
+                THROW_LAST_FILE_ERROR(errorMsg, "acl_init");
+        }
+        return acl;
+    };
+
+    auto forEachEntry = [](acl_t acl, const auto& fun) //fun(acl_entry_t entry, bool inherited)
+    {
+        acl_entry_t entry = nullptr;
+        for (int entryId = ACL_FIRST_ENTRY; ::acl_get_entry(acl, entryId, &entry) == 0; entryId = ACL_NEXT_ENTRY)
+        {
+            acl_flagset_t flags = nullptr;
+            fun(entry, ::acl_get_flagset_np(entry, &flags) == 0 && ::acl_get_flag_np(flags, ACL_ENTRY_INHERITED) == 1);
+        }
+    };
+
+    int fdSource = -1;
     int fdTarget = -1;
+    ZEN_ON_SCOPE_EXIT(if (fdSource != -1) ::close(fdSource));
+    ZEN_ON_SCOPE_EXIT(if (fdTarget != -1) ::close(fdTarget));
     if (procSl == ProcSymlink::asLink)
     {
-        fdTarget = openLink(target);
-        if (fdTarget == -1)
+        if ((fdSource = openLink(source)) == -1)
+            THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot read permissions of %x."), L"%x", fmtPath(source)), "open(O_SYMLINK)");
+        if ((fdTarget = openLink(target)) == -1)
             THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot write permissions of %x."), L"%x", fmtPath(target)), "open(O_SYMLINK)");
     }
-    ZEN_ON_SCOPE_EXIT(if (fdTarget != -1) ::close(fdTarget));
+
+    const acl_t aclSource = getAcl(source, fdSource, replaceCpy(_("Cannot read permissions of %x."), L"%x", fmtPath(source))); //throw FileError
+    ZEN_ON_SCOPE_EXIT(::acl_free(aclSource));
+    const acl_t aclTarget = getAcl(target, fdTarget, replaceCpy(_("Cannot read permissions of %x."), L"%x", fmtPath(target))); //throw FileError
+    ZEN_ON_SCOPE_EXIT(::acl_free(aclTarget));
+
+    size_t explicitSource = 0;
+    size_t explicitTarget = 0;
+    forEachEntry(aclSource, [&](acl_entry_t, bool inherited) { if (!inherited) ++explicitSource; });
+    forEachEntry(aclTarget, [&](acl_entry_t, bool inherited) { if (!inherited) ++explicitTarget; });
+    if (explicitSource == 0 && explicitTarget == 0)
+        return; //nothing to copy, nothing to remove
+
+    acl_t aclNew = ::acl_init(0);
+    if (!aclNew)
+        THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot write permissions of %x."), L"%x", fmtPath(target)), "acl_init");
+    ZEN_ON_SCOPE_EXIT(::acl_free(aclNew));
+
+    bool copyOk = true;
+    auto appendEntry = [&](acl_entry_t entry)
+    {
+        acl_entry_t entryNew = nullptr;
+        if (::acl_create_entry(&aclNew, &entryNew) != 0 || ::acl_copy_entry(entryNew, entry) != 0)
+            copyOk = false;
+    };
+    forEachEntry(aclSource, [&](acl_entry_t entry, bool inherited) { if (!inherited) appendEntry(entry); });
+    forEachEntry(aclTarget, [&](acl_entry_t entry, bool inherited) { if ( inherited) appendEntry(entry); });
+    if (!copyOk)
+        THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot write permissions of %x."), L"%x", fmtPath(target)), "acl_copy_entry");
 
     if ((fdTarget != -1 ?
-         ::acl_set_fd_np(fdTarget, acl, ACL_TYPE_EXTENDED) :
-         ::acl_set_file(target.c_str(), ACL_TYPE_EXTENDED, acl)) != 0)
+         ::acl_set_fd_np(fdTarget, aclNew, ACL_TYPE_EXTENDED) :
+         ::acl_set_file(target.c_str(), ACL_TYPE_EXTENDED, aclNew)) != 0)
     {
         const ErrorCode ec = errno;
-        acl_entry_t entry = nullptr;
-        if (ec == ENOTSUP && ::acl_get_entry(acl, ACL_FIRST_ENTRY, &entry) != 0) //target without ACL support: fine if there is nothing to copy
+        struct statfs volInfo = {};
+        if ((fdTarget != -1 ? ::fstatfs(fdTarget, &volInfo) : ::statfs(target.c_str(), &volInfo)) == 0 &&
+            !volumeSupports(volInfo, VolumeFeature::acl)) //target volume without ACLs: skipped like extended attributes
             return;
         throw FileError(replaceCpy(_("Cannot write permissions of %x."), L"%x", fmtPath(target)),
                         formatSystemError(fdTarget != -1 ? "acl_set_fd_np" : "acl_set_file", ec));
@@ -739,18 +830,30 @@ void zen::copyDirectoryAttributes(const Zstring& sourcePath, const Zstring& targ
     if (!getParentFolderPath(sourcePath)) //=> root path
         return;
 
-#if defined ZEN_MAC //extended attributes (Finder tags/info, custom icons, ...), like copyNewFile() does for files
-    const int fdSource = ::open(sourcePath.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC); //own descriptors: copyfile() would open
-    if (fdSource == -1)                                                                   //them without O_CLOEXEC
-        THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot read file attributes of %x."), L"%x", fmtPath(sourcePath)), "open");
-    ZEN_ON_SCOPE_EXIT(::close(fdSource));
+#if defined ZEN_MAC //extended attributes (Finder tags/info, custom icons, ...), like copyNewFile() does for files: best effort
+    struct statfs volInfo = {};
+    if (::statfs(targetPath.c_str(), &volInfo) != 0 || !volumeSupports(volInfo, VolumeFeature::nativeXattr))
+        return;
 
-    const int fdTarget = ::open(targetPath.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-    if (fdTarget == -1)
-        THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot write file attributes of %x."), L"%x", fmtPath(targetPath)), "open");
-    ZEN_ON_SCOPE_EXIT(::close(fdTarget));
+    auto openDir = [](const Zstring& dirPath) -> std::optional<int>
+    {
+        const int fd = ::open(dirPath.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC); //own descriptors: copyfile() would open them without O_CLOEXEC
+        if (fd != -1)
+            return fd;
+        if (const ErrorCode ec = errno; ec != EACCES && ec != EPERM) //not readable: skip like extended attributes the target can't take
+            logExtraError(replaceCpy(_("Cannot write file attributes of %x."), L"%x", fmtPath(dirPath)) + L"\n\n" + formatSystemError("open", ec));
+        return std::nullopt;
+    };
+    const std::optional<int> fdSource = openDir(sourcePath);
+    if (!fdSource)
+        return;
+    ZEN_ON_SCOPE_EXIT(::close(*fdSource));
+    const std::optional<int> fdTarget = openDir(targetPath);
+    if (!fdTarget)
+        return;
+    ZEN_ON_SCOPE_EXIT(::close(*fdTarget));
 
-    copyExtendedAttributes(fdSource, fdTarget, targetPath); //nothrow
+    copyExtendedAttributes(*fdSource, *fdTarget, targetPath); //nothrow
 #endif
 }
 
