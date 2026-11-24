@@ -32,11 +32,18 @@ case "${STDLIB:-}" in
     *)      die "STDLIB must be empty or \"libc++\", not \"$STDLIB\"" ;;
 esac
 
-pkg-config --exists libcurl || die "libcurl not found by pkg-config: run build.sh first (or install the distribution's libcurl dev package)"
-CURL_INCLUDE="$(pkg-config --variable=includedir libcurl)"
-CURL_LIBDIR="$(pkg-config --variable=libdir libcurl)"
-if [ "$FFS_TARGET" = linux ]; then CURL_LIB="$CURL_LIBDIR/libcurl.so"; else CURL_LIB="$CURL_LIBDIR/libcurl.a"; fi
-[ -f "$CURL_LIB" ] || die "$CURL_LIB not found (libcurl from pkg-config: $CURL_LIBDIR)"
+if [ "$FFS_TARGET" = linux ]; then
+    pkg-config --exists libcurl || die "libcurl not found by pkg-config: run build.sh first (or install the distribution's libcurl dev package)"
+    CURL_INCLUDE="$(pkg-config --variable=includedir libcurl)"
+    CURL_LIB="$(pkg-config --variable=libdir libcurl)/libcurl.so"
+    PC_REQUIRES="Requires: libcurl" # the apps link the same libcurl anyway
+else
+    # the static libcurl from build-curl.sh; not through pkg-config: its libcurl.pc requires a zlib.pc, but zlib is the SDK's
+    CURL_INCLUDE="$INSTALL_DIR/include"
+    CURL_LIB="$INSTALL_DIR/lib/libcurl.a"
+    PC_REQUIRES="" # the app link (M3) adds libcurl and its dependencies itself
+fi
+[ -f "$CURL_LIB" ] || die "$CURL_LIB not found: run build.sh first"
 
 # rebuilt when the libcurl changes: the stamp of the curl from build.sh is part of the install id, and .curl records which
 # libcurl was used (the one in the deps prefix or the distribution's)
@@ -113,7 +120,7 @@ handler=\${prefix}/bin/crashpad_handler
 Name: sentry-native
 Description: sentry-native $SENTRY_NATIVE_VERSION, static, Crashpad backend, curl transport (built by .github/build/build-sentry-native.sh)
 Version: $SENTRY_NATIVE_VERSION
-Requires: libcurl
+$PC_REQUIRES
 Cflags: -I\${includedir} -DSENTRY_BUILD_STATIC
 Libs: -L\${libdir} ${LIBS[*]} $SYS_LIBS
 EOF
