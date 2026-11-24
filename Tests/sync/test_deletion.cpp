@@ -4,6 +4,7 @@
 // macOS: NSFileManager always uses the user's real trash (~/.Trash for the startup volume, where the test folders are), so the
 // items get names unique to this run and the test deletes them from the trash again; nothing else in the trash is touched.
 
+#include <cstdlib> //getenv
 #include "sync_test.h"
 
 using namespace zen;
@@ -56,7 +57,6 @@ TEST_CASE(syncDeletePermanently)
     const RunResult res = runSync({.left = left, .right = right, .deletion = DeletionVariant::permanent});
     CHECK_NO_ERRORS(res);
     CHECK_TREES_EQUAL(readTree(right), expectedRight);
-    CHECK_EQUAL(fs::directory_iterator(toPath(testDir)) == fs::directory_iterator(), false); //sanity
     CHECK_EQUAL(static_cast<int>(std::distance(fs::directory_iterator(toPath(testDir)), fs::directory_iterator())), 2); //nothing kept anywhere else
 }
 
@@ -170,7 +170,7 @@ SANDBOX_TEST_CASE(syncRecycleBin)
 
     //where the items went: the trash folder holds them under their names (or a variant of it if the name was taken)
 #if defined ZEN_LINUX
-    const Zstring trashFiles = appendPath(appendPath(getenv("XDG_DATA_HOME") ? Zstring(getenv("XDG_DATA_HOME")) : Zstring(), "Trash"), "files");
+    const Zstring trashFiles = appendPath(appendPath(std::getenv("XDG_DATA_HOME") ? Zstring(std::getenv("XDG_DATA_HOME")) : Zstring(), "Trash"), "files");
 #elif defined ZEN_MAC
     const Zstring trashFiles = appendPath(realHomePath(), ".Trash");
 #endif
