@@ -10,9 +10,11 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M1 Foundation | 1. Platform macros, `Tests/zen` | done | `d1e9037^..128099a`, fixes `584a353^..90c338a` | 8 findings: 7 fixed, 1 kept |
 | M1 Foundation | 2. Clang + libc++ on Linux | done | `9a0f61e^..8f3c1fd`, fixes `f36f54a`, `62e5860`, `8b96471`, `bbfdcb8`, `b12fa57`, `a2ac5e0`, `a3a3741` | 6 findings: 5 fixed, 1 kept |
 | M1 Foundation | 3. macOS dependency builds in CI | done | `8f3c1fd..5ef2d42`, fixes `93c562e^..c28f8f2` | 7 findings: all fixed |
-| M1 Foundation | Pull request | open, work paused until it is merged | | |
-| M2 Sentry | | next | | |
-| M3 macOS | | | | |
+| M1 Foundation | Pull request | merged as [#11](https://github.com/cuong-tran/FreeFileSync/pull/11) (squash, `9b6221a`); `dev` restarted from `main` | | bot review: 1 doc fix (`1cf3840`), 3 findings not valid |
+| M2 Sentry | 1. Interface, empty implementation, sentry-native build, Makefile switch, init | done | `cf27254^..304f86f`, fixes `7c0f9bc`, `07ce91b`, `c48509d`, `51829b2` | 10 findings: all fixed |
+| M2 Sentry | 2. Scrubbing, opt-out, first-start notice, test crash, symbol upload | done | `304f86f..51829b2`, fixes `c2b91b5^..b80eb4e` | 9 findings: all fixed |
+| M2 Sentry | Pull request | open, work paused until it is merged | | |
+| M3 macOS | | next | | |
 | M4 Windows | | | | |
 
 ## How the work runs
@@ -38,6 +40,10 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | 2026-11-23 | Third-party libraries on macOS are static: OpenSSL 3.5.9, libssh2 (pinned commit), libidn2 2.3.8, curl 8.21.0, wxWidgets 3.3.4 | Simple app bundle; nothing can leak in from Homebrew (host architecture only). curl verifies certificates against the macOS trust store. |
 | 2026-11-23 | libidn2 is built for both Mac architectures instead of using Apple's IDN in curl | `zen/socket.h` calls libidn2 directly, so one library serves both and the Linux code path is kept. |
 | 2026-11-23 | `Resources/Animal.dat`: ship an own image, do not copy it from the official binaries | It is missing from the source zip; the license of upstream's artwork in the binary packages is unclear. |
+| 2026-11-23 | Commits are authored as `Cuong-Tran <16017808+cuong-tran@users.noreply.github.com>` | Asked by the owner; the address of their existing commits on `main`. |
+| 2026-11-24 | After each merged milestone PR, `dev` is recreated from `main` | The PRs are squash-merged and the remote `dev` branch is deleted on merge. |
+| 2026-11-24 | Crash reports: nothing is uploaded until the user has answered the first-start notice; its default choice is to send. Batch runs with no stored answer send nothing. `FFS_NO_CRASH_REPORT=1` always wins | A Sentry build must not upload before the user knows; stricter than the plan's plain opt-out. |
+| 2026-11-24 | sentry-native 0.17.6, static, Crashpad backend, curl transport, in its own prefix `.build/sentry` | Cached separately from the other libraries; built only for `FFS_SENTRY=1`. |
 
 ## Needed from the repository owner
 
@@ -54,6 +60,8 @@ Marked `KNOWN_ISSUE` in `Tests/zen`, not fixed (upstream code):
 ## Open issues
 
 - `Resources/Animal.dat` is not in the upstream source zip, so every build from these sources (the Linux packages included) shows "Failed to load image" on first start, when the welcome dialog opens. Found by the new start check. CI uses a placeholder image for now. To do in M3 packaging: ship an own image in its place (decided over copying it from the official binaries, whose artwork license is unclear).
+- FreeFileSync sometimes does not end on SIGTERM (about 1 in 50 in the test loop): upstream's signal handler is not async-signal-safe and the main thread can block in it. Present before the Sentry work. The tests fall back to SIGKILL after 10 s; upstream's handler is left alone.
+- Not exercised yet, because the repository secrets are missing: a real upload to Sentry and `sentry-cli debug-files upload`.
 
 ## Review findings
 
@@ -96,3 +104,36 @@ Result of the step: `.github/workflows/macos-build.yml` builds and caches the li
 | 5 | Start check can time out when run as root with saved settings | nit | fixed in `147bdfd`: as root, the app runs as `nobody` |
 | 6 | Hard-coded Xcode 26.3 path in the macOS workflow | nit | fixed in `e939de1`: newest installed Xcode 26.x is selected at run time |
 | 7 | `CLAUDE.md` describes the old compiler detection | nit | fixed in `c28f8f2` |
+
+### M2 step 1 (`cf27254^..304f86f`, `/code-review medium`)
+
+Result of the step: `zen/crash_report.h` with a sentry-native and an empty implementation; `make FFS_SENTRY=1 SENTRY_DSN=...`; the DSN goes through a generated header, never a command line. The default build gains one empty object file and contains no Sentry code. Size with Sentry: about +0.9 MB per app plus a 1.3 MB `crashpad_handler`. sentry-native also builds for both macOS targets in CI.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | Consent is given unconditionally at start, so every Sentry build uploads without asking | important | fixed in `7c0f9bc`: consent follows the stored answer; none yet means reports are kept, not sent |
+| 2 | Concurrent instances share one database folder and reset each other's consent state | important | fixed in `7c0f9bc`: the consent file is no longer deleted; verified in the sentry-native and Crashpad sources that processes lock their own run folder and reports |
+| 3 | Resetting consent before init probably discards reports stored by an earlier run | important | fixed in `7c0f9bc`: reports are kept until consent is known, then sent or deleted; covered by a test |
+| 4 | Reports are not flushed on exits through `terminateProcess()` | important | fixed in `7c0f9bc` with `std::at_quick_exit`, no edit to upstream files |
+| 5 | A non-Sentry build deletes the crash handler a Sentry binary of another toolchain needs | important | fixed in `c48509d` |
+| 6 | `FFS_TEST_CRASH` can crash release builds on start | important | fixed in `7c0f9bc`: only while reporting is active and the environment is not `release` |
+| 7 | Sentry uses libcurl outside FreeFileSync's curl init/cleanup order | important | fixed in `07ce91b`: shutdown before `teardownAfs()`; curl's global init is reference-counted, so the init order is safe |
+| 8 | Confusing build error when the pkg-config file has no handler path | nit | fixed in `51829b2` |
+| 9 | `make clean` fails or leaves files behind for Sentry builds | nit | fixed in `51829b2` |
+| 10 | `crash_report_init.h` relies on transitive includes | nit | fixed in `7c0f9bc` |
+
+### M2 step 2 (`304f86f..51829b2`, `/code-review medium`)
+
+Result of the step: `zen/crash_scrub.*` removes paths, URLs, user and host names from report texts; setting `<CrashReports Enabled=.../>` in `GlobalSettings.xml`, a checkbox in the options dialog and a first-start notice; `Tests/sentry/run.sh` crashes the apps against a fake Sentry endpoint in nine scenarios; a "Sentry build" CI job; packages are built with Sentry and debug files uploaded only when the secrets exist. Minidumps contain module paths and stack memory, which cannot be scrubbed on the client; the README says so.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | OK in the options dialog stores consent "on" for a user who never saw the notice | important | fixed in `48bf917`: the checkbox starts unticked without an answer and is stored only when the user changes it; covered by a test |
+| 2 | Scrubber leaks paths after an unmatched quote or containing an apostrophe | important | fixed in `c2b91b5`: quotes are boundaries, unterminated quoted paths are scrubbed to the end of the line, linear time; adversarial and 10^6-character tests added |
+| 3 | The "no Sentry code in default builds" check can pass a binary full of it (SIGPIPE under `pipefail`) | important | fixed in `2083164`; CI now proves the check fails on a Sentry binary |
+| 4 | RealTimeSync keeps sending after the user opts out in FreeFileSync | important | fixed in `48bf917`: both apps watch `GlobalSettings.xml` (every 5 s) and apply a changed answer; covered by a test |
+| 5 | The "Default" button turns reporting back on after an opt-out | important | fixed in `48bf917` |
+| 6 | A second process can re-apply an old consent value while the GUI holds an unsaved change | important | fixed in `48bf917`: the answer is written to `GlobalSettings.xml` at once; a process without an answer withholds its own reports and leaves the shared state alone; two-process test added |
+| 7 | `make clean FFS_SENTRY=1` for one app removes the crash handler of the other | nit | fixed in `b80eb4e` |
+| 8 | `make clean all FFS_SENTRY=1` builds without the Sentry makefile part | nit | fixed in `b80eb4e` |
+| 9 | `FFS_SENTRY=0` skips the stale-handler cleanup | nit | fixed in `b80eb4e` |

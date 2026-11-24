@@ -4915,6 +4915,11 @@ OptionsDlgGenerated::OptionsDlgGenerated( wxWindow* parent, wxWindowID id, const
 
 	bSizer160->Add( bSizer178, 0, wxEXPAND, 5 );
 
+	m_checkBoxCrashReports = new wxCheckBox( m_panel39, wxID_ANY, _("Send crash reports"), wxDefaultPosition, wxDefaultSize, 0 );
+	m_checkBoxCrashReports->SetToolTip( _("When the program crashes, send the crash dump, the program version and the operating system version. No file lists, log files or synchronization settings.") );
+
+	bSizer160->Add( m_checkBoxCrashReports, 0, wxALL, 5 );
+
 
 	bSizer186->Add( bSizer160, 0, wxALIGN_CENTER_VERTICAL|wxALL, 5 );
 

@@ -15,6 +15,7 @@
 #include <wx+/darkmode.h>
 #include <wx+/image_resources.h>
 #include "config.h"
+#include "../crash_report_init.h"
 #include "../localization.h"
 #include "../ffs_paths.h"
 #include "../return_codes.h"
@@ -72,6 +73,8 @@ bool Application::OnInit()
         notifyAppError(msg);
     });
 
+    fff::startCrashReporting("RealTimeSync"); //as early as possible, but after initExtraLog(): getConfigDirPath() may log
+
     //tentatively set program language to OS default until GlobalSettings.xml is read later
     try { fff::localizationInit(appendPath(fff::getResourceDirPath(), Zstr("Languages.zip"))); } //throw FileError
     catch (const FileError& e) { logExtraError(e.toString()); }
@@ -79,6 +82,10 @@ bool Application::OnInit()
     GlobalConfig globalCfg;
     try { globalCfg = getGlobalConfig(); } //throw FileError
     catch (const FileError& e) { logExtraError(e.toString()); }
+
+    fff::applyCrashReportSetting("RealTimeSync", globalCfg.crashReports);
+    //RealTimeSync runs for days: follow an answer FreeFileSync stores meanwhile (crash_report_init.h)
+    fff::startCrashReportSettingWatch(appendPath(fff::getConfigDirPath(), Zstr("GlobalSettings.xml")), globalCfg.crashReports);
 
     try { fff::setLanguage(globalCfg.programLanguage); } //throw FileError
     catch (const FileError& e) { logExtraError(e.toString()); }
@@ -213,6 +220,8 @@ int Application::OnExit()
     //assert(rv); -> fails if clipboard wasn't used
     fff::localizationCleanup();
     imageResourcesCleanup();
+    fff::stopCrashReportSettingWatch();
+    shutdownCrashReporting();
     return wxApp::OnExit();
 }
 

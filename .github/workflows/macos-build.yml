@@ -6,7 +6,8 @@
 # - "Libraries (<arch>)": OpenSSL, libssh2, libidn2, libcurl and wxWidgets (wxOSX/Cocoa) as static libraries with the
 #   .github/build scripts (FFS_TARGET=macos-<arch>), arm64 natively and x86_64 cross-compiled on the same arm64 runner,
 #   cached like the Linux libraries. Uploads one archive per architecture with the build log and a manifest, and a
-#   (non-failing) syntax check of every zen/*.cpp as the macOS porting work list.
+#   (non-failing) syntax check of every zen/*.cpp as the macOS porting work list. The same job builds sentry-native (crash
+#   reporting for FFS_SENTRY=1 builds, .github/build/build-sentry-native.sh) against those libraries, cached on its own.
 #
 # Later stages slot in after "Libraries": a job per architecture that builds FreeFileSync.app and RealTimeSync.app
 # against the cached libraries (needs: libraries), and a "wrap-mac-dmg" job that turns each .app into a .dmg and uploads
@@ -139,6 +140,26 @@ jobs:
           path: .build/deps/macos-${{ matrix.arch }}
           key: ${{ steps.cache.outputs.cache-primary-key }}
 
+      # sentry-native: its own prefix and cache (.build/sentry/<target>), keyed on everything the libraries' key has plus
+      # its script, because it is built against the libcurl in the prefix above
+      - name: Restore sentry-native
+        id: sentry-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .build/sentry/macos-${{ matrix.arch }}
+          key: sentry-macos-${{ matrix.arch }}-${{ steps.compiler.outputs.id }}-${{ hashFiles('.github/build/common.sh', '.github/build/build.sh', '.github/build/build-openssl.sh', '.github/build/build-libssh2.sh', '.github/build/build-libidn2.sh', '.github/build/build-curl.sh', '.github/build/build-wxwidgets.sh', '.github/build/build-sentry-native.sh', '.github/build/patches/**') }}
+
+      - name: Build sentry-native
+        if: steps.sentry-cache.outputs.cache-hit != 'true'
+        run: .github/build/build-sentry-native.sh 2>&1 | tee sentry-build.log
+
+      - name: Save sentry-native
+        if: steps.sentry-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .build/sentry/macos-${{ matrix.arch }}
+          key: ${{ steps.sentry-cache.outputs.cache-primary-key }}
+
       # fails the job if a library is missing, has another architecture or another deployment target (also on a cache hit)
       - name: Check libraries and write the manifest
         run: |
@@ -163,6 +184,17 @@ jobs:
             [ "$minos" = "$target" ] || { echo "::error::$file is built for macOS $minos, not $target"; exit 1; }
           done
           if ls "$prefix"/lib/*.dylib >/dev/null 2>&1; then echo "::error::shared libraries in the prefix:"; ls "$prefix"/lib/*.dylib; exit 1; fi
+          # sentry-native: static libraries and crashpad_handler for the target architecture and deployment target
+          sentry=".build/sentry/macos-${{ matrix.arch }}"
+          echo "sentry-native $(sed -n 's/^Version: //p' "$sentry/lib/pkgconfig/sentry-native.pc"):" >> manifest.txt
+          for file in "$sentry"/lib/lib{sentry,crashpad_client,crashpad_util,mini_chromium}.a "$sentry/bin/crashpad_handler"; do
+            test -f "$file" || { echo "::error::$file is missing"; exit 1; }
+            archs="$(lipo -archs "$file")"
+            minos="$(otool -l "$file" | awk '/LC_BUILD_VERSION/ { found = 1 } found && $1 == "minos" && !done { print $2; done = 1 }')"
+            echo "    $(basename "$file"): $archs, minos $minos" >> manifest.txt
+            [ "$archs" = "${{ matrix.arch }}" ] || { echo "::error::$file is built for $archs"; exit 1; }
+            [ "$minos" = "$target" ] || { echo "::error::$file is built for macOS $minos, not $target"; exit 1; }
+          done
           echo "wx-config: $("$prefix/bin/wx-config" --version) $("$prefix/bin/wx-config" --selected-config)" >> manifest.txt
           export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig"
           echo "libcurl $(pkg-config --modversion libcurl 2>&1), static link flags: $(pkg-config --static --libs libcurl 2>&1)" >> manifest.txt
@@ -185,8 +217,8 @@ jobs:
       - name: Pack build log and manifest
         if: always()
         run: |
-          touch build.log manifest.txt
-          tar czf macos-libraries-${{ matrix.arch }}.tar.gz build.log manifest.txt
+          touch build.log sentry-build.log manifest.txt
+          tar czf macos-libraries-${{ matrix.arch }}.tar.gz build.log sentry-build.log manifest.txt
 
       - name: Upload build log and manifest
         if: always()

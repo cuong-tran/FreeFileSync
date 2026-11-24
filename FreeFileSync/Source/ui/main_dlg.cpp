@@ -14,6 +14,7 @@
 #include <zen/shutdown.h>
 #include <zen/resolve_path.h>
 #include <zen/sys_info.h>
+#include <zen/crash_report.h>
 #include <wx/colordlg.h>
 #include <wx/wupdlock.h>
 #include <wx/sound.h>
@@ -582,6 +583,15 @@ void MainDialog::create(const FfsGuiConfig& guiCfg, const std::vector<Zstring>& 
     //construction complete! trigger special events:
     //------------------------------------------------------------------------------------------
 
+    //crash reporting (zen/crash_report.h): say once what is sent, with the choice to turn it off => right after the welcome dialog
+    const bool crashReportNotice = !mainDlg->globalCfg_.crashReports && isCrashReportingActive();
+    auto showCrashNotice = [mainDlg]
+    {
+        mainDlg->globalCfg_.crashReports = showCrashReportNotice(mainDlg);
+        try { writeCrashReportSetting(mainDlg->globalCfg_, mainDlg->globalCfgFilePath_); } //throw FileError
+        catch (const FileError& e) { showNotificationDialog(mainDlg, DialogInfoType::error, PopupDialogCfg().setDetailInstructions(e.toString())); }
+    };
+
     //show welcome dialog after FreeFileSync update => show *before* any other dialogs
     if (mainDlg->globalCfg_.welcomeDialogLastVersion != ffsVersion)
     {
@@ -589,8 +599,10 @@ void MainDialog::create(const FfsGuiConfig& guiCfg, const std::vector<Zstring>& 
 
         //showAboutDialog(mainDlg); => dialog centered incorrectly (Centos)
         //mainDlg->CallAfter([mainDlg] { showAboutDialog(mainDlg); }); => dialog centered incorrectly (Windows, Centos)
-        mainDlg->guiQueue_.processAsync([] {}, [mainDlg]() { showAboutDialog(mainDlg); }); //apparently oh-kay?
+        mainDlg->guiQueue_.processAsync([] {}, [mainDlg, crashReportNotice, showCrashNotice]() { showAboutDialog(mainDlg); if (crashReportNotice) showCrashNotice(); }); //apparently oh-kay?
     }
+    else if (crashReportNotice)
+        mainDlg->guiQueue_.processAsync([] {}, showCrashNotice);
 
 
     //if FFS is started with a *.ffs_gui file as commandline parameter AND all directories contained exist, comparison shall be started right away
@@ -6216,8 +6228,13 @@ void MainDialog::setAddFolderPairs(const std::vector<LocalPairConfig>& newPairs)
 void MainDialog::onMenuOptions(wxCommandEvent& event)
 {
     const ColorTheme colorThemeOld = globalCfg_.appColorTheme;
+    const std::optional<bool> crashReportsOld = globalCfg_.crashReports;
 
     showOptionsDlg(this, globalCfg_);
+
+    if (globalCfg_.crashReports != crashReportsOld) //the user's consent: stored at once for the other processes (crash_report_init.h)
+        try { writeCrashReportSetting(globalCfg_, globalCfgFilePath_); } //throw FileError
+        catch (const FileError& e) { showNotificationDialog(this, DialogInfoType::error, PopupDialogCfg().setDetailInstructions(e.toString())); }
 
     if (!equalAppearance(globalCfg_.appColorTheme, colorThemeOld))
     {

@@ -961,6 +961,7 @@ class OptionsDlgGenerated : public wxDialog
 		wxBoxSizer* bSizerLockedFiles;
 		wxCheckBox* m_checkBoxCopyLocked;
 		wxCheckBox* m_checkBoxCopyPermissions;
+		wxCheckBox* m_checkBoxCrashReports;
 		wxBoxSizer* bSizerColorTheme;
 		wxStaticBitmap* m_bitmapColorTheme;
 		wxChoice* m_choiceColorTheme;

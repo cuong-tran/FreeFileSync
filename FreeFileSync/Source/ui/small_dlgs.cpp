@@ -10,6 +10,7 @@
 #include <zen/format_unit.h>
 #include <zen/build_info.h>
 #include <zen/file_io.h>
+#include <zen/crash_report.h>
 #include <wx/wupdlock.h>
 #include <wx/filedlg.h>
 #include <wx/sound.h>
@@ -1406,6 +1407,7 @@ private:
     std::unordered_map<std::wstring /*translation*/, std::wstring /*english*/> descriptionTransToEng_; //mapping for external application config
 
     const GlobalConfig defaultCfg_;
+    const bool crashReportsShown_; //initial state of the crash report checkbox: the stored answer, unticked if none
 
     EnumDescrList<ColorTheme> enumColorTheme_
     {
@@ -1467,6 +1469,7 @@ private:
 
 OptionsDlg::OptionsDlg(wxWindow* parent, GlobalConfig& globalCfg) :
     OptionsDlgGenerated(parent),
+    crashReportsShown_(globalCfg.crashReports.value_or(false)),
 
     logFolderSelector_(this, *m_panelLogfile, *m_buttonSelectLogFolder, *m_bpButtonSelectAltLogFolder, *m_logFolderPath, globalCfg.logFolderLastSelected, globalCfg.sftpKeyFileLastSelected,
                        nullptr /*staticText*/, nullptr /*dropWindow2*/, nullptr /*droppedPathsFilter*/,
@@ -1562,6 +1565,9 @@ OptionsDlg::OptionsDlg(wxWindow* parent, GlobalConfig& globalCfg) :
     m_checkBoxFailSafe       ->SetValue(globalCfg.failSafeFileCopy);
     m_checkBoxCopyLocked     ->SetValue(globalCfg.copyLockedFiles);
     m_checkBoxCopyPermissions->SetValue(globalCfg.copyFilePermissions);
+
+    m_checkBoxCrashReports->Show(isCrashReportingAvailable()); //only in builds with crash reporting (zen/crash_report.h)
+    m_checkBoxCrashReports->SetValue(crashReportsShown_); //no answer yet: unticked, it claims no consent
 
     bSizerColorTheme->Show(darkModeAvailable());
     enumColorTheme_.set(globalCfg.appColorTheme);
@@ -1896,6 +1902,12 @@ void OptionsDlg::onOkay(wxCommandEvent& event)
     globalCfgOut_.failSafeFileCopy    = m_checkBoxFailSafe->GetValue();
     globalCfgOut_.copyLockedFiles     = m_checkBoxCopyLocked->GetValue();
     globalCfgOut_.copyFilePermissions = m_checkBoxCopyPermissions->GetValue();
+    //the setting records consent: it changes only when the user changes the checkbox (the caller stores it at once)
+    if (isCrashReportingAvailable() && m_checkBoxCrashReports->GetValue() != crashReportsShown_)
+    {
+        globalCfgOut_.crashReports = m_checkBoxCrashReports->GetValue();
+        setCrashReportingConsent(*globalCfgOut_.crashReports ? CrashReportConsent::given : CrashReportConsent::revoked);
+    }
 
     globalCfgOut_.appColorTheme = enumColorTheme_.get();
 
@@ -2481,3 +2493,19 @@ void DownloadProgressWindow::requestUiUpdate()                      { pimpl_->re
 
 //########################################################################################
 
+//########################################################################################
+
+bool fff::showCrashReportNotice(wxWindow* parent)
+{
+    bool sendReports = true;
+    showNotificationDialog(parent, DialogInfoType::info, PopupDialogCfg().
+                           setTitle(_("Crash reports")).
+                           setMainInstructions(_("When FreeFileSync crashes, this build sends a crash report to its developers.")).
+                           setDetailInstructions(_("A crash report contains the crash dump (the state of the program at the moment of the crash), "
+                                                   "the program version and the operating system version. "
+                                                   "No file lists, log files or synchronization settings are sent, and file paths are removed from error messages.") + L"\n\n" +
+                                                 _("You can change this later in the options.")).
+                           setCheckBox(sendReports, _("Send crash reports")));
+    setCrashReportingConsent(sendReports ? CrashReportConsent::given : CrashReportConsent::revoked);
+    return sendReports;
+}

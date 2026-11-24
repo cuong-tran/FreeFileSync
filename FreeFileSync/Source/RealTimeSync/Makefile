@@ -40,6 +40,16 @@ else ifneq ($(STDLIB),)
     $(error STDLIB must be empty or "libc++", not "$(STDLIB)")
 endif
 
+#crash reporting: see ../Makefile
+ifeq ($(FFS_SENTRY),1)
+    ifeq ($(strip $(SENTRY_DSN))$(if $(filter-out clean,$(MAKECMDGOALS)),,$(filter clean,$(MAKECMDGOALS))),) #"make clean" alone needs no DSN
+        $(error FFS_SENTRY=1 needs a DSN: make FFS_SENTRY=1 SENTRY_DSN=<dsn>, or SENTRY_DSN in the environment)
+    endif
+    crashReportSuffix := -sentry
+else ifneq ($(FFS_SENTRY),)
+    $(error FFS_SENTRY must be empty or 1, not "$(FFS_SENTRY)")
+endif
+
 CXX += -pthread
 
 CXXFLAGS += $(shell wx-config --cxxflags --debug=no)
@@ -93,18 +103,34 @@ cppFiles += ../../../zen/sys_info.cpp
 cppFiles += ../../../zen/sys_version.cpp
 cppFiles += ../../../zen/thread.cpp
 cppFiles += ../../../zen/zstring.cpp
+ifeq ($(FFS_SENTRY),1)
+cppFiles += ../../../zen/crash_report_sentry.cpp
+cppFiles += ../../../zen/crash_scrub.cpp
+else
+cppFiles += ../../../zen/crash_report_none.cpp
+endif
 
 #object files stay inside this checkout instead of a fixed folder in the shared temp directory:
 #builds of different checkouts never mix their objects, and other users can't plant files or symlinks there
-objPath := ../../Build/Obj/$(exeName)
+objPath := ../../Build/Obj/$(exeName)$(crashReportSuffix)
 
 objFiles := $(cppFiles:%=$(objPath)/ffs/src/rts/%.o)
 
 all: ../../Build/Bin/$(exeName)
 
-../../Build/Bin/$(exeName): $(objFiles)
+#relink after switching between the default and the FFS_SENTRY=1 build (see ../Makefile)
+crashReportStamp := $(patsubst %-sentry,%,$(objPath)).crashreport
+$(shell mkdir -p $(dir $(crashReportStamp)) && { echo '$(FFS_SENTRY)' | cmp -s - $(crashReportStamp) || echo '$(FFS_SENTRY)' > $(crashReportStamp); })
+
+../../Build/Bin/$(exeName): $(objFiles) $(crashReportStamp)
 	mkdir -p $(dir $@)
-	$(CXX) -o $@ $^ $(LDFLAGS)
+	$(CXX) -o $@ $(objFiles) $(LDFLAGS)
+
+#not for "make clean" alone: crash_report.mk checks that sentry-native is installed ("make clean all" still includes it)
+ifeq ($(FFS_SENTRY)$(if $(filter-out clean,$(MAKECMDGOALS)),,$(filter clean,$(MAKECMDGOALS))),1)
+binDir := ../../Build/Bin
+include ../crash_report.mk
+endif
 
 $(objPath)/ffs/src/rts/%.o : %
 	mkdir -p $(dir $@)
@@ -124,4 +150,7 @@ $(wxColorHookStamp): FORCE
 
 clean:
 	rm -rf $(objPath)
-	rm -f ../../Build/Bin/$(exeName)
+	rm -f ../../Build/Bin/$(exeName) $(crashReportStamp)
+ifeq ($(FFS_SENTRY),1)
+	if ! compgen -G '../../Build/Bin/FreeFileSync_*' > /dev/null && ! compgen -G '../../Build/Bin/RealTimeSync_*' > /dev/null; then rm -f ../../Build/Bin/crashpad_handler; fi #still needed by another binary?
+endif

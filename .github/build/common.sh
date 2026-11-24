@@ -9,6 +9,8 @@
 #   FFS_SKIP_PATCHES  set to 1 to build a library version that has no patch in patches/
 #   FFS_UNPATCHED     set to 1 to build every library without its patch, even if patches/ has one (CI uses it
 #                     to check that FreeFileSync still compiles against stock libraries)
+#   FFS_SENTRY_PREFIX install prefix for sentry-native, built only with FFS_SENTRY=1 (default: $FFS_BUILD_DIR/sentry on
+#                     Linux, $FFS_BUILD_DIR/sentry/<target> on macOS; separate from the other libraries so it is cached on its own)
 #   JOBS              parallel make jobs (default: nproc)
 
 # associative arrays below; macOS ships bash 3.2 as /bin/bash, so the scripts start with "#!/usr/bin/env bash"
@@ -48,9 +50,11 @@ SOURCE_DIR="$BUILD_DIR/src"
 if [ "$FFS_TARGET" = linux ]; then
     WORK_DIR="$BUILD_DIR/tmp"
     INSTALL_DIR="$(realpath -m -- "${FFS_DEPS_PREFIX:-$BUILD_DIR/deps}")"
+    SENTRY_PREFIX="$(realpath -m -- "${FFS_SENTRY_PREFIX:-$BUILD_DIR/sentry}")"
 else
     WORK_DIR="$BUILD_DIR/tmp/$FFS_TARGET"
     INSTALL_DIR="$(realpath -m -- "${FFS_DEPS_PREFIX:-$BUILD_DIR/deps/$FFS_TARGET}")"
+    SENTRY_PREFIX="$(realpath -m -- "${FFS_SENTRY_PREFIX:-$BUILD_DIR/sentry/$FFS_TARGET}")"
 fi
 STAMP_DIR="$INSTALL_DIR/.stamps"
 JOBS="${JOBS:-$(nproc)}"
@@ -102,6 +106,8 @@ declare -A KNOWN_SHA256=(
     [wxWidgets-3.3.4.tar.bz2]=815c16cafa4fcbfcf25c5c0a3418309c62257b8a3b6f91d85a1367a134f98c98
     # macOS only (Linux uses the distribution's libidn2); same value as Homebrew's libidn2 formula
     [libidn2-2.3.8.tar.gz]=f557911bf6171621e1f72ff35f5b1825bb35b52ed45325dcdee931e5d3c0787a
+    # only with FFS_SENTRY=1: the release's "sentry-native.zip" (sources with the crashpad submodule), saved under this name
+    [sentry-native-0.17.6.zip]=40b4b70cbada5bfae5b73f8267831dd023ec676d9676fb0d890878f31d2b5055
 )
 
 log() { printf '\n==> %s\n' "$*" >&2; }
@@ -128,8 +134,9 @@ mark_installed() {
     install_id "$@" >"$STAMP_DIR/$1"
 }
 
+# DEP_STAMP_DIR: where the dependencies' stamps are (default: STAMP_DIR; sentry-native has its own prefix and stamps)
 install_id() {
-    local name="$1" dep stamp
+    local name="$1" dep stamp depStampDir="${DEP_STAMP_DIR:-$STAMP_DIR}"
     shift
     if [ -f "$PATCH_DIR/$name.patch" ] && [ "${FFS_UNPATCHED:-0}" != 1 ]; then sha256sum "$PATCH_DIR/$name.patch" | cut -d' ' -f1; else echo unpatched; fi
     sha256sum "$CALLER_SCRIPT" | cut -d' ' -f1 # the calling build-<lib>.sh, for its configure options
@@ -139,11 +146,32 @@ install_id() {
     echo "CXX=${CXX:-c++}: $("${CXX:-c++}" --version 2>/dev/null | sed -n 1p)"
     echo "CFLAGS=${CFLAGS:-} CXXFLAGS=${CXXFLAGS:-}"
     for dep in "$@"; do
-        for stamp in "$STAMP_DIR/$dep"-*; do
+        for stamp in "$depStampDir/$dep"-*; do
             [ -f "$stamp" ] && echo "$(basename "$stamp") $(sha256sum <"$stamp" | cut -d' ' -f1)"
         done
     done
     return 0
+}
+
+# download_archive <archive file name> <url>: downloads the archive to $ARCHIVE_DIR (unless it is there already) and
+# verifies it against KNOWN_SHA256
+download_archive() {
+    local file="$1" url="$2"
+    local archive="$ARCHIVE_DIR/$file"
+    mkdir -p "$ARCHIVE_DIR" "$SOURCE_DIR"
+    if [ ! -f "$archive" ]; then
+        log "Downloading $url"
+        curl -fL --retry 3 -o "$archive.part" "$url"
+        mv "$archive.part" "$archive"
+    fi
+
+    local expected="${KNOWN_SHA256[$file]:-}"
+    if [ -n "$expected" ]; then
+        echo "$expected  $archive" | sha256sum -c - >/dev/null ||
+            { rm -f "$archive"; die "checksum mismatch for $file (deleted, run again to re-download)"; }
+    else
+        log "No known checksum for $file, not verified"
+    fi
 }
 
 # fetch_source <name-version> <archive file name> <url> [nopatch]
@@ -163,20 +191,7 @@ fetch_source() {
         die "no patch for $name in $PATCH_DIR: port the $name fixes from Bugs.txt first, or set FFS_SKIP_PATCHES=1 to build it unpatched"
     fi
 
-    mkdir -p "$ARCHIVE_DIR" "$SOURCE_DIR"
-    if [ ! -f "$archive" ]; then
-        log "Downloading $url"
-        curl -fL --retry 3 -o "$archive.part" "$url"
-        mv "$archive.part" "$archive"
-    fi
-
-    local expected="${KNOWN_SHA256[$file]:-}"
-    if [ -n "$expected" ]; then
-        echo "$expected  $archive" | sha256sum -c - >/dev/null ||
-            { rm -f "$archive"; die "checksum mismatch for $file (deleted, run again to re-download)"; }
-    else
-        log "No known checksum for $file, not verified"
-    fi
+    download_archive "$file" "$url"
 
     rm -rf "${SOURCE_DIR:?}/$name"
     tar xf "$archive" -C "$SOURCE_DIR"

@@ -11,7 +11,16 @@
 # - "clang + libc++": Ubuntu 24.04 with clang 20 and LLVM's libc++ (make STDLIB=libc++), the compiler and C++ library
 #   family of the macOS and Windows ports, against the patched libssh2 and a wxWidgets built with libc++ (the
 #   distribution's OpenSSL and libcurl are C libraries and work with either C++ library). Builds and links both apps
-#   (named <app>_x86_64-clang-libc++, see the makefiles), checks that they use libc++ and that they start (check-app-starts.sh).
+#   (named <app>_x86_64-clang-libc++, see the makefiles), checks that they use libc++ and that they start (check-app-starts.sh),
+#   and that they contain no crash reporting code (Tests/sentry/run.sh --default-build).
+# - "Sentry build": both apps with crash reporting (make FFS_SENTRY=1) against sentry-native (.github/build/build-sentry-native.sh,
+#   cached) and a fake DSN on 127.0.0.1, then Tests/sentry/run.sh against a fake Sentry endpoint, and package.sh's split of the
+#   debug files checked with sentry-cli.
+#
+# Crash reporting in the packages: with the repository secret SENTRY_DSN set, the Packages jobs build with FFS_SENTRY=1 against
+# it and, with SENTRY_AUTH_TOKEN, SENTRY_ORG and SENTRY_PROJECT, upload the debug files with sentry-cli. Without the secret
+# (forks, pull requests from forks) they build exactly as before, without any reporting code, and say so in the job summary.
+# Secrets reach the scripts only through the environment of the steps that need them, never on a command line.
 name: Linux build
 
 on:
@@ -28,6 +37,7 @@ on:
       - "libcurl/**"
       - "libssh2/**"
       - "xBRZ/**"
+      - "Tests/sentry/**"
   pull_request:
     paths: *build-paths
   workflow_dispatch:
@@ -89,8 +99,63 @@ jobs:
           path: .build/deps
           key: ${{ steps.cache.outputs.cache-primary-key }}
 
+      # crash reporting only with the repository secret (see the header); the secret itself is never echoed or stored
+      - name: Crash reporting
+        id: sentry
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+        run: |
+          if [ -n "$SENTRY_DSN" ]; then
+            echo "enabled=1" >> "$GITHUB_OUTPUT"
+            msg="on: built with FFS_SENTRY=1 against the SENTRY_DSN secret"
+            if [ -n "$SENTRY_AUTH_TOKEN" ] && [ -n "$SENTRY_ORG" ] && [ -n "$SENTRY_PROJECT" ]; then
+              echo "upload=1" >> "$GITHUB_OUTPUT"
+              msg="$msg; debug files are uploaded with sentry-cli"
+            else
+              msg="$msg; debug files are not uploaded (SENTRY_AUTH_TOKEN, SENTRY_ORG or SENTRY_PROJECT is not set)"
+            fi
+          else
+            msg="off: the SENTRY_DSN secret is not set (or not available to this run), so the packages are built as before, without any crash reporting code"
+          fi
+          echo "$msg"
+          echo "**Crash reporting (${{ matrix.arch }})**: $msg" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Restore sentry-native
+        id: sentry-cache
+        if: steps.sentry.outputs.enabled == '1'
+        uses: actions/cache/restore@v4
+        with:
+          path: .build/sentry
+          # built against the libcurl in .build/deps: everything in the libraries' key, plus its own script
+          key: sentry-ubuntu-24.04-${{ matrix.arch }}-gcc14-${{ hashFiles('.github/build/common.sh', '.github/build/build.sh', '.github/build/build-openssl.sh', '.github/build/build-libssh2.sh', '.github/build/build-curl.sh', '.github/build/build-wxwidgets.sh', '.github/build/build-sentry-native.sh', '.github/build/patches/**') }}
+
+      - name: Build sentry-native
+        if: steps.sentry.outputs.enabled == '1' && steps.sentry-cache.outputs.cache-hit != 'true'
+        run: .github/build/build-sentry-native.sh
+
+      - name: Save sentry-native
+        if: steps.sentry.outputs.enabled == '1' && steps.sentry-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .build/sentry
+          key: ${{ steps.sentry-cache.outputs.cache-primary-key }}
+
       - name: Build FreeFileSync and RealTimeSync
-        run: .github/build/build-free-file-sync.sh 2>&1 | tee build.log
+        env:
+          FFS_SENTRY: ${{ steps.sentry.outputs.enabled }}
+          SENTRY_DSN: ${{ steps.sentry.outputs.enabled == '1' && secrets.SENTRY_DSN || '' }}
+          SENTRY_ENVIRONMENT: ${{ github.ref == 'refs/heads/main' && 'release' || 'ci' }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          export FFS_GIT_SHA="${SOURCE_SHA:0:12}"
+          .github/build/build-free-file-sync.sh 2>&1 | tee build.log
+
+      - name: Check the binaries contain no crash reporting code
+        if: steps.sentry.outputs.enabled != '1'
+        run: Tests/sentry/run.sh --default-build FreeFileSync/Build/Bin/FreeFileSync_${{ matrix.arch }} FreeFileSync/Build/Bin/RealTimeSync_${{ matrix.arch }}
 
       # the makefiles only warn (and build a fallback) when wxWidgets lacks the Bugs.txt color hook,
       # so make sure the patched wxWidgets was actually used
@@ -111,7 +176,21 @@ jobs:
         env:
           DEB_VERSION_SUFFIX: +ci${{ github.run_number }}
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }} # not the temporary merge commit of a PR
+          FFS_SENTRY: ${{ steps.sentry.outputs.enabled }} # ships crashpad_handler, splits the debug info into .build/debug-files
         run: .github/build/package.sh
+
+      # sentry-cli reads the token, organization and project from the environment: nothing secret on its command line
+      - name: Upload debug files to Sentry
+        if: steps.sentry.outputs.upload == '1'
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+        run: |
+          cli="$(.github/build/fetch-sentry-cli.sh)"
+          "$cli" --version
+          for f in .build/debug-files/*; do "$cli" debug-files check "$f"; done
+          "$cli" debug-files upload .build/debug-files
 
       - name: Upload packages
         uses: actions/upload-artifact@v4
@@ -246,6 +325,7 @@ jobs:
             grep -q 'libc++.so' needed.txt || { echo "::error::$app is not linked against libc++"; exit 1; }
             if grep -q 'libstdc++' needed.txt; then echo "::error::$app is linked against libstdc++ directly"; exit 1; fi
           done
+          Tests/sentry/run.sh --default-build FreeFileSync/Build/Bin/{FreeFileSync,RealTimeSync}_x86_64-clang-libc++
 
       # main window shown, no error popup, no error on stderr, still running (fresh HOME, Xvfb, and no network, so a first
       # start's update check can't depend on what freefilesync.org answers a CI machine)
@@ -270,5 +350,130 @@ jobs:
         with:
           name: screenshots-clang-libcxx
           path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  sentry:
+    name: Sentry build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      # a fake DSN: Tests/sentry/run.sh answers on this port; never a real one here
+      SENTRY_TEST_DSN: http://testkey@127.0.0.1:38917/1
+      SENTRY_TEST_ENVIRONMENT: ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-14 g++-14 make cmake pkg-config perl patch curl xz-utils bzip2 \
+            libgtk-3-dev libxtst-dev libidn2-dev zlib1g-dev libselinux1-dev \
+            dpkg-dev patchelf unzip python3 xvfb xdotool imagemagick
+
+      # the same libraries as the x86_64 Packages job, under the same key
+      - name: Restore patched libraries
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .build/deps
+          key: deps-ubuntu-24.04-x86_64-gcc14-${{ hashFiles('.github/build/common.sh', '.github/build/build.sh', '.github/build/build-openssl.sh', '.github/build/build-libssh2.sh', '.github/build/build-curl.sh', '.github/build/build-wxwidgets.sh', '.github/build/patches/**') }}
+
+      - name: Build patched libraries
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: .github/build/build.sh
+
+      - name: Save patched libraries
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .build/deps
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
+      - name: Restore sentry-native
+        id: sentry-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .build/sentry
+          key: sentry-ubuntu-24.04-x86_64-gcc14-${{ hashFiles('.github/build/common.sh', '.github/build/build.sh', '.github/build/build-openssl.sh', '.github/build/build-libssh2.sh', '.github/build/build-curl.sh', '.github/build/build-wxwidgets.sh', '.github/build/build-sentry-native.sh', '.github/build/patches/**') }}
+
+      - name: Build sentry-native
+        if: steps.sentry-cache.outputs.cache-hit != 'true'
+        run: .github/build/build-sentry-native.sh
+
+      - name: Save sentry-native
+        if: steps.sentry-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .build/sentry
+          key: ${{ steps.sentry-cache.outputs.cache-primary-key }}
+
+      - name: Build FreeFileSync and RealTimeSync with crash reporting
+        env:
+          FFS_SENTRY: 1
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          export SENTRY_DSN="$SENTRY_TEST_DSN" SENTRY_ENVIRONMENT="$SENTRY_TEST_ENVIRONMENT" FFS_GIT_SHA="${SOURCE_SHA:0:12}"
+          .github/build/build-free-file-sync.sh 2>&1 | tee build.log
+          # the DSN goes through a generated header: make's command echo must not show it
+          if grep -qF "$SENTRY_DSN" build.log; then echo "::error::the DSN appears in the build log"; exit 1; fi
+          ls -l FreeFileSync/Build/Bin
+
+      - name: Crash reporting tests
+        env:
+          SCREENSHOT_DIR: screenshots # first-start notice and options dialog, uploaded below
+        run: Tests/sentry/run.sh
+
+      # the --default-build check must catch a Sentry binary by its strings alone: stripped (no symbols), and with another
+      # DSN (so the DSN check can't be what fails it)
+      - name: The default-build check fails on a Sentry binary
+        run: |
+          strip -o "$RUNNER_TEMP/FreeFileSync-stripped" FreeFileSync/Build/Bin/FreeFileSync_x86_64
+          if SENTRY_TEST_DSN=http://other@127.0.0.1:1/2 Tests/sentry/run.sh --default-build "$RUNNER_TEMP/FreeFileSync-stripped"; then
+            echo "::error::Tests/sentry/run.sh --default-build passed a binary with sentry-native in it"; exit 1
+          fi
+
+      # what the Packages jobs do with the SENTRY_DSN secret, minus the upload: crashpad_handler shipped, debug files split off
+      # with the binaries' build IDs, accepted by sentry-cli
+      - name: Package and check the debug files
+        env:
+          FFS_SENTRY: 1
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          .github/build/package.sh
+          tar -tzf .build/dist/FreeFileSync_*_Linux_x86_64.tar.gz | grep -x 'FreeFileSync/Bin/crashpad_handler'
+          cli="$(.github/build/fetch-sentry-cli.sh)"
+          "$cli" --version
+          for f in .build/debug-files/*; do "$cli" debug-files check "$f"; done
+          ls -l .build/debug-files
+
+      # the package as users get it: bundled libcurl for crashpad_handler ($ORIGIN rpath), debug info split off
+      - name: Crash reporting tests on the package
+        run: |
+          mkdir -p "$RUNNER_TEMP/package"
+          tar -xzf .build/dist/FreeFileSync_*_Linux_x86_64.tar.gz -C "$RUNNER_TEMP/package"
+          Tests/sentry/run.sh "$RUNNER_TEMP/package/FreeFileSync/Bin"
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-sentry
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentry-test-logs
+          path: build.log
           if-no-files-found: ignore
           retention-days: 7

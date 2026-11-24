@@ -24,6 +24,7 @@
 #include "ui/main_dlg.h"
 #include "ui/small_dlgs.h"
 #include "base_tools.h"
+#include "crash_report_init.h"
 #include "ffs_paths.h"
 #include "return_codes.h"
 
@@ -138,6 +139,8 @@ bool Application::OnInit()
         }
         catch (const FileError& e) { assert(false); notifyAppError(e.toString()); }
     });
+
+    startCrashReporting("FreeFileSync"); //as early as possible, but after initExtraLog(): getConfigDirPath() may log
 
     //tentatively set program language to OS default until GlobalSettings.xml is read later
     try { localizationInit(appendPath(getResourceDirPath(), Zstr("Languages.zip"))); } //throw FileError
@@ -257,6 +260,8 @@ int Application::OnExit()
         //assert(rv); -> fails if clipboard wasn't used
         localizationCleanup();
         imageResourcesCleanup();
+        stopCrashReportSettingWatch();
+        shutdownCrashReporting(); //before teardownAfs(): its upload may still use libcurl (see crash_report_init.h)
         teardownAfs(); //bad_alloc possible when compressing large GDrive metadata stream
         colorThemeCleanup();
         return wxApp::OnExit();
@@ -438,6 +443,9 @@ void Application::onEnterEventLoop()
 
         try { colorThemeInit(*this, globalCfg.appColorTheme); } //throw FileError
         catch (const FileError& e) { logExtraError(e.toString()); } //not critical in this context
+
+        applyCrashReportSetting("FreeFileSync", globalCfg.crashReports);
+        startCrashReportSettingWatch(globalCfgFilePath, globalCfg.crashReports);
 
 
         //-----------------------------------------------------------
