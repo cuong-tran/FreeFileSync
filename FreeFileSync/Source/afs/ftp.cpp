@@ -128,6 +128,8 @@ Zstring ansiToUtfEncoding(const std::string_view str) //throw SysError
     for (const char c : str)
         codePoints += static_cast<wchar_t>(static_cast<unsigned char>(c));
     return utfTo<Zstring>(codePoints);
+#else
+    #error "not implemented for this platform"
 #endif
 }
 
@@ -171,6 +173,8 @@ std::string utfToAnsiEncoding(const Zstring& str) //throw SysError
         ansiStr += static_cast<char>(codePoint);
     }
     return ansiStr;
+#else
+    #error "not implemented for this platform"
 #endif
 }
 

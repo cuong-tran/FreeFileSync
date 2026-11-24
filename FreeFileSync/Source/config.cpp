@@ -42,6 +42,8 @@ const ExternalApp fff::extCommandFileManager
 
 const ExternalApp fff::extCommandOpenDefault
 {L"Open with default application", "open %local_path%"};
+#else
+    #error "not implemented for this platform"
 #endif
 
 

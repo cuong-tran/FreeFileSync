@@ -285,6 +285,8 @@ std::wstring zen::getSystemErrorDescription(ErrorCode ec) //return empty string 
     char buf[1024] = {}; //POSIX strerror_r(): thread-safe; on error (e.g. unknown code) the buffer still holds "Unknown error: <ec>"
     (void)::strerror_r(ec, buf, sizeof(buf));
     std::wstring errorMsg = utfTo<std::wstring>(buf);
+#else
+    #error "not implemented for this platform"
 #endif
 
     trim(errorMsg); //Windows messages seem to end with a space...

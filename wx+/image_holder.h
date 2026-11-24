@@ -87,5 +87,7 @@ struct FileIconHolder
 
     explicit operator bool() const { return static_cast<bool>(image); }
 };
+#else
+    #error "not implemented for this platform"
 #endif
 }

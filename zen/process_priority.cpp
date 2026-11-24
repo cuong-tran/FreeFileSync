@@ -111,6 +111,8 @@ void setIoPriority(int ioPolicy) //throw SysError
     if (::setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_PROCESS, ioPolicy) != 0)
         THROW_LAST_SYS_ERROR("setiopolicy_np(" + numberTo<std::string>(ioPolicy) + ')');
 }
+#else
+    #error "not implemented for this platform"
 #endif
 }
 
@@ -135,6 +137,8 @@ SetProcessPriority::SetProcessPriority(ProcessPriority prio) : //throw FileError
 #elif defined ZEN_MAC
             setIoPriority(IOPOL_UTILITY); //throw SysError
             //like "nice" I/O, but not IOPOL_THROTTLE ("only served when no one else is using the disk"): same reasoning as on Linux
+#else
+    #error "not implemented for this platform"
 #endif
         }
         catch (const SysError& e) { throw FileError(_("Cannot change process I/O priorities."), e.toString()); }

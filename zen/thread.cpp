@@ -24,6 +24,8 @@ void zen::setCurrentThreadName(const Zstring& threadName)
     ::prctl(PR_SET_NAME, threadName.c_str(), 0, 0, 0);
 #elif defined ZEN_MAC
     ::pthread_setname_np(threadName.c_str()); //current thread only; longer names (> 63 bytes) fail with ENAMETOOLONG: best effort, like prctl()
+#else
+    #error "not implemented for this platform"
 #endif
 
 }
