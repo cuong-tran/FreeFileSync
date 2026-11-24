@@ -194,6 +194,7 @@ cppFiles += ../../wx+/popup_dlg_generated.cpp
 cppFiles += ../../xBRZ/src/xbrz.cpp
 ifeq ($(FFS_SENTRY),1)
 cppFiles += ../../zen/crash_report_sentry.cpp
+cppFiles += ../../zen/crash_scrub.cpp
 else
 cppFiles += ../../zen/crash_report_none.cpp
 endif

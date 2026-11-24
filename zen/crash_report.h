@@ -6,6 +6,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include "sys_error.h"
 
 
@@ -14,7 +15,9 @@
     - crash_report_none.cpp:   empty implementation, the default: no reporting code at all
 
     Only crashes (minidumps) and reportInternalError() are sent; never sync logs, file names or FileError texts shown to users.
-    Uploads need consent: nothing leaves the machine before setCrashReportingConsent(true).               */
+    Uploads need consent: nothing leaves the machine before setCrashReportingConsent(true).
+    Texts (messages, breadcrumbs, exception values) are scrubbed of paths, user and host name (zen/crash_scrub.h); a minidump
+    can't be scrubbed on the client: it contains the paths of the loaded modules and the threads' stack memory.               */
 namespace zen
 {
 //values compiled in by the build (FFS_SENTRY=1), all empty in the empty implementation
@@ -37,6 +40,7 @@ struct CrashReportConfig
     Zstring databasePath;    //folder for pending reports and run state (created if missing)
     Zstring handlerPath;     //crash handler executable (crashpad_handler); reporting stays off if it is missing
     Zstring caCertPath;      //optional: CA bundle for the HTTPS upload (empty: the system's)
+    std::vector<std::string> privateWords; //removed from report texts in addition to paths, e.g. user and host name (zen/crash_scrub.h)
 };
 
 //true if built with a crash reporting implementation; false in the empty build
