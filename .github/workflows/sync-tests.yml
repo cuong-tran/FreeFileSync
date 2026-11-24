@@ -12,11 +12,14 @@ on:
       - 'FreeFileSync/Source/**'
       - '!FreeFileSync/Source/ui/**'
       - '!FreeFileSync/Source/RealTimeSync/**'
+      - 'FreeFileSync/Source/ui/file_grid_attr.h' #ui headers the engine compiles: config.h includes them
+      - 'FreeFileSync/Source/ui/tree_grid_attr.h'
+      - 'FreeFileSync/Source/ui/cfg_grid.h'
       - 'zen/**'
       - 'zenXml/**'
       - 'libcurl/**'
       - 'libssh2/**'
-      - 'wx+/image_holder.h' #included by afs/abstract.h
+      - 'wx+/**' #headers of config.h, icon_buffer.cpp and afs/abstract.h (image_holder.h)
       - 'Tests/sync/**'
       - 'Tests/zen/test.h'
       - '.github/build/**'

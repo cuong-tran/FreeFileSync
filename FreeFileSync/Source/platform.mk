@@ -13,18 +13,25 @@
 platformMkDir := $(dir $(lastword $(MAKEFILE_LIST)))
 hostOs := $(shell uname -s)
 
+#"make clean" works anywhere: it needs no compiler and no libraries
+platformOnlyClean := $(if $(filter-out clean,$(or $(MAKECMDGOALS),all)),,yes)
+
 ifeq ($(hostOs),Darwin)
     TARGET_OS ?= mac
 else
     TARGET_OS ?= linux
 endif
 
+ifeq ($(filter Linux Darwin,$(hostOs))$(platformOnlyClean),)
+    $(error unsupported build host "$(hostOs)": the makefiles build on Linux and on macOS (Darwin); Windows builds come with M4 of docs/PORTING_PLAN.md)
+endif
+
 ifeq ($(TARGET_OS),linux)
-    ifneq ($(hostOs),Linux)
+    ifeq ($(filter Linux,$(hostOs))$(platformOnlyClean),)
         $(error TARGET_OS=linux: building for Linux needs a Linux host (this is $(hostOs)))
     endif
 else ifeq ($(TARGET_OS),mac)
-    ifneq ($(hostOs),Darwin)
+    ifeq ($(filter Darwin,$(hostOs))$(platformOnlyClean),)
         $(error TARGET_OS=mac: building for macOS needs a Mac with Xcode (Apple's SDK cannot be used elsewhere); this is $(hostOs))
     endif
     ARCH ?= $(shell uname -m)
@@ -41,7 +48,7 @@ else ifeq ($(TARGET_OS),mac)
 
     FFS_DEPS_PREFIX ?= $(abspath $(platformMkDir)../../.build/deps/macos-$(ARCH))
     ifeq ($(wildcard $(FFS_DEPS_PREFIX)/bin/wx-config),)
-        ifneq ($(filter-out clean,$(or $(MAKECMDGOALS),all)),) #"make clean" needs no libraries
+        ifneq ($(platformOnlyClean),yes)
             $(error TARGET_OS=mac: no wxWidgets in $(FFS_DEPS_PREFIX); build the libraries with "FFS_TARGET=macos-$(ARCH) .github/build/build.sh" or set FFS_DEPS_PREFIX)
         endif
     endif

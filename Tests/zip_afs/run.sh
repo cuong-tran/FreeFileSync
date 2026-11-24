@@ -6,6 +6,10 @@
 #   ARCH:   macOS only: arm64 or x86_64 (default: the host's); the other one is cross-compiled and runs under Rosetta 2
 #   CXXFLAGS, LDFLAGS from the environment are appended to the compile/link commands
 set -euo pipefail
+if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4) )); then
+    echo "bash 4.4 or newer needed (this is $BASH_VERSION); on macOS: brew install bash" >&2 # empty arrays under set -u, negative indexes
+    exit 2
+fi
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 WORK="$(mktemp -d)"
