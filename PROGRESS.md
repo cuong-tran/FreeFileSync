@@ -16,7 +16,7 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M2 Sentry | Pull request | merged as [#12](https://github.com/cuong-tran/FreeFileSync/pull/12) (squash, `fea5409`) | | no review threads |
 | M3 macOS | 1. `zen` core compiles and `Tests/zen` passes on macOS | done | `a0b5c3f..50065e4`, fixes in `50065e4..292907c` | 8 findings: all fixed |
 | M3 macOS | 2. `zen` features: FSEvents watcher, recycle bin, shutdown, network | done | `50065e4..292907c`, fixes `292907c..f5c9b53` | 8 findings: all fixed |
-| M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | done, review fixes in progress | `b4b35bb..3289e88` | 7 findings, see below |
+| M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | done | `b4b35bb..3289e88`, fixes `f3e2601..bd9f1bf` | 7 findings: 6 fixed, 1 kept |
 | M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | in progress | | |
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | | | |
 | M4 Windows | | | | |
@@ -195,10 +195,10 @@ Result of the step: `make engine` builds `libffs_engine.a` (everything but the U
 
 | # | Finding | Severity | Outcome |
 |---|---|---|---|
-| 1 | Google Drive login on macOS holds the process-wide descriptor lock across a blocking `accept()` | important | sent for fixing |
-| 2 | Icon loading can crash on a file name that is not valid UTF-8 (nil path into AppKit) | important | sent for fixing |
-| 3 | The macOS recycle bin sync test looks only in `~/.Trash` and can leave items in a real trash | important | sent for fixing |
-| 4 | `sync-tests.yml` does not run for UI and `wx+` headers the engine includes | nit | sent for fixing |
-| 5 | `afs/ftp.cpp` platform branches have no `#else`, so Windows would compile functions without a return | nit | sent for fixing |
-| 6 | `Tests/zip_afs/run.sh` needs bash 4.4 on macOS but does not check | nit | sent for fixing |
+| 1 | Google Drive login on macOS holds the process-wide descriptor lock across a blocking `accept()` | important | fixed in `f3e2601`: the listening socket is non-blocking, so the lock is never held across a wait; other users of the lock audited |
+| 2 | Icon loading can crash on a file name that is not valid UTF-8 (nil path into AppKit) | important | fixed in `081a69e`: nil paths and Objective-C exceptions become errors; tested with a real invalid-UTF-8 name on the FAT image |
+| 3 | The macOS recycle bin sync test looks only in `~/.Trash` and can leave items in a real trash | important | fixed in `deff9b5`: both possible trash locations are checked and always cleaned up |
+| 4 | `sync-tests.yml` does not run for UI and `wx+` headers the engine includes | nit | fixed in `bd9f1bf` |
+| 5 | `afs/ftp.cpp` platform branches have no `#else`, so Windows would compile functions without a return | nit | fixed in `42df8c0`: `#else #error` added to every platform branch that must produce a value |
+| 6 | `Tests/zip_afs/run.sh` needs bash 4.4 on macOS but does not check | nit | fixed in `bd9f1bf` |
 | 7 | The makefiles stop on hosts other than Linux and macOS | nit | no change needed: intended, like the `#error` in `zen/build_info.h` |
