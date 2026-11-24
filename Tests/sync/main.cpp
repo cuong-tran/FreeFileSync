@@ -4,20 +4,28 @@
 //
 // usage: sync_test [--root <folder>] [--list] [<test name>...]
 //        sync_test --write-batch <file.ffs_batch> <left folder> <right folder> <log folder>
+//        sync_test --write-gui <file.ffs_gui> <left folder> <right folder>
+//        sync_test --write-global <GlobalSettings.xml>
 //   --root: parent folder for the per-test temporary folders (default: the system temp folder); must exist
 //   names:  run only these tests (default: all)
 //   --write-batch: writes a batch job that mirrors <left folder> to <right folder> through the engine's own config writer
 //                  (fff::writeConfig()), for running the app in batch mode in CI: no popups (errors cancel the job), the progress
 //                  window closes itself, the log goes to <log folder>
+//   --write-gui:    writes a GUI configuration with <left folder> and <right folder> as the folder pair (FreeFileSync compares at
+//                   once when started with it and both folders exist)
+//   --write-global: writes default global settings that skip the first-start dialogs (welcome dialog of this version done, update
+//                   check just done), for starting the app's main window in CI: FreeFileSync <file.ffs_gui> <GlobalSettings.xml>
 //
 // Each test runs in a new folder "<root>/sync_test-<random>/<test name>", removed afterwards with everything in it.
 // SANDBOX_TEST_CASE tests (recycle bin) run only if ZEN_TEST_SANDBOX is set, as Tests/sync/run.sh does after pointing HOME and
 // XDG_DATA_HOME into a temporary folder (Linux: the trash then lives there; macOS: see test_deletion.cpp).
 
 #include <cstdlib>
+#include <ctime>
 #include <random>
 #include <FreeFileSync/Source/afs/concrete.h>
 #include <FreeFileSync/Source/config.h>
+#include <FreeFileSync/Source/version/version.h>
 #include "../zen/test.h"
 
 using namespace zentest;
@@ -37,6 +45,36 @@ int main(int argc, char* argv[])
             cfg.guiCfg.mainCfg.altLogFolderPathPhrase = argv[5];
             cfg.batchExCfg.autoCloseSummary   = true;
             cfg.batchExCfg.batchErrorHandling = fff::BatchErrorHandling::cancel;
+            fff::writeConfig(cfg, argv[2]); //throw FileError
+            return 0;
+        }
+        catch (const zen::FileError& e)
+        {
+            std::cerr << zen::utfTo<std::string>(e.toString()) << '\n';
+            return 1;
+        }
+
+    if (argc == 5 && std::string(argv[1]) == "--write-gui")
+        try
+        {
+            fff::FfsGuiConfig cfg;
+            cfg.mainCfg.firstPair.folderPathPhraseLeft  = argv[3];
+            cfg.mainCfg.firstPair.folderPathPhraseRight = argv[4];
+            fff::writeConfig(cfg, argv[2]); //throw FileError
+            return 0;
+        }
+        catch (const zen::FileError& e)
+        {
+            std::cerr << zen::utfTo<std::string>(e.toString()) << '\n';
+            return 1;
+        }
+
+    if (argc == 3 && std::string(argv[1]) == "--write-global")
+        try
+        {
+            fff::GlobalConfig cfg;
+            cfg.welcomeDialogLastVersion = fff::ffsVersion;
+            cfg.lastUpdateCheck = std::time(nullptr);
             fff::writeConfig(cfg, argv[2]); //throw FileError
             return 0;
         }

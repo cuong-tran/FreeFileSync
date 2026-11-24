@@ -24,6 +24,7 @@ on:
       - "FreeFileSync/Source/**"
       - "zen/**"
       - "Tests/zen/**"
+      - "Tests/sync/**"
       - "wx+/**"
       - "zenXml/**"
       - "libcurl/**"
@@ -294,24 +295,44 @@ jobs:
           archive: false
           if-no-files-found: error
 
-      # each app starts with a fresh HOME, shows a window, ends on SIGTERM without crashing (x86_64 under Rosetta 2)
-      - name: Start the apps
+      # Tests/sync's sync_test writes the configurations for the start check and the batch run with the engine's own config writer
+      - name: Test helper
+        id: helper
         if: ${{ !cancelled() && steps.apps.outcome == 'success' }}
+        run: ARCH=${{ matrix.arch }} SYNC_TEST_OBJ="$RUNNER_TEMP/engine-obj" SYNC_TEST_BIN="$RUNNER_TEMP/sync-bin" SYNC_TEST_COMPILE_ONLY=1 bash Tests/sync/run.sh
+
+      # each app starts with a fresh HOME, shows its window (checked by title), ends on SIGTERM without crashing (x86_64 under Rosetta 2);
+      # FreeFileSync twice: first start (main window with the About dialog on top), then with a configuration of two existing folders
+      # and global settings that skip the first-start dialogs, so the main window shows a comparison result (buttons refreshed)
+      - name: Start the apps
+        if: ${{ !cancelled() && steps.helper.outcome == 'success' }}
         env:
           SCREENSHOT_TO_LOG: 1 # a small copy of each screenshot in the log as well (see check-mac-app-starts.sh)
         run: |
           if [ "${{ matrix.arch }}" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
             echo "::warning::Rosetta 2 not available: x86_64 apps not started"; exit 0
           fi
+          bin="FreeFileSync/Build/Bin/macos-${{ matrix.arch }}"
           mkdir -p screenshots
-          for app in FreeFileSync RealTimeSync; do
-            .github/build/check-mac-app-starts.sh "FreeFileSync/Build/Bin/macos-${{ matrix.arch }}/$app.app" "screenshots/$app-${{ matrix.arch }}.png"
-          done
+          .github/build/check-mac-app-starts.sh "$bin/FreeFileSync.app" '^About' "screenshots/FreeFileSync-first-start-${{ matrix.arch }}.png"
+
+          work="$RUNNER_TEMP/start-check"
+          mkdir -p "$work/left/sub" "$work/right"
+          echo "new" > "$work/left/new.txt"
+          echo "changed left" > "$work/left/sub/changed.txt"
+          echo "old" > "$work/right/changed.txt"
+          echo "only right" > "$work/right/only-right.txt"
+          "$RUNNER_TEMP/sync-bin/sync_test" --write-gui "$work/job.ffs_gui" "$work/left" "$work/right"
+          "$RUNNER_TEMP/sync-bin/sync_test" --write-global "$work/GlobalSettings.xml"
+          .github/build/check-mac-app-starts.sh "$bin/FreeFileSync.app" '(^| )FreeFileSync [0-9.]+' "screenshots/FreeFileSync-main-${{ matrix.arch }}.png" \
+            "$work/job.ffs_gui" "$work/GlobalSettings.xml"
+
+          .github/build/check-mac-app-starts.sh "$bin/RealTimeSync.app" '^RealTimeSync [0-9.]+' "screenshots/RealTimeSync-${{ matrix.arch }}.png"
 
       # FreeFileSync in batch mode: a mirror job (written by the engine's config writer through Tests/sync's sync_test --write-batch)
       # must end with exit code 0 and leave the right folder equal to the left one
       - name: Batch run
-        if: ${{ !cancelled() && steps.apps.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.helper.outcome == 'success' }}
         run: |
           if [ "${{ matrix.arch }}" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
             echo "::warning::Rosetta 2 not available: x86_64 batch run skipped"; exit 0
@@ -321,7 +342,6 @@ jobs:
           echo "a" > "$work/left/a.txt"
           echo "b" > "$work/left/sub dir/b é.txt"
           echo "deleted by mirror" > "$work/right/old.txt"
-          ARCH=${{ matrix.arch }} SYNC_TEST_OBJ="$RUNNER_TEMP/engine-obj" SYNC_TEST_BIN="$RUNNER_TEMP/sync-bin" SYNC_TEST_COMPILE_ONLY=1 bash Tests/sync/run.sh
           "$RUNNER_TEMP/sync-bin/sync_test" --write-batch "$work/job.ffs_batch" "$work/left" "$work/right" "$work/logs"
           start=$SECONDS
           HOME="$work/home" gtimeout 300 FreeFileSync/Build/Bin/macos-${{ matrix.arch }}/FreeFileSync.app/Contents/MacOS/FreeFileSync "$work/job.ffs_batch" && rc=0 || rc=$?
