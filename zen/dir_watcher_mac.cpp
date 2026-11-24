@@ -167,6 +167,9 @@ struct DirWatcher::Impl
     WatchState shared;
     FSEventStreamRef stream = nullptr;
     dispatch_queue_t queue = nullptr;
+
+    std::chrono::steady_clock::time_point lastBaseCheck; //fetchChanges() only
+    bool baseUnavailableReported = false;                //
 };
 
 
@@ -248,6 +251,24 @@ std::vector<DirWatcher::Change> DirWatcher::fetchChanges(const std::function<voi
     {
         std::lock_guard dummy(pimpl_->shared.lockChanges);
         output.swap(pimpl_->shared.changes);
+    }
+
+    /*  FSEvents doesn't report everything that makes the watched folder go away: e.g. unmounting the volume it is on (seen on
+        macOS 15) sends neither kFSEventStreamEventFlagUnmount nor RootChanged for it => check its existence, at most once per
+        second (like RealTimeSync's monitor.cpp), and report baseFolderUnavailable once                                      */
+    if (const auto now = std::chrono::steady_clock::now();
+        now >= pimpl_->lastBaseCheck + std::chrono::seconds(1))
+    {
+        pimpl_->lastBaseCheck = now;
+        struct stat dirInfo = {};
+        if (::stat(baseDirPath_.c_str(), &dirInfo) != 0 || !S_ISDIR(dirInfo.st_mode))
+        {
+            if (!pimpl_->baseUnavailableReported)
+                output.push_back({ChangeType::baseFolderUnavailable, baseDirPath_});
+            pimpl_->baseUnavailableReported = true;
+        }
+        else
+            pimpl_->baseUnavailableReported = false;
     }
     return output;
 }
