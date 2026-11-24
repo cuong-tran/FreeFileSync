@@ -459,6 +459,7 @@ jobs:
         env:
           SENTRY_TEST_DSN: http://testkey@127.0.0.1:38917/1
           SENTRY_TEST_ENVIRONMENT: ci
+          FFS_CRASH_REPORT_DEBUG: 1 # sentry-native's log in the app output, which failed scenarios print
           ARCH: ${{ matrix.arch }}
         run: |
           if [ "${{ matrix.arch }}" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
@@ -523,6 +524,7 @@ jobs:
   dmg:
     name: DMG
     needs: libraries
+    if: ${{ !cancelled() }} # also when a later check in the app jobs (e.g. the Sentry tests) failed: the zips are uploaded before
     runs-on: macos-15
     timeout-minutes: 30
     defaults:

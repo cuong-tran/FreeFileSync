@@ -96,7 +96,9 @@ PORT="$(sed -nE 's#^[a-z]+://[^@/]*@127\.0\.0\.1:([0-9]+)/.*#\1#p' <<<"$DSN")"
 for f in "$FFS" "$RTS" "${HANDLERS[@]}"; do
     [ -x "$f" ] || { echo "error: $f not found: build with FFS_SENTRY=1 first (see the header of $0)" >&2; exit 2; }
 done
-grep -qF -- "$DSN" <(strings -a "$FFS") || { echo "error: $FFS was not built with SENTRY_DSN=$DSN" >&2; exit 2; }
+ffsStrings="$(strings -a "$FFS")" # captured first: "grep -q" on a pipe ends strings with SIGPIPE
+grep -qF -- "$DSN" <<<"$ffsStrings" || { echo "error: $FFS was not built with SENTRY_DSN=$DSN" >&2; exit 2; }
+unset ffsStrings
 
 WORK="$(mktemp -d)"
 SERVER_PID=""
@@ -179,7 +181,7 @@ run_app()
     # crashpad_handler gets --database=<home>/.config/...: wait_handler_done() and cleanup() find it by that
     ( rc=0 # not "cmd; echo $?": set -e would end the subshell at a crashed app
       if [ "$OS" = Darwin ]; then # the window server is there: no Xvfb
-          env -i PATH="$PATH" HOME="$home" LANG=en_US.UTF-8 "$@" "$bin" > "$WORK/$name/app.log" 2>&1 || rc=$?
+          env -i PATH="$PATH" HOME="$home" LANG=en_US.UTF-8 ${FFS_CRASH_REPORT_DEBUG:+FFS_CRASH_REPORT_DEBUG=1} "$@" "$bin" > "$WORK/$name/app.log" 2>&1 || rc=$?
       else
           "${RUN_AS[@]}" env -i PATH="$PATH" HOME="$home" XDG_CONFIG_HOME="$home/.config" LANG=C.UTF-8 NO_AT_BRIDGE=1 "$@" \
               xvfb-run -a -s "-screen 0 1280x1024x24" "$bin" > "$WORK/$name/app.log" 2>&1 || rc=$?
@@ -263,7 +265,13 @@ wait_handler_done()
     return 0
 }
 
-show_logs() { sed 's/^/    app: /' "$WORK/$1/app.log" | tail -20 >&2 || true; }
+show_logs()
+{
+    sed 's/^/    app: /' "$WORK/$1/app.log" | tail -40 >&2 || true
+    if [ "$OS" = Darwin ]; then # where the reports went (or didn't): the report databases
+        find "$(cfg_dir "$WORK/$1/home")/CrashReports" -maxdepth 3 2>/dev/null | sed 's/^/    db: /' >&2 || true
+    fi
+}
 
 #------------------------------------------------------------------------------------------------------------------------
 # (a) crashes, with the user's consent
