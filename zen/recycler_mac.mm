@@ -6,6 +6,7 @@
 
 //macOS implementation of recycler.h (Linux: recycler.cpp)
 #include "recycler.h"
+#include "utf.h"
 #import <Foundation/Foundation.h>
 
 using namespace zen;
@@ -24,7 +25,21 @@ Zstring zen::impl::moveToRecycleBinGetTrashPath(const Zstring& itemPath) //throw
         NSError* error = nil;
         NSURL* trashUrl = nil;
         //boot volume: ~/.Trash; other volumes: <volume>/.Trashes/<uid>; works for files, folders and symlinks (not followed)
-        if (![fileManager trashItemAtURL:[NSURL fileURLWithPath:itemPathNs] resultingItemURL:&trashUrl error:&error])
+        BOOL moved = NO;
+        NSString* exceptionText = nil;
+        @try //an Objective-C exception must not reach the C++ callers, where nothing catches it
+        {
+            moved = [fileManager trashItemAtURL:[NSURL fileURLWithPath:itemPathNs] resultingItemURL:&trashUrl error:&error];
+        }
+        @catch (NSException* e)
+        {
+            exceptionText = [NSString stringWithFormat:@"Objective-C exception %@: %@", e.name, e.reason];
+        }
+        if (exceptionText)
+            throw FileError(replaceCpy(_("Unable to move %x to the recycle bin."), L"%x", fmtPath(itemPath)),
+                            formatSystemError("trashItemAtURL", L"", utfTo<std::wstring>(exceptionText.UTF8String ? exceptionText.UTF8String : "")));
+
+        if (!moved)
         {
             //e.g. network shares without a trash: "NSCocoaErrorDomain 3328: The operation couldn’t be completed. (Cocoa error 3328.)"
             if ([error.domain isEqualToString:NSCocoaErrorDomain] && error.code == NSFeatureUnsupportedError)

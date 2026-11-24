@@ -78,9 +78,93 @@ RenderResult renderNSImage(NSImage* image, int maxSize, const char* functionName
 }
 
 
+//nil if the path is no valid file system representation (e.g. broken UTF-8): never pass that on, AppKit raises an exception for nil
 NSString* toNSPath(const std::string& path)
 {
     return [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path.c_str() length:path.size()];
+}
+
+
+std::string toStdString(NSString* str)
+{
+    const char* utf8 = str ? str.UTF8String : nullptr;
+    return utf8 ? utf8 : "";
+}
+
+
+//an Objective-C exception must not reach the C++ callers (nothing catches it there: the process would end): report it as an error
+template <class Function>
+RenderResult catchObjCExceptions(const char* functionName, Function fun)
+{
+    @try
+    {
+        return fun();
+    }
+    @catch (NSException* e)
+    {
+        return RenderError{functionName, "Objective-C exception " + toStdString(e.name) + ": " + toStdString(e.reason)};
+    }
+}
+
+
+RenderResult renderIconImpl(IconKind kind, const std::string& arg, int maxSize)
+{
+    NSWorkspace* ws = [NSWorkspace sharedWorkspace];
+    switch (kind)
+    {
+        case IconKind::ofFile:
+            if (NSString* path = toNSPath(arg))
+                return renderNSImage([ws iconForFile:path], maxSize, "iconForFile");
+            return RenderError{"stringWithFileSystemRepresentation", "Invalid file path."};
+
+        case IconKind::ofExtension:
+        {
+            NSString* ext = arg.empty() ? nil : [NSString stringWithUTF8String:arg.c_str()]; //nil for broken UTF-8
+            UTType* type = ext ? [UTType typeWithFilenameExtension:ext] : nil;
+            return renderNSImage([ws iconForContentType:type ? type : UTTypeData], maxSize, "iconForContentType");
+        }
+        case IconKind::genericFile:
+            return renderNSImage([ws iconForContentType:UTTypeData], maxSize, "iconForContentType(UTTypeData)");
+
+        case IconKind::genericFolder:
+            return renderNSImage([ws iconForContentType:UTTypeFolder], maxSize, "iconForContentType(UTTypeFolder)");
+
+        case IconKind::trash:
+            return renderNSImage([NSImage imageNamed:NSImageNameTrashFull], maxSize, "imageNamed(NSImageNameTrashFull)");
+
+        case IconKind::fileManager:
+        {
+            NSURL* finderUrl = [ws URLForApplicationWithBundleIdentifier:@"com.apple.finder"];
+            return renderNSImage([ws iconForFile:finderUrl ? finderUrl.path : @"/System/Library/CoreServices/Finder.app"], maxSize, "iconForFile(Finder)");
+        }
+    }
+    return RenderError{"renderIcon", "Unknown icon kind."};
+}
+
+
+RenderResult renderThumbnailImpl(const std::string& filePath, int maxSize)
+{
+    NSString* path = toNSPath(filePath);
+    if (!path)
+        return RenderError{"stringWithFileSystemRepresentation", "Invalid file path."};
+
+    NSURL* url = [NSURL fileURLWithPath:path isDirectory:NO];
+    CGImageSourceRef src = ::CGImageSourceCreateWithURL((__bridge CFURLRef)url, nullptr);
+    if (!src)
+        return RenderError{"CGImageSourceCreateWithURL", "Cannot open image file."};
+
+    NSDictionary* options = @{(__bridge NSString*)kCGImageSourceCreateThumbnailFromImageAlways: @YES,
+                              (__bridge NSString*)kCGImageSourceCreateThumbnailWithTransform:  @YES, //apply the EXIF orientation
+                              (__bridge NSString*)kCGImageSourceThumbnailMaxPixelSize:         @(maxSize)};
+    CGImageRef thumb = ::CGImageSourceCreateThumbnailAtIndex(src, 0, (__bridge CFDictionaryRef)options);
+    const int status = static_cast<int>(::CGImageSourceGetStatus(src));
+    ::CFRelease(src);
+    if (!thumb)
+        return RenderError{"CGImageSourceCreateThumbnailAtIndex", "Not a supported image file (status " + std::to_string(status) + ")."};
+
+    RenderResult result = renderCGImage(thumb, maxSize);
+    ::CGImageRelease(thumb);
+    return result;
 }
 }
 
@@ -89,34 +173,7 @@ RenderResult fff::macos::renderIcon(IconKind kind, const std::string& arg, int m
 {
     @autoreleasepool
     {
-        NSWorkspace* ws = [NSWorkspace sharedWorkspace];
-        switch (kind)
-        {
-            case IconKind::ofFile:
-                return renderNSImage([ws iconForFile:toNSPath(arg)], maxSize, "iconForFile");
-
-            case IconKind::ofExtension:
-            {
-                NSString* ext = arg.empty() ? nil : [NSString stringWithUTF8String:arg.c_str()]; //nil for broken UTF-8
-                UTType* type = ext ? [UTType typeWithFilenameExtension:ext] : nil;
-                return renderNSImage([ws iconForContentType:type ? type : UTTypeData], maxSize, "iconForContentType");
-            }
-            case IconKind::genericFile:
-                return renderNSImage([ws iconForContentType:UTTypeData], maxSize, "iconForContentType(UTTypeData)");
-
-            case IconKind::genericFolder:
-                return renderNSImage([ws iconForContentType:UTTypeFolder], maxSize, "iconForContentType(UTTypeFolder)");
-
-            case IconKind::trash:
-                return renderNSImage([NSImage imageNamed:NSImageNameTrashFull], maxSize, "imageNamed(NSImageNameTrashFull)");
-
-            case IconKind::fileManager:
-            {
-                NSURL* finderUrl = [ws URLForApplicationWithBundleIdentifier:@"com.apple.finder"];
-                return renderNSImage([ws iconForFile:finderUrl ? finderUrl.path : @"/System/Library/CoreServices/Finder.app"], maxSize, "iconForFile(Finder)");
-            }
-        }
-        return RenderError{"renderIcon", "Unknown icon kind."};
+        return catchObjCExceptions("renderIcon", [&] { return renderIconImpl(kind, arg, maxSize); });
     }
 }
 
@@ -125,22 +182,6 @@ RenderResult fff::macos::renderThumbnail(const std::string& filePath, int maxSiz
 {
     @autoreleasepool
     {
-        NSURL* url = [NSURL fileURLWithPath:toNSPath(filePath) isDirectory:NO];
-        CGImageSourceRef src = ::CGImageSourceCreateWithURL((__bridge CFURLRef)url, nullptr);
-        if (!src)
-            return RenderError{"CGImageSourceCreateWithURL", "Cannot open image file."};
-
-        NSDictionary* options = @{(__bridge NSString*)kCGImageSourceCreateThumbnailFromImageAlways: @YES,
-                                  (__bridge NSString*)kCGImageSourceCreateThumbnailWithTransform:  @YES, //apply the EXIF orientation
-                                  (__bridge NSString*)kCGImageSourceThumbnailMaxPixelSize:         @(maxSize)};
-        CGImageRef thumb = ::CGImageSourceCreateThumbnailAtIndex(src, 0, (__bridge CFDictionaryRef)options);
-        const int status = static_cast<int>(::CGImageSourceGetStatus(src));
-        ::CFRelease(src);
-        if (!thumb)
-            return RenderError{"CGImageSourceCreateThumbnailAtIndex", "Not a supported image file (status " + std::to_string(status) + ")."};
-
-        RenderResult result = renderCGImage(thumb, maxSize);
-        ::CGImageRelease(thumb);
-        return result;
+        return catchObjCExceptions("renderThumbnail", [&] { return renderThumbnailImpl(filePath, maxSize); });
     }
 }

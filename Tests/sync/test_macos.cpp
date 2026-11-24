@@ -5,8 +5,12 @@
 #include <thread>
 #include <zen/base64.h>
 #include <zen/scope_guard.h>
+#include <zen/recycler.h>
 #include <FreeFileSync/Source/base/icon_loader.h>
 #include "sync_test.h"
+#if defined ZEN_MAC
+    #include <FreeFileSync/Source/base/icon_loader_mac.h>
+#endif
 
 using namespace zen;
 using namespace fff;
@@ -89,6 +93,24 @@ TEST_CASE(syncMacFatVolume)
     if (!again.allEqual)
         std::cerr << again.toString();
 
+    //a name that is no valid UTF-8, if this file system takes one (APFS doesn't): loading its icon or moving it to the trash fails
+    //with an error instead of ending the process with an Objective-C exception
+    {
+        const Zstring brokenPath = appendPath(mountPath, Zstring("broken \xff name.txt"));
+        std::error_code ec;
+        bool created = false;
+        try { writeFile(brokenPath, "x"); created = pathExists(brokenPath); }
+        catch (const std::exception&) {}
+        std::cout << "   a name with broken UTF-8 on FAT: " << (created ? "created" : "rejected by the file system") << std::endl;
+        if (created)
+        {
+            try { (void)getFileIcon(brokenPath, 32); } //throw SysError
+            catch (const SysError& e) { std::cout << "   its icon: " << utfTo<std::string>(e.toString()) << std::endl; }
+            std::filesystem::remove(toPath(brokenPath), ec);
+        }
+        CHECK_THROWS(FileError, moveToRecycleBin(Zstring("/private/tmp/broken \xff name, not existing"))); //nil NSString: FileError
+    }
+
     //FAT is case-insensitive: a case-only rename on the left becomes a rename on the volume
     std::filesystem::rename(toPath(itemPath(left, "Mixed Case")), toPath(itemPath(left, "MIXED case")));
     const RunResult renamed = runSync(cfg);
@@ -131,6 +153,14 @@ TEST_CASE(syncMacIcons)
 
         CHECK_THROWS(SysError, getFileIcon(itemPath(testDir, "missing"), 32));
         CHECK_THROWS(SysError, getThumbnailImage(itemPath(testDir, "doc.txt"), 64)); //not an image
+
+        //paths that are no valid UTF-8 (names APFS rejects, but other file systems may hold) have no NSString: an error, never an
+        //Objective-C exception, which would end the process. Checked at the AppKit layer directly (icon_loader_mac.h): see
+        //syncMacFatVolume for a real file with such a name where the file system allows it
+        const std::string brokenPath = utfTo<std::string>(testDir) + "/broken \xff\xfe name.png";
+        CHECK(std::holds_alternative<macos::RenderError>(macos::renderIcon     (macos::IconKind::ofFile, brokenPath, 32)));
+        CHECK(std::holds_alternative<macos::RenderError>(macos::renderThumbnail(brokenPath, 32)));
+        CHECK(std::holds_alternative<macos::RenderedImage>(macos::renderIcon(macos::IconKind::ofExtension, "\xff\xfe", 16))); //broken extension: generic icon
     }).join();
 }
 #endif
