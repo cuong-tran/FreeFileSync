@@ -35,8 +35,12 @@ Zstring zen::impl::moveToRecycleBinGetTrashPath(const Zstring& itemPath) //throw
                             formatCFError("trashItemAtURL", (__bridge CFErrorRef)error));
         }
 
-        const char* trashPath = trashUrl.fileSystemRepresentation; //"nil if [it] can't be represented"
-        return trashPath ? Zstring(trashPath) : Zstring();
+        if (const char* trashPath = trashUrl.fileSystemRepresentation) //"nil if [it] can't be represented"
+            return trashPath;
+        if (const char* trashPath = trashUrl.path.UTF8String) //fallback: the path as a plain string
+            return trashPath;
+        return Zstring(); //moved, but its new place is unknown
+
     }
 }
 

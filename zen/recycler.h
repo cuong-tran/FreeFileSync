@@ -33,6 +33,7 @@ namespace impl
 {
 //macOS: the trash can't be redirected for tests (unlike $XDG_DATA_HOME on Linux): moveToRecycleBin() that returns the
 //item's new path in the trash, so a test can delete what it put there
+//the result is empty if the item was moved, but the trash didn't tell where to
 Zstring moveToRecycleBinGetTrashPath(const Zstring& itemPath); //throw FileError, RecycleBinUnavailable
 }
 #endif
