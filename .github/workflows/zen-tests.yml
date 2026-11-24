@@ -67,8 +67,6 @@ jobs:
       STDLIB: ${{ matrix.stdlib }}
       ARCH: ${{ matrix.arch }} #macOS only
       ZEN_TEST_ALL_ERRORS: 1 #a failed build reports all errors of each file, not just the first
-      #M3 step 1: dir_watcher and recycler are not implemented on macOS yet (their tests are NOT_PORTED_YET_TEST_CASE)
-      ZEN_TEST_ALLOW_NOT_PORTED: ${{ matrix.platform == 'macos' && '1' || '' }}
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies (gcc container)
@@ -107,4 +105,15 @@ jobs:
             echo "ZEN_TEST_COMPILE_ONLY=1" >> "$GITHUB_ENV"
           fi
       - name: Build and run zen tests
-        run: bash Tests/zen/run.sh
+        run: ZEN_TEST_BIN="$RUNNER_TEMP/zen-test-bin" bash Tests/zen/run.sh
+      #FSEvents delivers events asynchronously and coalesces them: the watcher test must be reliable, not just pass once
+      - name: dirWatcher test 20 times (macOS)
+        if: matrix.platform == 'macos' && env.ZEN_TEST_COMPILE_ONLY != '1'
+        run: |
+          mkdir -p "$RUNNER_TEMP/zen-test-root"
+          for i in $(seq 1 20); do
+            "$RUNNER_TEMP/zen-test-bin/zen_test" --root "$RUNNER_TEMP/zen-test-root" dirWatcher > "$RUNNER_TEMP/dw.log" 2>&1 ||
+              { cat "$RUNNER_TEMP/dw.log"; echo "::error::dirWatcher failed in run $i of 20"; exit 1; }
+          done
+          tail -n 1 "$RUNNER_TEMP/dw.log"
+          echo "dirWatcher: 20 of 20 runs passed"

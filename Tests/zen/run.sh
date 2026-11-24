@@ -29,7 +29,7 @@ BIN="${ZEN_TEST_BIN:-$WORK/bin}"
 mkdir -p "$BIN"
 
 # zen sources per platform: shared POSIX code plus the platform's own files (zen/*_mac.*)
-ZEN_SOURCES=(file_access file_io file_traverser file_path resolve_path zstring sys_info sys_version process_exec thread sys_error format_unit legacy_compiler crash_scrub)
+ZEN_SOURCES=(file_access file_io file_traverser file_path resolve_path zstring sys_info sys_version process_exec process_priority thread sys_error format_unit legacy_compiler crash_scrub)
 case "$(uname -s)" in
     Linux)
         CXX="${CXX:-g++}"
@@ -43,8 +43,8 @@ case "$(uname -s)" in
         DEPLOYMENT_TARGET="$(sed -nE 's/^FFS_MACOS_DEPLOYMENT_TARGET=([0-9.]+).*/\1/p' "$ROOT/.github/build/common.sh")"
         [ -n "$DEPLOYMENT_TARGET" ] || { echo "no FFS_MACOS_DEPLOYMENT_TARGET in .github/build/common.sh" >&2; exit 2; }
         PLATFORM_CFLAGS="-arch $ARCH -mmacosx-version-min=$DEPLOYMENT_TARGET"
-        PLATFORM_LIBS="-arch $ARCH -mmacosx-version-min=$DEPLOYMENT_TARGET -framework CoreFoundation -framework Foundation"
-        ZEN_SOURCES+=(sys_error_mac.mm)
+        PLATFORM_LIBS="-arch $ARCH -mmacosx-version-min=$DEPLOYMENT_TARGET -framework CoreFoundation -framework CoreServices -framework Foundation"
+        ZEN_SOURCES+=(sys_error_mac.mm dir_watcher_mac.cpp recycler_mac.mm)
         ;;
     *)
         echo "Tests/zen/run.sh: no build setup for $(uname -s) yet" >&2

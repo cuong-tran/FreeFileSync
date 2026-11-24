@@ -7,7 +7,7 @@
 #   .github/build scripts (FFS_TARGET=macos-<arch>), arm64 natively and x86_64 cross-compiled on the same arm64 runner,
 #   cached like the Linux libraries. Uploads one archive per architecture with the build log and a manifest. The same job
 #   builds sentry-native (crash reporting for FFS_SENTRY=1 builds, .github/build/build-sentry-native.sh) against those
-#   libraries, cached on its own, then compiles all of zen/ against the libraries and runs the zen unit tests (M3 step 1).
+#   libraries, cached on its own, then compiles all of zen/ against the libraries and runs the zen unit tests (M3 steps 1, 2).
 #
 # Later stages slot in after "Libraries": a job per architecture that builds FreeFileSync.app and RealTimeSync.app
 # against the cached libraries (needs: libraries), and a "wrap-mac-dmg" job that turns each .app into a .dmg and uploads
@@ -210,7 +210,6 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
           ZEN_TEST_ALL_ERRORS: 1
-          ZEN_TEST_ALLOW_NOT_PORTED: 1 # M3 step 1: dir_watcher and recycler are not implemented on macOS yet
         run: |
           if [ "$ARCH" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
             echo "::warning::Rosetta 2 not available: x86_64 zen tests are compiled only"

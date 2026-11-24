@@ -3,6 +3,7 @@
 #include <zen/file_access.h>
 #include <zen/file_traverser.h>
 #include <zen/symlink_target.h>
+#include <zen/process_exec.h>
 #include "test.h"
 
 using namespace zen;
@@ -395,6 +396,14 @@ TEST_CASE(fileAccessPermissions)
     CHECK_NO_THROW(copyItemPermissions(appendPath(testDir, "sourceLink"), appendPath(testDir, "targetLink"), ProcSymlink::asLink));
     CHECK(getPerms(target2) == permsTarget);
     CHECK(getPerms(source) == permsSource);
+#ifdef ZEN_MAC
+    //macOS: symlinks have permissions of their own (lchmod)
+    auto getLinkPerms = [](const Zstring& itemPath) { return fs::symlink_status(toPath(itemPath)).permissions() & perms::mask; };
+    fs::permissions(toPath(appendPath(testDir, "sourceLink")), perms::owner_all, fs::perm_options::replace | fs::perm_options::nofollow);
+    CHECK_NO_THROW(copyItemPermissions(appendPath(testDir, "sourceLink"), appendPath(testDir, "targetLink"), ProcSymlink::asLink));
+    CHECK(getLinkPerms(appendPath(testDir, "targetLink")) == perms::owner_all);
+    CHECK(getPerms(target2) == permsTarget);
+#endif
 #else
     //Windows: ACLs, checked once the Windows implementation exists
     CHECK_NO_THROW(copyItemPermissions(source, target, ProcSymlink::follow));
@@ -427,3 +436,52 @@ TEST_CASE(fileAccessFreeSpaceAndTemp)
     CHECK(!tempPath.empty());
     CHECK(fs::is_directory(toPath(tempPath)));
 }
+
+
+#ifdef ZEN_MAC
+namespace
+{
+std::string runShell(const Zstring& cmdLine) //throw SysError: output of a command that must succeed
+{
+    const auto [exitCode, output] = consoleExecute(cmdLine, std::nullopt); //throw SysError, SysErrorTimeOut
+    if (exitCode != 0)
+        throw SysError(L"exit code " + numberTo<std::wstring>(exitCode) + L": " + utfTo<std::wstring>(cmdLine) + L"\n" + utfTo<std::wstring>(output));
+    return utfTo<std::string>(output);
+}
+}
+
+
+//macOS: extended attributes and ACLs, checked with the system tools (xattr, chmod +a, ls -le)
+TEST_CASE(fileAccessMacMetadata)
+{
+    const Zstring source = appendPath(testDir, "source");
+    const Zstring target = appendPath(testDir, "target");
+    writeFile(source, "content");
+
+    //copyNewFile(): extended attributes come along; the byte count is the file content only
+    runShell("xattr -w com.freefilesync.zentest 'zen value' " + escapeCommandArg(source)); //throw SysError
+    int64_t bytesNotified = 0;
+    CHECK_NO_THROW((void)copyNewFile(source, target, [&](int64_t bytesDelta) { bytesNotified += bytesDelta; }));
+    CHECK_EQUAL(bytesNotified, static_cast<int64_t>(7));
+    CHECK_EQUAL(trimCpy(runShell("xattr -p com.freefilesync.zentest " + escapeCommandArg(target))), std::string("zen value"));
+
+    //copyDirectoryAttributes(): extended attributes of folders
+    const Zstring sourceDir = appendPath(testDir, "sourceDir");
+    const Zstring targetDir = appendPath(testDir, "targetDir");
+    createDirectory(sourceDir);
+    createDirectory(targetDir);
+    runShell("xattr -w com.freefilesync.zentest 'folder value' " + escapeCommandArg(sourceDir));
+    CHECK_NO_THROW(copyDirectoryAttributes(sourceDir, targetDir));
+    CHECK_EQUAL(trimCpy(runShell("xattr -p com.freefilesync.zentest " + escapeCommandArg(targetDir))), std::string("folder value"));
+
+    //copyItemPermissions(): the ACL, besides owner and mode (a harmless "allow" entry: the test folder must stay deletable)
+    const Zstring aclSource = appendPath(testDir, "aclSource");
+    const Zstring aclTarget = appendPath(testDir, "aclTarget");
+    writeFile(aclSource, "s");
+    writeFile(aclTarget, "t");
+    runShell("chmod +a 'everyone allow read' " + escapeCommandArg(aclSource));
+    CHECK(!contains(runShell("ls -led " + escapeCommandArg(aclTarget)), "everyone allow read"));
+    CHECK_NO_THROW(copyItemPermissions(aclSource, aclTarget, ProcSymlink::follow));
+    CHECK(contains(runShell("ls -led " + escapeCommandArg(aclTarget)), "everyone allow read"));
+}
+#endif

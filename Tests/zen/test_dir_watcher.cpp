@@ -9,9 +9,6 @@ using namespace zen;
 using namespace zentest;
 
 
-#ifdef ZEN_MAC
-NOT_PORTED_YET_TEST_CASE(dirWatcher, "zen/dir_watcher (FSEvents), M3 step 2")
-#else
 namespace
 {
 const auto eventTimeout = std::chrono::seconds(10); //generous for slow CI machines; the loop ends as soon as the event arrived
@@ -109,7 +106,32 @@ TEST_CASE(dirWatcher)
     expectChange("remove (rename source)", DirWatcher::ChangeType::remove, newDirPath, false);
     expectChange("create (rename target)", DirWatcher::ChangeType::create, renamedPath, false);
 
+#ifdef ZEN_MAC
+    //FSEvents: folders created after the watch started are watched, too
+    const Zstring renamedFilePath = appendPath(renamedPath, "in new folder.txt");
+    writeFile(renamedFilePath, "x");
+    expectChange("create (new subfolder)", DirWatcher::ChangeType::create, renamedFilePath, false);
+
+    //paths are reported as passed to DirWatcher, also when it is a symlink (FSEvents reports resolved paths)
+    {
+        const Zstring linkPath = appendPath(testDir, "link to watched");
+        std::filesystem::create_directory_symlink(toPath(watchedPath), toPath(linkPath));
+        DirWatcher linkWatcher(linkPath); //throw FileError
+        std::vector<DirWatcher::Change> linkBacklog;
+        writeFile(appendPath(watchedPath, "via link.txt"), "x");
+        CHECK(waitForChange(linkWatcher, [&](const DirWatcher::Change& c)
+        {
+            return c.type == DirWatcher::ChangeType::create && c.itemPath == appendPath(linkPath, "via link.txt");
+        }, linkBacklog));
+    }
+
+    //removal of the watched folder itself: like an unavailable base folder ("check existence of top watched directory externally")
+    removeDirectoryPlainRecursion(watchedPath);
+    expectChange("baseFolderUnavailable (folder removed)", DirWatcher::ChangeType::baseFolderUnavailable, watchedPath, false);
+#endif
+
     //errors
     CHECK_THROWS(FileError, DirWatcher(appendPath(testDir, "missing")));
+    writeFile(appendPath(testDir, "file"), "x");
+    CHECK_THROWS(FileError, DirWatcher(appendPath(testDir, "file"))); //not a folder
 }
-#endif
