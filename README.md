@@ -46,6 +46,14 @@ Per the [FAQ](https://freefilesync.org/faq.php#features), FreeFileSync runs nati
 | --- | --- | --- |
 | Windows 11, 10, 8.1, 8 and 7 | macOS 10.12 Sierra through macOS 27 Golden Gate | All major distributions, including Arch Linux, CentOS, Debian, Fedora, Manjaro, Mint, openSUSE and Ubuntu |
 
+## Builds from this repository
+
+The official binaries come from freefilesync.org. This repository's CI builds its own from the sources (CI build products, not releases):
+
+- **Linux**: a `.deb` and a portable tar.gz for x86_64 and aarch64 (`Linux build` workflow).
+- **macOS** (being ported, milestone M3 of [docs/PORTING_PLAN.md](docs/PORTING_PLAN.md)): `FreeFileSync-<version>-macos-arm64.zip` and `-x86_64.zip` (`macOS build` workflow), each with `FreeFileSync.app` and `RealTimeSync.app` for macOS 13.3 or later. They are signed ad hoc, not by an Apple Developer ID, and not notarized, so macOS refuses to open them at first ("cannot be opened because the developer cannot be verified" or "is damaged"). To open one anyway: right-click the app in Finder, choose *Open* and confirm (on macOS 15 and later: try to open it once, then *System Settings → Privacy & Security → Open Anyway*), or remove the quarantine flag of the unpacked apps in Terminal with `xattr -dr com.apple.quarantine FreeFileSync.app RealTimeSync.app`.
+- **Windows**: not yet (milestone M4).
+
 ## Crash reporting
 
 Builds from these sources contain no crash reporting unless they are made with `FFS_SENTRY=1` (see [CONTRIBUTING.md](CONTRIBUTING.md#crash-reporting)); a default `make` has no reporting code at all. The packages built by this repository's CI use [Sentry](https://sentry.io) once the repository owner has set up the `SENTRY_DSN` secret.
