@@ -15,7 +15,7 @@ Status and decisions are tracked in [`PROGRESS.md`](../PROGRESS.md). This file i
 | M5 | Engine without wxWidgets | `base/`, `afs/`, `zen/` build as a library that does not link wx |
 | M6+ | Slint UI (spike, main window, dialogs, platform gaps) | Planned in detail after M5 |
 
-Each milestone is one pull request from `dev` to `main`. Work stops after the PR is opened and resumes when it is merged or when told to continue. A milestone that grows too large is split at the step boundaries listed below, each split getting its own PR.
+Each milestone is one pull request from `dev` to `main`. The coordinator watches it, fixes what CI and reviews turn up, squash-merges it once all checks pass, and continues with the next milestone. A milestone that grows too large is split at the step boundaries listed below, each split getting its own PR.
 
 ## Architecture
 

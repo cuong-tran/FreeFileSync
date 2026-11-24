@@ -34,7 +34,7 @@ Untested on macOS so far: shut down and sleep, the "no recycle bin" mapping, the
 
 - The coordinator plans, writes task instructions and reviews. Coding is done by sub-agents (Opus, high effort).
 - After each coding step: `/code-review medium <range>`, findings go to a fix agent, and the findings are listed below with their outcome.
-- Commit and push to `dev` after every step. One PR from `dev` to `main` per milestone; work pauses when the PR is opened.
+- Commit and push to `dev` after every step. One PR from `dev` to `main` per milestone. The coordinator watches the PR, fixes CI failures and valid review findings, squash-merges it once all checks pass, recreates `dev` from `main` and continues with the next milestone (owner's instruction of 2026-11-24; before that, work paused at each PR).
 
 ## Decisions
 
@@ -61,6 +61,7 @@ Untested on macOS so far: shut down and sleep, the "no recycle bin" mapping, the
 | 2026-11-24 | Case mapping on macOS is per code point, as on Linux ("ß" stays "ß") | Changed during the review fixes from Core Foundation's full mapping, so comparisons behave the same on both platforms. |
 | 2026-11-24 | macOS file copies use the portable read/write loop, not `clonefile`; extended attributes and ACLs are copied separately | Keeps the progress callback and byte counts identical to Linux. |
 | 2026-11-24 | Floating-point `from_chars` falls back to `strtod_l` in the C locale where libc++ lacks it (macOS before 26) | Chosen by libc++'s availability macro; matches libstdc++ and libc++ on 53 edge inputs. |
+| 2026-11-24 | Milestone PRs are squash-merged by the coordinator once all checks pass, without waiting for the owner | Asked by the owner. |
 
 ## Needed from the repository owner
 
