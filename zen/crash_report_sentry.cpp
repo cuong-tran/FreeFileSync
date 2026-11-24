@@ -220,7 +220,7 @@ int globalFlushDone   [2] = {-1, -1};
 bool inSigtermHandler()
 {
     sigset_t blocked;
-    return ::pthread_sigmask(SIG_BLOCK, nullptr, &blocked) == 0 && ::sigismember(&blocked, SIGTERM) == 1;
+    return ::pthread_sigmask(SIG_BLOCK, nullptr, &blocked) == 0 && sigismember(&blocked, SIGTERM) == 1; //no "::": a macro on macOS
 }
 
 //child processes (e.g. crashpad_handler, or a command another thread starts) must not inherit them
