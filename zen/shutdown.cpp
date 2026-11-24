@@ -45,8 +45,10 @@ void zen::suspendSystem() //throw FileError
     {
 #if defined ZEN_MAC //no admin rights needed
         auto [exitCode, output] = consoleExecute("pmset sleepnow", std::nullopt /*timeoutMs*/); //throw SysError, (SysErrorTimeOut)
-        if (exitCode == 0)
-            return; //prints "Sleeping now..." on success
+        if (exitCode != 0)
+            throw SysError(formatSystemError("pmset sleepnow", replaceCpy(_("Exit code %x"), L"%x", numberTo<std::wstring>(exitCode)),
+                                             utfTo<std::wstring>(trimCpy(output))));
+        return; //prints "Sleeping now..." on success
 #else
         //"systemctl" should work without admin rights:
         auto [exitCode, output] = consoleExecute("systemctl suspend", std::nullopt /*timeoutMs*/); //throw SysError, (SysErrorTimeOut)

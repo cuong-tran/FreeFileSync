@@ -134,9 +134,9 @@ FileInputPlain::FileInputPlain(FileHandle handle, const Zstring& filePath) :
     FileBase(handle, filePath)
 {
     //optimize read-ahead on input file:
-#if defined ZEN_MAC //no posix_fadvise(); read-ahead is on by default, F_RDAHEAD makes sure
-    if (::fcntl(getHandle(), F_RDAHEAD, 1) == -1)
-        THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot read file %x."), L"%x", fmtPath(filePath)), "fcntl(F_RDAHEAD)");
+#if defined ZEN_MAC //no posix_fadvise(); read-ahead is on by default, F_RDAHEAD makes sure: only a hint, so a failure doesn't matter
+    [[maybe_unused]] const int rv = ::fcntl(getHandle(), F_RDAHEAD, 1);
+    assert(rv != -1);
 #else
     if (::posix_fadvise(getHandle(), 0 /*offset*/, 0 /*len*/, POSIX_FADV_SEQUENTIAL) != 0) //"len == 0" means "end of the file"
         THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot read file %x."), L"%x", fmtPath(filePath)), "posix_fadvise(POSIX_FADV_SEQUENTIAL)");
