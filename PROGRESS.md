@@ -14,12 +14,21 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M2 Sentry | 1. Interface, empty implementation, sentry-native build, Makefile switch, init | done | `cf27254^..304f86f`, fixes `7c0f9bc`, `07ce91b`, `c48509d`, `51829b2` | 10 findings: all fixed |
 | M2 Sentry | 2. Scrubbing, opt-out, first-start notice, test crash, symbol upload | done | `304f86f..51829b2`, fixes `c2b91b5^..b80eb4e` | 9 findings: all fixed |
 | M2 Sentry | Pull request | merged as [#12](https://github.com/cuong-tran/FreeFileSync/pull/12) (squash, `fea5409`) | | no review threads |
-| M3 macOS | 1. `zen` core compiles and `Tests/zen` passes on macOS | done, review fixes in progress | `a0b5c3f..50065e4` | 8 findings, see below |
-| M3 macOS | 2. `zen` features: FSEvents watcher, recycle bin, shutdown, network | in progress | | |
-| M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | | | |
+| M3 macOS | 1. `zen` core compiles and `Tests/zen` passes on macOS | done | `a0b5c3f..50065e4`, fixes in `50065e4..292907c` | 8 findings: all fixed |
+| M3 macOS | 2. `zen` features: FSEvents watcher, recycle bin, shutdown, network | coded and green in CI; **paused by the owner before its review** | `50065e4..292907c` | not reviewed yet |
+| M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | not started (paused) | | |
 | M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | | | |
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | | | |
 | M4 Windows | | | | |
+
+## Paused
+
+Paused on 2026-11-24 at the owner's request, at the end of M3 step 2. To resume:
+
+1. Run `/code-review medium 50065e4..292907c` (M3 step 2 and the step 1 fixes), send the findings to a coder session, record the outcomes here.
+2. Start M3 step 3 with a fresh coder session. Carry over from the step 2 report: `afs/native.cpp` needs `st_mtim`, creation time, volume and file ids; `ffs_paths` for the app bundle and `~/Library/Application Support/FreeFileSync`; a macOS block in both makefiles (`.mm` rule with ARC, frameworks, the `*_mac` files instead of the Linux ones); `Tests/sync`; the ZIP AFS test on macOS; `crash_report_sentry.cpp`'s pipe should take `lockFdInheritance()` on macOS.
+
+Untested on macOS so far: shut down and sleep, the "no recycle bin" mapping, the watcher's unmount path, socket code.
 
 ## How the work runs
 
@@ -49,6 +58,7 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | 2026-11-24 | Crash reports: nothing is uploaded until the user has answered the first-start notice; its default choice is to send. Batch runs with no stored answer send nothing. `FFS_NO_CRASH_REPORT=1` always wins | A Sentry build must not upload before the user knows; stricter than the plan's plain opt-out. |
 | 2026-11-24 | sentry-native 0.17.6, static, Crashpad backend, curl transport, in its own prefix `.build/sentry` | Cached separately from the other libraries; built only for `FFS_SENTRY=1`. |
 | 2026-11-24 | macOS path comparison is always case- and Unicode-normalization-insensitive, whatever the volume | APFS/HFS+ default and what upstream's header documents; deterministic. A case-sensitive APFS volume is treated as insensitive. |
+| 2026-11-24 | Case mapping on macOS is per code point, as on Linux ("ß" stays "ß") | Changed during the review fixes from Core Foundation's full mapping, so comparisons behave the same on both platforms. |
 | 2026-11-24 | macOS file copies use the portable read/write loop, not `clonefile`; extended attributes and ACLs are copied separately | Keeps the progress callback and byte counts identical to Linux. |
 | 2026-11-24 | Floating-point `from_chars` falls back to `strtod_l` in the C locale where libc++ lacks it (macOS before 26) | Chosen by libc++'s availability macro; matches libstdc++ and libc++ on 53 edge inputs. |
 
@@ -151,11 +161,11 @@ Result of the step: all of `zen/` compiles on macOS with Apple clang, warning-fr
 
 | # | Finding | Severity | Outcome |
 |---|---|---|---|
-| 1 | Copying permissions can leave a read-only target writable (`copyfile(COPYFILE_ACL)` after `chmod`) | important | sent for fixing |
-| 2 | A file copy fails entirely when its extended attributes cannot be copied | important | sent for fixing |
-| 3 | Opening a file for reading fails where read-ahead cannot be set | important | sent for fixing |
-| 4 | A new socket can leak into a child process started by another thread | important | sent for fixing |
-| 5 | A failed sleep request can be reported as success | nit | sent for fixing |
-| 6 | Natural sort and path comparison allocate on every non-ASCII comparison | nit | sent for fixing |
-| 7 | `Tests/zen/run.sh` accepts bash 4.3 but needs 4.4 | nit | sent for fixing |
-| 8 | A deployment-target change does not re-run the zen tests | nit | sent for fixing |
+| 1 | Copying permissions can leave a read-only target writable (`copyfile(COPYFILE_ACL)` after `chmod`) | important | fixed in `8f7308a` and a follow-up: ACLs are copied with `acl_get_file`/`acl_set_file` before owner and mode (symlinks through a descriptor); tested with read-only files, folders and symlinks as non-root |
+| 2 | A file copy fails entirely when its extended attributes cannot be copied | important | fixed in `8f7308a`: an extended-attribute error never fails or discards a copy; unexpected errors go to the sync log. Tested against a FAT disk image; the logging branch could not be provoked |
+| 3 | Opening a file for reading fails where read-ahead cannot be set | important | fixed in `f8d316a` |
+| 4 | A new socket can leak into a child process started by another thread | important | fixed in `511d95a`: one `lockFdInheritance()` guard for `consoleExecute` and socket creation; other descriptor sites audited |
+| 5 | A failed sleep request can be reported as success | nit | fixed in `f8d316a` |
+| 6 | Natural sort and path comparison allocate on every non-ASCII comparison | nit | fixed in `5a7a838`, `292907c`: case mapping through a table built once, normalization skipped where not needed. 100k mixed names: natural sort 3.5 s on macOS arm64 versus 1.8 s on Linux |
+| 7 | `Tests/zen/run.sh` accepts bash 4.3 but needs 4.4 | nit | fixed in `4a14e9e` |
+| 8 | A deployment-target change does not re-run the zen tests | nit | fixed in `4a14e9e` |
