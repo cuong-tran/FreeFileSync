@@ -73,7 +73,7 @@ CXXFLAGS += $(macTargetFlags)
 LDFLAGS  += $(macTargetFlags)
 
 CXXFLAGS += $(shell $(macWxConfig) --cxxflags --debug=no)
-LDFLAGS  += $(shell $(macWxConfig) --libs std, aui, richtext --debug=no)
+LDFLAGS  += $(call macWxLibs,std aui richtext)
 
 #CoreServices: FSEvents (zen/dir_watcher_mac.cpp); Foundation: NSError; AppKit, ImageIO, UniformTypeIdentifiers: base/icon_loader_mac.mm
 LDFLAGS  += -framework CoreFoundation -framework CoreServices -framework Foundation -framework AppKit -framework ImageIO -framework UniformTypeIdentifiers

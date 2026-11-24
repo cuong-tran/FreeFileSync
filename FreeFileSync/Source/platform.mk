@@ -46,6 +46,13 @@ else ifeq ($(TARGET_OS),mac)
         endif
     endif
     macWxConfig  := $(FFS_DEPS_PREFIX)/bin/wx-config
+    #$(call macWxLibs,<wx libraries>): "wx-config --libs" for the prefix's static wxWidgets. build-wxwidgets.sh configures it with
+    #--host, so its libraries are installed as lib<name>-3.3-<host>.a; but wx-config adds the "-<host>" only when configure decided
+    #it was cross-compiling, which it doesn't where the target's test programs run (arm64 natively, x86_64 under Rosetta 2).
+    #A library file (or -l name) that doesn't exist is mapped to the one installed with the host suffix; anything else is kept.
+    macWxLibFile = $(if $(wildcard $1),$1,$(or $(wildcard $(1:.a=)-*-apple-darwin*.a),$1))
+    macWxLibName = $(if $(wildcard $(FFS_DEPS_PREFIX)/lib/lib$(1:-l%=%).a),$1,$(or $(wildcard $(FFS_DEPS_PREFIX)/lib/lib$(1:-l%=%)-*-apple-darwin*.a),$1))
+    macWxLibs    = $(foreach f,$(shell $(macWxConfig) --libs $1 --debug=no),$(if $(filter %.a,$f),$(call macWxLibFile,$f),$(if $(filter -lwx%,$f),$(call macWxLibName,$f),$f)))
     #the prefix's .pc files only (Homebrew's describe libraries for the host architecture), plus one for the SDK's zlib, which
     #the prefix's libcurl and libssh2 require (without it, pkg-config fails for them and prints nothing on stdout)
     macPkgConfig := PKG_CONFIG_LIBDIR=$(FFS_DEPS_PREFIX)/lib/pkgconfig:$(abspath $(platformMkDir)../../.github/build/pkgconfig-macos) pkg-config

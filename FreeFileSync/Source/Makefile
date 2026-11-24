@@ -107,7 +107,7 @@ CXXFLAGS += $(macTargetFlags)
 LDFLAGS  += $(macTargetFlags)
 
 CXXFLAGS += $(shell $(macWxConfig) --cxxflags --debug=no)
-LDFLAGS  += $(shell $(macWxConfig) --libs std, aui, richtext --debug=no)
+LDFLAGS  += $(call macWxLibs,std aui richtext)
 
 #pkg-config prints nothing when a package or one it requires is missing: stop instead of building without the flags
 ifeq ($(filter-out clean,$(or $(MAKECMDGOALS),all)),)
