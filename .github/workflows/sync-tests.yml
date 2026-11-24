@@ -1,0 +1,205 @@
+name: sync tests
+
+#builds the engine (libffs_engine.a, "make engine") and runs the headless sync tests in Tests/sync against it: real comparisons and
+#synchronizations of temporary folder trees (mirror, update, two-way with the database, filters, versioning, recycle bin, symlinks,
+#permissions, errors, ZIP source; on macOS also extended attributes and a FAT disk image).
+#matrix: g++ and clang + libc++ on Ubuntu, Xcode's clang on macOS for arm64 and x86_64 (cross-compiled on the arm64 runner, run under
+#Rosetta 2). The libraries come from the caches of the build workflows (same keys; built here on a miss), compiler output from ccache.
+on:
+  push:
+    branches: [dev, main] #other branches: through their pull request (or run by hand), so a PR push doesn't test the same commit twice
+    paths: &test-paths
+      - 'FreeFileSync/Source/**'
+      - '!FreeFileSync/Source/ui/**'
+      - '!FreeFileSync/Source/RealTimeSync/**'
+      - 'zen/**'
+      - 'zenXml/**'
+      - 'libcurl/**'
+      - 'libssh2/**'
+      - 'wx+/image_holder.h' #included by afs/abstract.h
+      - 'Tests/sync/**'
+      - 'Tests/zen/test.h'
+      - '.github/build/**'
+      - 'Bugs.txt'
+      - '.github/workflows/sync-tests.yml'
+  pull_request:
+    paths: *test-paths
+  workflow_dispatch:
+
+concurrency: #like the other workflows: a newer push cancels the run it supersedes
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sync-tests:
+    name: sync tests (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu, g++
+            platform: ubuntu
+            runner: ubuntu-24.04
+            cc: gcc-14
+            cxx: g++-14
+            stdlib: ''
+          - name: ubuntu, clang + libc++ #the compiler and C++ library of the macOS and Windows ports
+            platform: ubuntu
+            runner: ubuntu-24.04
+            cc: clang-20
+            cxx: clang++-20
+            stdlib: libc++
+          - name: macOS arm64
+            platform: macos
+            runner: macos-15
+            cc: clang
+            cxx: clang++ #Xcode's clang (newest Xcode 26.x, selected below) with Apple's libc++
+            stdlib: ''
+            arch: arm64
+          - name: macOS x86_64
+            platform: macos
+            runner: macos-15 #arm64 runner: cross-compiled with -arch x86_64, run under Rosetta 2
+            cc: clang
+            cxx: clang++
+            stdlib: ''
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+      STDLIB: ${{ matrix.stdlib }}
+      ARCH: ${{ matrix.arch }} #macOS only
+      FFS_TARGET: ${{ matrix.platform == 'macos' && format('macos-{0}', matrix.arch) || 'linux' }}
+      WX_FLAGS: -stdlib=libc++ #clang + libc++ entry: CXXFLAGS and LDFLAGS for its wxWidgets build (part of the linux-build.yml cache key)
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
+      SYNC_TEST_OBJ: ${{ github.workspace }}/.build/sync-test-obj
+    steps:
+      - uses: actions/checkout@v4
+
+      #---------------------------------------------------------------- Linux
+      - name: Install dependencies (Linux)
+        if: matrix.platform == 'ubuntu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-14 g++-14 clang-20 libc++-20-dev libc++abi-20-dev make cmake pkg-config perl patch curl xz-utils bzip2 \
+            libgtk-3-dev libxtst-dev libidn2-dev zlib1g-dev libselinux1-dev libssl-dev libcurl4-openssl-dev python3 ccache
+
+      #the same keys as linux-build.yml's Packages (x86_64) and clang + libc++ jobs, so their caches are shared
+      - name: Restore libraries (Linux)
+        if: matrix.platform == 'ubuntu'
+        id: cache-linux
+        uses: actions/cache/restore@v4
+        with:
+          path: .build/deps
+          key: ${{ matrix.stdlib == 'libc++'
+            && format('deps-{0}-{1}-{2}-ubuntu-24.04-x86_64-{3}', env.CC, env.CXX, env.WX_FLAGS, hashFiles('.github/build/common.sh', '.github/build/build-libssh2.sh', '.github/build/build-wxwidgets.sh', '.github/build/patches/**'))
+            || format('deps-ubuntu-24.04-x86_64-gcc14-{0}', hashFiles('.github/build/common.sh', '.github/build/build.sh', '.github/build/build-openssl.sh', '.github/build/build-libssh2.sh', '.github/build/build-curl.sh', '.github/build/build-wxwidgets.sh', '.github/build/patches/**')) }}
+
+      - name: Build libraries (Linux)
+        if: matrix.platform == 'ubuntu' && steps.cache-linux.outputs.cache-hit != 'true'
+        run: |
+          if [ "$STDLIB" = libc++ ]; then #libssh2 and wxWidgets only, against the system's OpenSSL and libcurl (as linux-build.yml)
+            .github/build/build-libssh2.sh
+            CXXFLAGS="$WX_FLAGS" LDFLAGS="$WX_FLAGS" .github/build/build-wxwidgets.sh
+          else
+            .github/build/build.sh
+          fi
+
+      - name: Save libraries (Linux)
+        if: matrix.platform == 'ubuntu' && steps.cache-linux.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .build/deps
+          key: ${{ steps.cache-linux.outputs.cache-primary-key }}
+
+      #---------------------------------------------------------------- macOS
+      - name: Select Xcode
+        if: matrix.platform == 'macos'
+        run: |
+          xcode="$(ls -d /Applications/Xcode_26.*.app 2>/dev/null | sort -V | tail -n 1)"
+          if [ -z "$xcode" ]; then
+            echo "::error::no Xcode 26.x on this runner image; installed: $(ls -d /Applications/Xcode*.app | tr '\n' ' ')"
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
+          echo "using $xcode"
+
+      - name: Install dependencies (macOS)
+        if: matrix.platform == 'macos'
+        run: |
+          brew install bash coreutils flock pkgconf make ccache #bash 4.4+, GNU make 4 ("gmake"), and the tools of the .github/build scripts
+          bash --version | sed -n 1p
+          gmake --version | sed -n 1p
+
+      - name: Identify the compiler (macOS)
+        if: matrix.platform == 'macos'
+        id: compiler
+        run: echo "id=$(clang++ --version | sed -n 1p | tr -c 'A-Za-z0-9.\n' '-')-sdk$(xcrun --show-sdk-version)" >> "$GITHUB_OUTPUT"
+
+      #the same key as macos-build.yml's Libraries job, so its cache is shared
+      - name: Restore libraries (macOS)
+        if: matrix.platform == 'macos'
+        id: cache-macos
+        uses: actions/cache/restore@v4
+        with:
+          path: .build/deps/macos-${{ matrix.arch }}
+          key: deps-macos-${{ matrix.arch }}-${{ steps.compiler.outputs.id }}-${{ hashFiles('.github/build/common.sh', '.github/build/build.sh', '.github/build/build-openssl.sh', '.github/build/build-libssh2.sh', '.github/build/build-libidn2.sh', '.github/build/build-curl.sh', '.github/build/build-wxwidgets.sh', '.github/build/patches/**') }}
+
+      - name: Build libraries (macOS)
+        if: matrix.platform == 'macos' && steps.cache-macos.outputs.cache-hit != 'true'
+        run: .github/build/build.sh
+
+      - name: Save libraries (macOS)
+        if: matrix.platform == 'macos' && steps.cache-macos.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .build/deps/macos-${{ matrix.arch }}
+          key: ${{ steps.cache-macos.outputs.cache-primary-key }}
+
+      #x86_64 test binaries run under Rosetta 2; without it (and if it can't be installed), the entry only compiles
+      - name: Rosetta 2
+        if: matrix.platform == 'macos' && matrix.arch == 'x86_64'
+        run: |
+          if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            sudo softwareupdate --install-rosetta --agree-to-license || true
+          fi
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "Rosetta 2 available"
+          else
+            echo "::warning::Rosetta 2 not available on this runner: x86_64 sync tests are compiled only"
+            echo "SYNC_TEST_COMPILE_ONLY=1" >> "$GITHUB_ENV"
+          fi
+
+      #---------------------------------------------------------------- both
+      #compiler output across runs: make rebuilds every object of a fresh checkout (new time stamps), ccache makes that cheap
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-sync-${{ matrix.runner }}-${{ matrix.cxx }}${{ matrix.stdlib }}-${{ matrix.arch }}-${{ github.sha }}
+          restore-keys: ccache-sync-${{ matrix.runner }}-${{ matrix.cxx }}${{ matrix.stdlib }}-${{ matrix.arch }}-
+
+      - name: Build and run sync tests
+        run: |
+          start=$SECONDS
+          ccache --zero-stats > /dev/null
+          #ccache as a compiler wrapper: the makefile detects the compiler family through it ($(CXX) -dM -E)
+          CXX="ccache $CXX" bash Tests/sync/run.sh
+          echo "Tests/sync: $((SECONDS - start)) s"
+          ccache --show-stats | sed -n '1,12p'
+
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ccache-sync-${{ matrix.runner }}-${{ matrix.cxx }}${{ matrix.stdlib }}-${{ matrix.arch }}-${{ github.sha }}
