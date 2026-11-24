@@ -110,7 +110,7 @@ jobs:
       # the build scripts need bash 4+ and GNU coreutils/flock (macOS has bash 3.2 and BSD tools)
       - name: Install build tools
         run: |
-          brew install bash coreutils flock pkgconf
+          brew install bash coreutils flock pkgconf make # make: GNU make 4 ("gmake") for the makefiles; macOS has 3.81
           bash --version | sed -n 1p
           echo "MACOSX_DEPLOYMENT_TARGET in common.sh: $(sed -nE 's/^FFS_MACOS_DEPLOYMENT_TARGET=([0-9.]+).*/\1/p' .github/build/common.sh)"
 
@@ -205,6 +205,16 @@ jobs:
       - name: Compile zen
         run: .github/build/macos-report.sh zen-compile ${{ matrix.arch }} ".build/deps/macos-${{ matrix.arch }}" 2>&1 | tee zen-compile-${{ matrix.arch }}.txt
 
+      # the engine (afs/, base/, the non-UI files of FreeFileSync/Source, zen/) as libffs_engine.a with the makefile (M3 step 3);
+      # -k: every file that fails, not just the first
+      - name: Engine library
+        run: |
+          set -o pipefail
+          gmake -C FreeFileSync/Source -k -j"$(sysctl -n hw.ncpu)" engine ARCH=${{ matrix.arch }} objPath="$RUNNER_TEMP/engine-obj" 2>&1 | tee engine-${{ matrix.arch }}.txt
+          lib="$RUNNER_TEMP/engine-obj/libffs_engine.a"
+          ls -l "$lib"
+          lipo -archs "$lib"
+
       # the zen unit tests (also run by zen-tests.yml); x86_64 runs under Rosetta 2, or is only compiled without it
       - name: zen tests
         env:
@@ -223,6 +233,15 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           path: zen-compile-${{ matrix.arch }}.txt
+          archive: false
+          if-no-files-found: ignore
+
+      - name: Upload engine build log
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          path: engine-${{ matrix.arch }}.txt
           archive: false
           if-no-files-found: ignore
 
