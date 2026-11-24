@@ -10,6 +10,9 @@ using namespace zen;
 using namespace zentest;
 
 
+#ifdef ZEN_MAC
+NOT_PORTED_YET_TEST_CASE(recycler, "zen/recycler (NSFileManager trashItemAtURL), M3 step 2")
+#else
 SANDBOX_TEST_CASE(recycler)
 {
     const Zstring filePath = appendPath(testDir, "to recycle.txt");
@@ -40,3 +43,4 @@ SANDBOX_TEST_CASE(recycler)
     //"fails if item is not existing (anymore)"
     CHECK_THROWS_NOT(FileError, RecycleBinUnavailable, moveToRecycleBin(appendPath(testDir, "missing")));
 }
+#endif

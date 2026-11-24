@@ -8,6 +8,9 @@
 // - CHECK_THROWS_NOT(E, NotE, statement...): statement must throw E, but not the more specific NotE (e.g. FileError, but not ErrorTargetExisting)
 // - KNOWN_ISSUE(cond, note): documents an upstream bug: a failing cond is reported but not counted as failure;
 //   a cond that holds (the bug no longer reproduces) is a failure, so stale markers get noticed
+// - NOT_PORTED_YET_TEST_CASE(name, feature): stands in for a test whose zen feature has no implementation on this platform yet
+//   (#if'ed per platform around the real TEST_CASE); counted and listed at the end, and the run fails because of it unless
+//   ZEN_TEST_ALLOW_NOT_PORTED=1 is set. Only for features a porting step has still to deliver, never to hide a failing test.
 //
 // Test code must stay portable: use std::filesystem or zen APIs only, and branch on ZEN_LINUX/ZEN_MAC/ZEN_WIN (zen/build_info.h)
 // where the expected behavior legitimately differs, with a comment.
@@ -50,6 +53,7 @@ struct Registrar
 inline int checkCount      = 0;
 inline int failureCount    = 0;
 inline int knownIssueCount = 0;
+inline std::vector<std::string> notPortedTests; //"<test>: <feature>"
 
 
 inline void reportFailure(const char* file, int line, const std::string& what)
@@ -154,6 +158,13 @@ inline Zstring nativeRelPath(Zstring relPath)
 
 #define TEST_CASE(name)         ZEN_TEST_CASE_IMPL(name, false)
 #define SANDBOX_TEST_CASE(name) ZEN_TEST_CASE_IMPL(name, true)
+
+#define NOT_PORTED_YET_TEST_CASE(name, feature)                                 \
+    ZEN_TEST_CASE_IMPL(name, false)                                             \
+    {                                                                           \
+        zentest::notPortedTests.push_back(std::string(#name ": ") + (feature)); \
+        std::cout << "   NOT PORTED YET: " << (feature) << std::endl;          \
+    }
 
 #define CHECK(...) /*variadic: conditions may contain commas*/                 \
     do {                                                                        \

@@ -107,10 +107,21 @@ int main(int argc, char* argv[])
     if (ec)
         reportFailure("main", 0, "cannot remove base folder (not empty?): " + ec.message());
 
-    std::cout << "== zen tests: " << tests.size() - skippedCount << " test cases, " << checkCount << " checks, " <<
+    //tests standing in for features not ported to this platform yet (NOT_PORTED_YET_TEST_CASE): fail unless explicitly allowed
+    const char* allowNotPorted = std::getenv("ZEN_TEST_ALLOW_NOT_PORTED");
+    const bool notPortedAllowed = allowNotPorted && std::string(allowNotPorted) == "1";
+    for (const std::string& np : notPortedTests)
+        if (notPortedAllowed)
+            std::cout << "not ported yet (allowed by ZEN_TEST_ALLOW_NOT_PORTED=1): " << np << std::endl;
+        else
+            reportFailure("main", 0, "not ported yet: " + np + " (set ZEN_TEST_ALLOW_NOT_PORTED=1 while the port is in progress)");
+
+    std::cout << "== zen tests: " << tests.size() - skippedCount - notPortedTests.size() << " test cases, " << checkCount << " checks, " <<
               failureCount << " failures, " << knownIssueCount << " known issues";
     if (skippedCount > 0)
         std::cout << ", " << skippedCount << " skipped (no sandbox)";
+    if (!notPortedTests.empty())
+        std::cout << ", " << notPortedTests.size() << " not ported yet";
     std::cout << std::endl;
     return failureCount == 0 ? 0 : 1;
 }

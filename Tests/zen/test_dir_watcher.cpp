@@ -9,6 +9,9 @@ using namespace zen;
 using namespace zentest;
 
 
+#ifdef ZEN_MAC
+NOT_PORTED_YET_TEST_CASE(dirWatcher, "zen/dir_watcher (FSEvents), M3 step 2")
+#else
 namespace
 {
 const auto eventTimeout = std::chrono::seconds(10); //generous for slow CI machines; the loop ends as soon as the event arrived
@@ -109,3 +112,4 @@ TEST_CASE(dirWatcher)
     //errors
     CHECK_THROWS(FileError, DirWatcher(appendPath(testDir, "missing")));
 }
+#endif

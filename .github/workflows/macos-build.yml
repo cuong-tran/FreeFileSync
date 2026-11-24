@@ -1,13 +1,13 @@
-# macOS CI (M1 step 3 of docs/PORTING_PLAN.md): builds and caches the third-party libraries for both Mac architectures
-# and reports what the Apple toolchain accepts. FreeFileSync itself does not build on macOS yet (M3).
+# macOS CI (M1 step 3 and M3 of docs/PORTING_PLAN.md): builds and caches the third-party libraries for both Mac architectures,
+# reports what the Apple toolchain accepts and builds and tests zen/. FreeFileSync itself does not build on macOS yet (M3 step 3+).
 #
 # - "Toolchain report" (informational): Xcode's clang and Homebrew LLVM against the C++ dialect and the platform-
 #   independent zen code, and the oldest deployment target per C++ library feature (.github/build/macos-report.sh).
 # - "Libraries (<arch>)": OpenSSL, libssh2, libidn2, libcurl and wxWidgets (wxOSX/Cocoa) as static libraries with the
 #   .github/build scripts (FFS_TARGET=macos-<arch>), arm64 natively and x86_64 cross-compiled on the same arm64 runner,
-#   cached like the Linux libraries. Uploads one archive per architecture with the build log and a manifest, and a
-#   (non-failing) syntax check of every zen/*.cpp as the macOS porting work list. The same job builds sentry-native (crash
-#   reporting for FFS_SENTRY=1 builds, .github/build/build-sentry-native.sh) against those libraries, cached on its own.
+#   cached like the Linux libraries. Uploads one archive per architecture with the build log and a manifest. The same job
+#   builds sentry-native (crash reporting for FFS_SENTRY=1 builds, .github/build/build-sentry-native.sh) against those
+#   libraries, cached on its own, then compiles all of zen/ against the libraries and runs the zen unit tests (M3 step 1).
 #
 # Later stages slot in after "Libraries": a job per architecture that builds FreeFileSync.app and RealTimeSync.app
 # against the cached libraries (needs: libraries), and a "wrap-mac-dmg" job that turns each .app into a .dmg and uploads
@@ -23,6 +23,7 @@ on:
       - "Bugs.txt"
       - "FreeFileSync/Source/**"
       - "zen/**"
+      - "Tests/zen/**"
       - "wx+/**"
       - "zenXml/**"
       - "libcurl/**"
@@ -200,17 +201,29 @@ jobs:
           echo "libcurl $(pkg-config --modversion libcurl 2>&1), static link flags: $(pkg-config --static --libs libcurl 2>&1)" >> manifest.txt
           cat manifest.txt
 
-      # informational: the work list for porting zen/ (M3 step 1)
-      - name: zen port work list
-        continue-on-error: true
-        run: .github/build/macos-report.sh port-todo ${{ matrix.arch }} ".build/deps/macos-${{ matrix.arch }}" 2>&1 | tee macos-port-todo-${{ matrix.arch }}.txt
+      # zen/ against the libraries above (http.cpp, open_ssl.cpp, socket.h need curl, OpenSSL, libidn2): every file, all errors
+      - name: Compile zen
+        run: .github/build/macos-report.sh zen-compile ${{ matrix.arch }} ".build/deps/macos-${{ matrix.arch }}" 2>&1 | tee zen-compile-${{ matrix.arch }}.txt
 
-      - name: Upload zen port work list
+      # the zen unit tests (also run by zen-tests.yml); x86_64 runs under Rosetta 2, or is only compiled without it
+      - name: zen tests
+        env:
+          ARCH: ${{ matrix.arch }}
+          ZEN_TEST_ALL_ERRORS: 1
+          ZEN_TEST_ALLOW_NOT_PORTED: 1 # M3 step 1: dir_watcher and recycler are not implemented on macOS yet
+        run: |
+          if [ "$ARCH" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "::warning::Rosetta 2 not available: x86_64 zen tests are compiled only"
+            export ZEN_TEST_COMPILE_ONLY=1
+          fi
+          bash Tests/zen/run.sh
+
+      - name: Upload zen compile log
         if: always()
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          path: macos-port-todo-${{ matrix.arch }}.txt
+          path: zen-compile-${{ matrix.arch }}.txt
           archive: false
           if-no-files-found: ignore
 
