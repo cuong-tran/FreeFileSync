@@ -5,11 +5,17 @@
 // *****************************************************************************
 #pragma once
 
+#include <cstdlib>
 #include <iostream>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <zen/crash_report.h>
 #include <zen/file_access.h>
+#include <zen/file_path.h>
 #include <zen/sys_info.h>
+#include <zen/utf.h>
+#include <zen/zstring.h>
 #include "ffs_paths.h"
 #include "version/version.h"
 
@@ -19,10 +25,17 @@ namespace fff
 /*  Crash reporting for FreeFileSync and RealTimeSync (zen/crash_report.h). Does nothing in a build without crash reporting
     (the default). Header only, so the default build gets no extra object file.
 
-    1. startCrashReporting() as early as possible in OnInit(): crashes from then on are caught, uploads stay paused
-    2. applyCrashReportSetting() once GlobalSettings.xml is read: consent from the user's setting (on unless turned off);
-       a crash report caught before is uploaded now, or never
-    3. zen::shutdownCrashReporting() in OnExit()
+    1. startCrashReporting() as early as possible in OnInit(): crashes from then on are caught; until step 2 the consent the
+       last process stored applies (FreeFileSync reads its settings only once the event loop runs)
+    2. applyCrashReportSetting() once GlobalSettings.xml is read: the consent follows the user's answer to the first-start
+       notice (ui/small_dlgs.cpp); until there is one, nothing is sent, and reports are kept until the answer
+    3. zen::shutdownCrashReporting() in OnExit(), before teardownAfs(); exits through zen::terminateProcess() flush too
+       (std::at_quick_exit in crash_report_sentry.cpp)
+
+    libcurl: sentry-native's transport calls curl_global_init(CURL_GLOBAL_ALL) in step 1, before FreeFileSync's own
+    curl_global_init(CURL_GLOBAL_NOTHING) in initAfs(). libcurl counts these calls (only the first one initializes, the last
+    curl_global_cleanup() cleans up), and CURL_GLOBAL_SSL has had no effect since libcurl 7.57, so the only difference is
+    CURL_GLOBAL_WIN32 (WinSock init) on Windows; FreeFileSync's curl setup is unchanged otherwise.
 
     Off without asking: FFS_NO_CRASH_REPORT=1 in the environment, a missing crash handler, or any other init failure
     (the app starts normally; a note goes to stderr).
@@ -75,19 +88,29 @@ inline void startCrashReporting(const char* appName)
 }
 
 
-//setting: GlobalConfig::crashReports (nullopt: not decided yet => on, the first-start notice tells the user)
+//the consent for a stored answer (GlobalConfig::crashReports); nullopt: not asked yet (e.g. batch runs before the first
+//start of the GUI) => withheld, reports are kept
+inline zen::CrashReportConsent getCrashReportConsent(const std::optional<bool>& setting)
+{
+    if (!setting)
+        return zen::CrashReportConsent::unknown;
+    return *setting ? zen::CrashReportConsent::given : zen::CrashReportConsent::revoked;
+}
+
+
 inline void applyCrashReportSetting(const char* appName, const std::optional<bool>& setting)
 {
     using namespace zen;
 
-    if (!isCrashReportingAvailable())
+    if (!isCrashReportingActive())
         return;
 
-    setCrashReportingConsent(setting.value_or(true)); //no-op if reporting is off
+    setCrashReportingConsent(getCrashReportConsent(setting));
 
-    //CI (Tests/sentry/run.sh): FFS_TEST_CRASH=segv|abort|internal-error fails on purpose once the consent is set; also when
-    //reporting is off (opt-out, no handler), so the test sees a real crash that must not be sent
-    if (const char* testCrash = ::getenv("FFS_TEST_CRASH"))
+    //CI (Tests/sentry/run.sh): FFS_TEST_CRASH=segv|abort|internal-error fails on purpose once the consent is set; never in
+    //a build for release (SENTRY_ENVIRONMENT=release)
+    if (const char* testCrash = ::getenv("FFS_TEST_CRASH");
+        testCrash && getCrashReportBuildInfo().environment != "release")
     {
         const std::string_view kind = testCrash;
         if (kind == "segv")

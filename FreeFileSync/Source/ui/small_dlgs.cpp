@@ -1904,7 +1904,7 @@ void OptionsDlg::onOkay(wxCommandEvent& event)
     if (isCrashReportingAvailable()) //keep the setting of a build with crash reporting untouched
     {
         globalCfgOut_.crashReports = m_checkBoxCrashReports->GetValue();
-        setCrashReportingConsent(*globalCfgOut_.crashReports);
+        setCrashReportingConsent(*globalCfgOut_.crashReports ? CrashReportConsent::given : CrashReportConsent::revoked);
     }
 
     globalCfgOut_.appColorTheme = enumColorTheme_.get();
@@ -2504,6 +2504,6 @@ bool fff::showCrashReportNotice(wxWindow* parent)
                                                    "No file lists, log files or synchronization settings are sent, and file paths are removed from error messages.") + L"\n\n" +
                                                  _("You can change this later in the options.")).
                            setCheckBox(sendReports, _("Send crash reports")));
-    setCrashReportingConsent(sendReports);
+    setCrashReportingConsent(sendReports ? CrashReportConsent::given : CrashReportConsent::revoked);
     return sendReports;
 }

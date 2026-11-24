@@ -15,7 +15,8 @@
     - crash_report_none.cpp:   empty implementation, the default: no reporting code at all
 
     Only crashes (minidumps) and reportInternalError() are sent; never sync logs, file names or FileError texts shown to users.
-    Uploads need consent: nothing leaves the machine before setCrashReportingConsent(true).
+    Uploads need consent: nothing leaves the machine before setCrashReportingConsent(CrashReportConsent::given). Reports made
+    while the consent is unknown are kept and sent once it is given, or dropped once it is revoked.
     Texts (messages, breadcrumbs, exception values) are scrubbed of paths, user and host name (zen/crash_scrub.h); a minidump
     can't be scrubbed on the client: it contains the paths of the loaded modules and the threads' stack memory.               */
 namespace zen
@@ -47,16 +48,23 @@ struct CrashReportConfig
 //true if built with a crash reporting implementation; false in the empty build
 bool isCrashReportingAvailable();
 
-//call once, as early as possible; uploads stay paused until setCrashReportingConsent()
+//call once, as early as possible; until setCrashReportingConsent() the consent stored by the last process applies
 void initCrashReporting(const CrashReportConfig& cfg); //throw SysError
 
 //true after a successful initCrashReporting() and before shutdownCrashReporting()
 bool isCrashReportingActive();
 
-//consent is not stored by the reporter: set it after every init, from the user's settings
-void setCrashReportingConsent(bool consent);
+enum class CrashReportConsent
+{
+    unknown, //not asked yet: reports are kept, not sent
+    given,   //send, including the reports kept so far
+    revoked, //send nothing; reports kept so far are deleted
+};
+//set it after every init from the user's setting: all processes share one report database, and its stored consent
+//is whatever the last process set
+void setCrashReportingConsent(CrashReportConsent consent);
 
-//flushes pending events (bounded wait); safe to call when not initialized
+//flushes pending events (bounded wait); safe to call when not initialized. Also runs on std::quick_exit() (zen::terminateProcess())
 void shutdownCrashReporting();
 
 //context attached to the next crash or internal error report; must not contain sync data

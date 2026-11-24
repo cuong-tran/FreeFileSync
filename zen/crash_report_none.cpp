@@ -23,7 +23,7 @@ void zen::initCrashReporting(const CrashReportConfig& cfg) {} //throw SysError
 
 bool zen::isCrashReportingActive() { return false; }
 
-void zen::setCrashReportingConsent(bool consent) {}
+void zen::setCrashReportingConsent(CrashReportConsent consent) {}
 
 void zen::shutdownCrashReporting() {}
 

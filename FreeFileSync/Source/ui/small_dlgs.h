@@ -15,7 +15,8 @@ namespace fff
 
 void showAboutDialog(wxWindow* parent);
 
-//first start of a build with crash reporting: what is sent; returns whether reports stay on (and sets the consent accordingly)
+//first start of a build with crash reporting: what is sent; returns the answer (default: send) and sets the consent from it;
+//nothing is uploaded before (crash_report_init.h)
 bool showCrashReportNotice(wxWindow* parent);
 
 zen::ConfirmationButton showCopyToDialog(wxWindow* parent,

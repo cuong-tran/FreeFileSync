@@ -3,9 +3,12 @@
 #   (a) FFS_TEST_CRASH=segv (FreeFileSync) and abort (RealTimeSync): a minidump upload arrives, with the expected release,
 #       environment and app tag, and no user name, host name or home folder in sentry-native's event and breadcrumbs
 #   (b) FFS_TEST_CRASH=internal-error (FreeFileSync): an envelope arrives whose message has its paths scrubbed
-#   (c) reporting turned off (GlobalSettings.xml <CrashReports Enabled="false"/>, for both apps; FFS_NO_CRASH_REPORT=1):
-#       a real crash, nothing arrives
+#   (c) reporting turned off: GlobalSettings.xml <CrashReports Enabled="false"/> (both apps): a real crash, nothing arrives;
+#       FFS_NO_CRASH_REPORT=1: no reporter, so no test crash either: the app starts normally, nothing arrives
 #   (d) crashpad_handler missing: FreeFileSync starts normally (.github/build/check-app-starts.sh), nothing arrives
+#   (f) not asked yet (no answer stored): an internal error and a crash are kept, not sent; the next start with the answer
+#       "send" sends both, the answer "don't send" deletes them
+#   (a), (b) and (f) store the answer "send" in GlobalSettings.xml: without an answer nothing is sent
 #   (e) only with --default-build: the given binaries of a default build contain no sentry symbols or strings, and not the DSN
 #
 # Usage: Tests/sentry/run.sh [<bin folder>]          (a) to (d) on a FFS_SENTRY=1 build (default: FreeFileSync/Build/Bin)
@@ -134,14 +137,15 @@ new_home()
     echo "$WORK/$1/home"
 }
 
-# run_app <name> <binary> <env assignments...>: start the app under Xvfb; return once it has exited by itself, or once a
-# request arrived (the app is stopped then), WAIT_SECONDS at most. Output: $WORK/<name>/app.log, exit code: $WORK/<name>/exit.
+# run_app <name> <binary> <env assignments...>: start the app under Xvfb; return once it has exited by itself, or once
+# "$STOP_WHEN <name>" is true (default: a request arrived; the app is stopped then), WAIT_SECONDS at most. Output: $WORK/<name>/app.log, exit code: $WORK/<name>/exit.
 # A crashed app's crashpad_handler keeps running to upload the report; cleanup() and wait_handler_done() end it.
 run_app()
 {
     local name="$1" bin="$2"
     shift 2
     local home="$WORK/$name/home"
+    rm -f "$WORK/$name/exit" # from an earlier run of the same scenario
     # crashpad_handler gets --database=<home>/.config/...: wait_handler_done() and cleanup() find it by that
     ( rc=0 # not "cmd; echo $?": set -e would end the subshell at a crashed app
       "${RUN_AS[@]}" env -i PATH="$PATH" HOME="$home" XDG_CONFIG_HOME="$home/.config" LANG=C.UTF-8 NO_AT_BRIDGE=1 "$@" \
@@ -150,7 +154,7 @@ run_app()
     local pid=$! i
     for (( i = 0; i < WAIT_SECONDS * 10; ++i )); do
         [ -f "$WORK/$name/exit" ] && break
-        [ -n "$(ls "$WORK/$name/received" 2>/dev/null)" ] && break
+        "${STOP_WHEN:-request_arrived}" "$name" && break
         sleep 0.1
     done
     if [ ! -f "$WORK/$name/exit" ]; then
@@ -170,15 +174,37 @@ run_app()
     wait "$pid" 2>/dev/null || true
 }
 
-# wait_for_request <name>: true once a complete request arrived (WAIT_SECONDS at most)
+request_arrived() { [ -n "$(ls "$WORK/$1/received" 2>/dev/null)" ]; }
+
+# wait_for_request <name> [count]: true once <count> (default 1) complete requests arrived (WAIT_SECONDS at most)
 wait_for_request()
 {
-    local i
+    local i files
     for (( i = 0; i < WAIT_SECONDS * 10; ++i )); do
-        compgen -G "$WORK/$1/received/*/request.json" >/dev/null && return 0
+        files=("$WORK/$1/received"/*/request.json)
+        [ -e "${files[0]}" ] && [ "${#files[@]}" -ge "${2:-1}" ] && return 0
         sleep 0.1
     done
     return 1
+}
+
+# the report database of an app in a scenario, and what is kept there for a later consent (see crash_report_sentry.cpp)
+database() { echo "$WORK/$1/home/.config/FreeFileSync/CrashReports/$2"; }
+kept_reports() # <name> <app>: number of envelopes and crash dumps kept for a later consent
+{
+    local db; db="$(database "$1" "$2")"
+    find "$db/cache" "$db/pending" -type f \( -name '*.envelope' -o -name '*.dmp' \) 2>/dev/null | wc -l
+}
+
+# settings <name> <true|false>: GlobalSettings.xml with this answer to the first-start notice. RealTimeSync needs Language
+# and ColorTheme as well (it ignores a file without them); FreeFileSync takes defaults for the other settings.
+settings()
+{
+    mkdir -p "$WORK/$1/home/.config/FreeFileSync"
+    printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' '<FreeFileSync XmlType="GLOBAL" XmlFormat="28">' \
+        '    <Language Code="en_US"/>' '    <ColorTheme Appearance="Default"/>' \
+        "    <CrashReports Enabled=\"$2\"/>" '</FreeFileSync>' > "$WORK/$1/home/.config/FreeFileSync/GlobalSettings.xml"
+    [ "${#RUN_AS[@]}" -eq 0 ] || chown -R nobody: "$WORK/$1"
 }
 
 # wait_handler_done <name>: crashpad_handler of this scenario has exited (it writes, and maybe uploads, the report first)
@@ -196,12 +222,13 @@ wait_handler_done()
 show_logs() { sed 's/^/    app: /' "$WORK/$1/app.log" | tail -20 >&2 || true; }
 
 #------------------------------------------------------------------------------------------------------------------------
-# (a) crashes
+# (a) crashes, with the user's consent
 crash_test() # <name> <binary> <app tag> <FFS_TEST_CRASH value>
 {
     local name="$1" bin="$2" app="$3" kind="$4"
     start_server "$name"
     local home; home="$(new_home "$name")"
+    settings "$name" true
     run_app "$name" "$bin" FFS_TEST_CRASH="$kind"
     if wait_for_request "$name"; then
         local forbid; mapfile -t forbid < <(forbidden "$home")
@@ -220,10 +247,11 @@ crash_test() # <name> <binary> <app tag> <FFS_TEST_CRASH value>
 crash_test a-segv  "$FFS" FreeFileSync segv
 crash_test a-abort "$RTS" RealTimeSync abort
 
-# (b) internal error with paths in the message
+# (b) internal error with paths in the message, with the user's consent
 name=b-internal
 start_server "$name"
 home="$(new_home "$name")"
+settings "$name" true
 run_app "$name" "$FFS" FFS_TEST_CRASH=internal-error
 if wait_for_request "$name"; then
     mapfile -t forbid < <(forbidden "$home")
@@ -239,45 +267,101 @@ fi
 wait_handler_done "$name"
 stop_server
 
-# (c) turned off: a real crash, and nothing may arrive (waits until crashpad_handler is done with it)
-nothing_test() # <name> <binary> <description> <expect a local report: yes|no> <env assignments...>
-{
-    local name="$1" bin="$2" descr="$3" localReport="$4"
-    shift 4
-    run_app "$name" "$bin" FFS_TEST_CRASH=segv "$@"
+# (c) turned off in GlobalSettings.xml: a real crash, nothing arrives, and the dump is not kept for later
+for app in FreeFileSync RealTimeSync; do
+    name="c-setting-$app"
+    bin="$FFS"; [ "$app" = RealTimeSync ] && bin="$RTS"
+    start_server "$name"; new_home "$name" >/dev/null; settings "$name" false
+    run_app "$name" "$bin" FFS_TEST_CRASH=segv
     wait_handler_done "$name"
     sleep 1 # the handler is gone, but let a request that is already in flight land
-    local rc; rc="$(cat "$WORK/$name/exit" 2>/dev/null || echo none)"
-    local dumps; dumps="$(find "$WORK/$name/home" -name '*.dmp' 2>/dev/null | wc -l)"
+    rc="$(cat "$WORK/$name/exit" 2>/dev/null || echo none)"
     if [ "$rc" != 139 ]; then
         show_logs "$name"
-        fail "$name: $descr: the app did not crash with SIGSEGV (exit code $rc)"
+        fail "$name: the app did not crash with SIGSEGV (exit code $rc)"
     elif [ -n "$(ls "$WORK/$name/received")" ]; then
-        fail "$name: $descr, but a report arrived: $(ls "$WORK/$name/received")"
-    elif [ "$localReport" = yes ] && [ "$dumps" -eq 0 ]; then
-        fail "$name: $descr: no minidump kept locally, so the crash was not caught at all"
+        fail "$name: turned off, but a report arrived: $(ls "$WORK/$name/received")"
     else
-        pass "$name: $descr: crashed (minidumps kept locally: $dumps), nothing arrived"
+        pass "$name: turned off: crashed, nothing arrived"
+    fi
+    stop_server
+done
+
+# (c) FFS_NO_CRASH_REPORT=1: no reporter at all, so FFS_TEST_CRASH is ignored: the app starts normally, nothing arrives
+name=c-env
+start_server "$name"
+if FFS_NO_CRASH_REPORT=1 FFS_TEST_CRASH=segv WAIT_SECONDS=30 "$ROOT/.github/build/check-app-starts.sh" "$FFS" '^FreeFileSync [0-9.]+ ' > "$WORK/$name/check.log" 2>&1 &&
+   [ -z "$(ls "$WORK/$name/received")" ]; then
+    pass "$name: FFS_NO_CRASH_REPORT=1: starts normally, no test crash, nothing arrived"
+else
+    sed 's/^/    /' "$WORK/$name/check.log" >&2
+    fail "$name: FFS_NO_CRASH_REPORT=1: the app did not start normally, or a report arrived"
+fi
+stop_server
+
+# (f) not asked yet (no answer in GlobalSettings.xml, e.g. batch runs before the first GUI start): an internal error and a
+# crash are kept, not sent; the next start with the answer "send" sends both, the answer "don't send" deletes them
+kept_test() # <name> <answer: true|false>
+{
+    local name="$1" answer="$2"
+    start_server "$name"
+    new_home "$name" >/dev/null
+    has_kept_envelope() { [ -n "$(find "$(database "$1" FreeFileSync)/cache" -name '*.envelope' 2>/dev/null)" ]; }
+    STOP_WHEN=has_kept_envelope run_app "$name" "$FFS" FFS_TEST_CRASH=internal-error
+    run_app "$name" "$FFS" FFS_TEST_CRASH=segv
+    wait_handler_done "$name"
+    local kept; kept="$(kept_reports "$name" FreeFileSync)"
+    if [ -n "$(ls "$WORK/$name/received")" ]; then
+        fail "$name: not asked yet, but a report arrived: $(ls "$WORK/$name/received")"; stop_server; return
+    elif [ "$kept" -ne 2 ]; then
+        show_logs "$name"
+        fail "$name: not asked yet: expected 1 envelope and 1 crash dump kept, found $kept"; stop_server; return
+    fi
+
+    settings "$name" "$answer"
+    if [ "$answer" = true ]; then
+        run_app_bg_until_requests "$name" 2
+    else
+        no_kept_reports() { [ "$(kept_reports "$1" FreeFileSync)" -eq 0 ]; }
+        STOP_WHEN=no_kept_reports run_app "$name" "$FFS"
+        wait_handler_done "$name"
+        sleep 1
+        if [ -n "$(ls "$WORK/$name/received")" ]; then
+            fail "$name: answer \"don't send\", but the kept reports arrived: $(ls "$WORK/$name/received")"
+        elif [ "$(kept_reports "$name" FreeFileSync)" -ne 0 ]; then
+            fail "$name: answer \"don't send\", but the kept reports were not deleted"
+        else
+            pass "$name: kept while not asked, deleted after \"don't send\", nothing arrived"
+        fi
     fi
     stop_server
 }
-opt_out_setting() # <name>: GlobalSettings.xml with crash reports off; RealTimeSync needs Language and ColorTheme as well
-{                  # (it ignores a file without them); FreeFileSync takes defaults for the other settings
-    mkdir -p "$WORK/$1/home/.config/FreeFileSync"
-    printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' '<FreeFileSync XmlType="GLOBAL" XmlFormat="28">' \
-        '    <Language Code="en_US"/>' '    <ColorTheme Appearance="Default"/>' \
-        '    <CrashReports Enabled="false"/>' '</FreeFileSync>' > "$WORK/$1/home/.config/FreeFileSync/GlobalSettings.xml"
-    [ "${#RUN_AS[@]}" -eq 0 ] || chown -R nobody: "$WORK/$1"
+# kept reports sent on the next start with consent: one envelope (the internal error) and one minidump (the crash)
+run_app_bg_until_requests() # <name> <count>
+{
+    local name="$1" count="$2"
+    enough_requests() { local f=("$WORK/$1/received"/*/request.json); [ -e "${f[0]}" ] && [ "${#f[@]}" -ge "$count" ]; }
+    STOP_WHEN=enough_requests run_app "$name" "$FFS"
+    if wait_for_request "$name" "$count"; then
+        local kinds; kinds="$(cd "$WORK/$name/received" && ls | sed 's/^[0-9]*-//' | sort | tr '\n' ' ')"
+        local env_dir; env_dir="$(ls -d "$WORK/$name/received"/*-envelope/ | head -n 1)"
+        local dmp_dir; dmp_dir="$(ls -d "$WORK/$name/received"/*-minidump/ | head -n 1)"
+        local forbid; mapfile -t forbid < <(forbidden "$WORK/$name/home")
+        if [ "$kinds" = "envelope minidump " ] &&
+           python3 -I "$HERE/check_report.py" internal "$env_dir" "$RELEASE_PREFIX" "$ENVIRONMENT" FreeFileSync "${forbid[@]}" &&
+           python3 -I "$HERE/check_report.py" crash "$dmp_dir" "$RELEASE_PREFIX" "$ENVIRONMENT" FreeFileSync "${forbid[@]}"; then
+            pass "$name: kept while not asked, both sent after \"send\""
+        else
+            fail "$name: after \"send\": expected the kept envelope and minidump, got: $kinds"
+        fi
+    else
+        show_logs "$name"
+        fail "$name: after \"send\": the kept reports did not arrive within $WAIT_SECONDS s ($(ls "$WORK/$name/received" | tr '\n' ' '))"
+    fi
+    wait_handler_done "$name"
 }
-for app in FreeFileSync RealTimeSync; do
-    name="c-setting-$app"
-    start_server "$name"; new_home "$name" >/dev/null; opt_out_setting "$name"
-    bin="$FFS"; [ "$app" = RealTimeSync ] && bin="$RTS"
-    nothing_test "$name" "$bin" "$app with <CrashReports Enabled=\"false\"/>" yes
-done
-name=c-env
-start_server "$name"; new_home "$name" >/dev/null
-nothing_test "$name" "$FFS" "FreeFileSync with FFS_NO_CRASH_REPORT=1" no FFS_NO_CRASH_REPORT=1
+kept_test f-kept-then-sent    true
+kept_test f-kept-then-deleted false
 
 # (d) no crash handler: starts normally (main window, no error), reporting off, nothing arrives
 name=d-no-handler
