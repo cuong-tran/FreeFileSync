@@ -13,11 +13,17 @@
     #include <unistd.h> //fork, pipe
     #include <sys/wait.h> //waitpid
     #include <fcntl.h>
-#if defined ZEN_MAC
-    #include <mutex>
-#endif
 
 using namespace zen;
+
+
+#if defined ZEN_MAC
+std::unique_lock<std::mutex> zen::lockFdInheritance()
+{
+    static constinit std::mutex fdInheritanceMutex; //trivially destructible: no shutdown order issue
+    return std::unique_lock(fdInheritanceMutex);
+}
+#endif
 
 
 Zstring zen::escapeCommandArg(const Zstring& arg)
@@ -93,10 +99,9 @@ std::pair<int /*exit code*/, std::string> processExecuteImpl(const Zstring& file
     int pipe[2] = {};
 #if defined ZEN_MAC
     /*  no pipe2() on macOS: pipe() + FD_CLOEXEC is not atomic. A fork() on another thread in between would leak the pipe into
-        that child: its copy of fdLifeSignW would delay our EOF until it exits (bounded by timeoutMs). All forks in zen happen
-        below under the same lock, so they can't interleave; forks by other code (none in FreeFileSync) are not covered.     */
-    static constinit std::mutex forkMutex; //no destructor issue: never destroyed while a process is executed
-    std::unique_lock forkLock(forkMutex);
+        that child: its copy of fdLifeSignW would delay our EOF until it exits (bounded by timeoutMs). Lock from here until
+        fork() returns: other fd-creating sites without an atomic close-on-exec (socket.h) take the same lock, see process_exec.h */
+    std::unique_lock forkLock = lockFdInheritance();
 
     if (::pipe(pipe) != 0)
         THROW_LAST_SYS_ERROR("pipe");

@@ -14,6 +14,7 @@
     #include <netdb.h> //getaddrinfo
 #if defined ZEN_MAC
     #include <fcntl.h> //FD_CLOEXEC
+    #include "process_exec.h" //lockFdInheritance
 #endif
 
 namespace zen
@@ -121,8 +122,8 @@ public:
 
         const auto getConnectedSocket = [timeoutSec](const auto& /*addrinfo*/ ai)
         {
-#if defined ZEN_MAC //no SOCK_CLOEXEC/SOCK_NONBLOCK: set them right after creation (a fork() on another thread in between would
-            //                  inherit the socket; zen's own forks are serialized with pipe creation only, see process_exec.cpp)
+#if defined ZEN_MAC //no SOCK_CLOEXEC/SOCK_NONBLOCK: set them right after creation, with forks by zen locked out in between
+            std::unique_lock fdLock = lockFdInheritance();
             SocketType testSocket = ::socket(ai.ai_family,    //int socket_family
                                              ai.ai_socktype,  //int socket_type
                                              ai.ai_protocol); //int protocol
@@ -132,6 +133,7 @@ public:
 
             if (::fcntl(testSocket, F_SETFD, FD_CLOEXEC) == -1)
                 THROW_LAST_SYS_ERROR_WSA("fcntl(FD_CLOEXEC)");
+            fdLock.unlock();
 
             setNonBlocking(testSocket, true); //throw SysError
 
