@@ -375,7 +375,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             gcc-14 g++-14 make cmake pkg-config perl patch curl xz-utils bzip2 \
             libgtk-3-dev libxtst-dev libidn2-dev zlib1g-dev libselinux1-dev \
-            dpkg-dev patchelf unzip python3 xvfb xdotool
+            dpkg-dev patchelf unzip python3 xvfb xdotool imagemagick
 
       # the same libraries as the x86_64 Packages job, under the same key
       - name: Restore patched libraries
@@ -426,7 +426,18 @@ jobs:
           ls -l FreeFileSync/Build/Bin
 
       - name: Crash reporting tests
+        env:
+          SCREENSHOT_DIR: screenshots # first-start notice and options dialog, uploaded below
         run: Tests/sentry/run.sh
+
+      # the --default-build check must catch a Sentry binary by its strings alone: stripped (no symbols), and with another
+      # DSN (so the DSN check can't be what fails it)
+      - name: The default-build check fails on a Sentry binary
+        run: |
+          strip -o "$RUNNER_TEMP/FreeFileSync-stripped" FreeFileSync/Build/Bin/FreeFileSync_x86_64
+          if SENTRY_TEST_DSN=http://other@127.0.0.1:1/2 Tests/sentry/run.sh --default-build "$RUNNER_TEMP/FreeFileSync-stripped"; then
+            echo "::error::Tests/sentry/run.sh --default-build passed a binary with sentry-native in it"; exit 1
+          fi
 
       # what the Packages jobs do with the SENTRY_DSN secret, minus the upload: crashpad_handler shipped, debug files split off
       # with the binaries' build IDs, accepted by sentry-cli
@@ -448,6 +459,15 @@ jobs:
           mkdir -p "$RUNNER_TEMP/package"
           tar -xzf .build/dist/FreeFileSync_*_Linux_x86_64.tar.gz -C "$RUNNER_TEMP/package"
           Tests/sentry/run.sh "$RUNNER_TEMP/package/FreeFileSync/Bin"
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-sentry
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload test logs
         if: failure()
