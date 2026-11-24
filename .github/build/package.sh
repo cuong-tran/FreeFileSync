@@ -10,7 +10,9 @@
 #   GITHUB_REPOSITORY   owner/name for the .deb maintainer and homepage (set by GitHub Actions; default: the
 #                       GitHub repository of the "origin" remote)
 #   FFS_SENTRY          1 for a build with crash reporting (build-free-file-sync.sh with FFS_SENTRY=1): ships the
-#                       crashpad_handler from the Bin folder next to the binaries
+#                       crashpad_handler from the Bin folder next to the binaries, and moves the binaries' debug info into
+#                       $FFS_BUILD_DIR/debug-files (<exe>.debug plus a copy of the shipped <exe>, same build ID) for
+#                       "sentry-cli debug-files upload"; the shipped binaries keep their symbol table, as without Sentry
 set -euo pipefail
 # shellcheck source=./common.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
@@ -79,6 +81,28 @@ for obj in "$stage"/Bin/*; do
 done
 LD_LIBRARY_PATH='' ldd "$stage/Bin/$FFS_EXE" | grep -F " => $stage/Bin/" ||
     die "$FFS_EXE does not load any bundled library"
+
+# crash reporting: debug info out of the shipped binaries into separate files with the same build ID, after patchelf (the
+# files must describe the binaries as shipped)
+if [ "${FFS_SENTRY:-}" = 1 ]; then
+    DEBUG_DIR="$BUILD_DIR/debug-files"
+    rm -rf "$DEBUG_DIR"
+    mkdir -p "$DEBUG_DIR"
+    buildId() { readelf -n "$1" | sed -n 's/^ *Build ID: *//p'; }
+    for exe in "$FFS_EXE" "$RTS_EXE"; do
+        bin="$stage/Bin/$exe"
+        readelf -S "$bin" | grep -F .debug_info >/dev/null || die "$exe has no debug info (FFS_SENTRY=1 builds with -g)"
+        id="$(buildId "$bin")"
+        [ -n "$id" ] || die "$exe has no build ID"
+        objcopy --only-keep-debug "$bin" "$DEBUG_DIR/$exe.debug"
+        objcopy --strip-debug --add-gnu-debuglink="$DEBUG_DIR/$exe.debug" "$bin"
+        cp -a "$bin" "$DEBUG_DIR/$exe" # the executable as shipped: its unwind tables help the symbolication too
+        [ "$(buildId "$DEBUG_DIR/$exe.debug")" = "$id" ] && [ "$(buildId "$bin")" = "$id" ] ||
+            die "build IDs of $exe and its debug file differ"
+        if readelf -S "$bin" | grep -F .debug_info; then die "$exe still has debug info"; fi
+        log "$exe: build ID $id, debug file $(du -h "$DEBUG_DIR/$exe.debug" | cut -f1), shipped $(du -h "$bin" | cut -f1)"
+    done
+fi
 
 ln -s "Bin/$FFS_EXE" "$stage/FreeFileSync"
 ln -s "Bin/$RTS_EXE" "$stage/RealTimeSync"

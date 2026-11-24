@@ -12,6 +12,11 @@ ifneq ($(shell pkg-config --exists sentry-native && echo YES),YES)
     $(error FFS_SENTRY=1: sentry-native not found by pkg-config. Build it with .github/build/build-sentry-native.sh and add its lib/pkgconfig folder to PKG_CONFIG_PATH)
 endif
 
+#debug info for symbolicating crash reports: .github/build/package.sh splits it off into separate files for the upload with
+#sentry-cli, so the shipped binaries stay as large as without it (the default build has none)
+CXXFLAGS += -g
+LDFLAGS  += -g
+
 SENTRY_ENVIRONMENT ?= dev
 #the recipe below reads them from its environment: their values never appear in make's command echo
 export SENTRY_DSN SENTRY_ENVIRONMENT FFS_GIT_SHA
