@@ -18,8 +18,19 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M3 macOS | 2. `zen` features: FSEvents watcher, recycle bin, shutdown, network | done | `50065e4..292907c`, fixes `292907c..f5c9b53` | 8 findings: all fixed |
 | M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | done | `b4b35bb..3289e88`, fixes `f3e2601..bd9f1bf` | 7 findings: 6 fixed, 1 kept |
 | M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | done | `bd9f1bf..1152282`, fixes `1152282..83f890e` | 9 findings: all fixed |
-| M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | in progress (pause at 23:00 UTC) | | |
+| M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | coded; one Sentry test red on macOS arm64 on purpose (consent gap, see Paused); **paused before its review** | `8b20c04..bf0ef72` | not reviewed yet |
+| M3 macOS | Pull request | not opened | | |
 | M4 Windows | | | | |
+
+## Paused
+
+Paused on 2026-11-24 at 23:00 UTC (06:00 UTC+7 on 2026-11-25) at the owner's request, after M3 step 5 was coded. `dev` head: `bf0ef72` plus this file. To resume:
+
+1. Fix the macOS crash-report consent gap (red CI step "Sentry tests" of Libraries (arm64), scenarios `c-setting-FreeFileSync` and `c-setting-RealTimeSync`). sentry-native 0.17.6 installs Crashpad's first-chance handler only on Linux and Windows, so on macOS a crash while reporting is turned off cannot be discarded: nothing is uploaded, but the dump stays in `pending/` and could be sent if the user later chooses "send". Planned fix: on macOS, while consent is revoked, set Crashpad uploads to disabled (not paused) and delete the database's reports at start and at the moment "send" is given after a revoked period; adjust the test's expectation for macOS (exit code of the crash) without weakening "nothing arrives, nothing is kept".
+2. Run `/code-review medium 8b20c04..bf0ef72` (step 5: DMG job and script, Sentry in the Mac apps, `Tests/sentry` on macOS), send the findings to a coder session, record the outcomes here.
+3. When all workflows are green: open the M3 pull request `dev` -> `main`, watch it, fix what CI and reviews turn up, squash-merge once all checks pass, recreate `dev` from `main`, and start M4 (Windows).
+
+Coder session at the pause: "FFS port: coder (M3 macOS, apps)", stopped and waiting.
 
 ## How the work runs
 
@@ -88,6 +99,9 @@ Marked `KNOWN_ISSUE` in `Tests/zen`, not fixed (upstream code):
 - Network file systems (FTP, SFTP, Google Drive) are only compiled on macOS, not run.
 - `afs/gdrive.cpp` (upstream): the OAuth login loop never closes the accepted client socket. Left as is.
 - The Mac UI has only been seen through CI screenshots. To check on a real Mac: main window layout (fonts and sizes were set for GTK), dark mode, Dock icon, tray item, the application menu, opening files from Finder, drag and drop, folder picker, sounds, "Show in Finder". Dock progress (`wx+/taskbar_mac.cpp`, `dock_tile_mac.mm`) is implemented but has never been seen. Not testable in CI: Finder opens, the modal-dialog guards, starting a batch process from a running app. The app icon is upscaled from a 128 px image.
+- Crash capture for x86_64 could not be tested: under Rosetta 2 on the arm64 runners Crashpad catches no crashes at all. It needs a real Intel Mac. Those test scenarios are skipped there with a printed reason.
+- The dSYM upload path for the Mac apps has never run with real Sentry secrets.
+- The DMGs (`FreeFileSync-14.13-macos-<arch>.dmg`, about 19 MB, both apps plus an Applications link) have no background picture; their window layout has only been checked by the script, not by eye.
 
 ## Review findings
 
