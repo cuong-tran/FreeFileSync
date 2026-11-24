@@ -15,7 +15,7 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M2 Sentry | 2. Scrubbing, opt-out, first-start notice, test crash, symbol upload | done | `304f86f..51829b2`, fixes `c2b91b5^..b80eb4e` | 9 findings: all fixed |
 | M2 Sentry | Pull request | merged as [#12](https://github.com/cuong-tran/FreeFileSync/pull/12) (squash, `fea5409`) | | no review threads |
 | M3 macOS | 1. `zen` core compiles and `Tests/zen` passes on macOS | done | `a0b5c3f..50065e4`, fixes in `50065e4..292907c` | 8 findings: all fixed |
-| M3 macOS | 2. `zen` features: FSEvents watcher, recycle bin, shutdown, network | done, review fixes in progress | `50065e4..292907c` | 8 findings, see below |
+| M3 macOS | 2. `zen` features: FSEvents watcher, recycle bin, shutdown, network | done | `50065e4..292907c`, fixes `292907c..f5c9b53` | 8 findings: all fixed |
 | M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | in progress | | |
 | M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | | | |
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | | | |
@@ -76,6 +76,7 @@ Marked `KNOWN_ISSUE` in `Tests/zen`, not fixed (upstream code):
 - Not exercised yet, because the repository secrets are missing: a real upload to Sentry and `sentry-cli debug-files upload`.
 - Untested on macOS: shut down and sleep, the "no recycle bin on this volume" mapping, socket code.
 - Natural sort of 100,000 mixed names takes about 3.5 s on macOS arm64 versus 1.8 s on Linux (normalization per comparison); accepted for now.
+- GitHub's macOS arm64 runners are short of capacity: jobs wait 10 minutes or more, and some are cancelled as "not acquired by Runner". A re-run fixes it.
 
 ## Review findings
 
@@ -173,11 +174,11 @@ Result of the step: FSEvents directory watcher (`zen/dir_watcher_mac.cpp`), recy
 
 | # | Finding | Severity | Outcome |
 |---|---|---|---|
-| 1 | Copying extended attributes to FAT/exFAT/SMB creates visible `._name` sidecar files | important | sent for fixing |
-| 2 | Ejecting a disk mounted inside the watched folder is reported as the watched folder being unavailable | important | sent for fixing |
-| 3 | Watcher drops all events when the watched path and the on-disk path differ in Unicode form | important | sent for fixing |
-| 4 | ACL copy fails on volumes that reject ACL calls with anything but `ENOTSUP`, even with no ACL to copy | important | sent for fixing |
-| 5 | ACL copy removes entries the target inherited from its folder | important | sent for fixing |
-| 6 | Folder attribute copy throws when the folder cannot be opened for reading | nit | sent for fixing |
-| 7 | Modified files can be reported as created (FSEvents accumulates flags) | nit | sent for fixing |
-| 8 | An empty trash path is returned silently after a successful move | nit | sent for fixing |
+| 1 | Copying extended attributes to FAT/exFAT/SMB creates visible `._name` sidecar files | important | fixed: extended attributes are copied only to volumes that store them natively; on the FAT test image no `._*` files appear |
+| 2 | Ejecting a disk mounted inside the watched folder is reported as the watched folder being unavailable | important | fixed: only an unmount at or above the watched folder reports it unavailable. The runner showed FSEvents sends nothing when the watched folder's own volume is force-detached, so `fetchChanges()` also checks once per second that the folder exists (`4dcb578`) |
+| 3 | Watcher drops all events when the watched path and the on-disk path differ in Unicode form | important | fixed: paths are compared component by component; tested with NFC/NFD and different-case spellings |
+| 4 | ACL copy fails on volumes that reject ACL calls with anything but `ENOTSUP`, even with no ACL to copy | important | fixed: nothing is written when neither side has explicit entries; volumes without ACL support are skipped |
+| 5 | ACL copy removes entries the target inherited from its folder | important | fixed: the new ACL is the source's explicit entries followed by the target's inherited ones; tested with an inheritable entry on the parent |
+| 6 | Folder attribute copy throws when the folder cannot be opened for reading | nit | fixed: never throws on macOS; unreadable folders are skipped, other errors logged |
+| 7 | Modified files can be reported as created (FSEvents accumulates flags) | nit | fixed: the watcher remembers paths already reported as created; exactly one `create` per new file in the test |
+| 8 | An empty trash path is returned silently after a successful move | nit | fixed: falls back to the URL's path; documented in `recycler.h` |
