@@ -13,8 +13,12 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M1 Foundation | Pull request | merged as [#11](https://github.com/cuong-tran/FreeFileSync/pull/11) (squash, `9b6221a`); `dev` restarted from `main` | | bot review: 1 doc fix (`1cf3840`), 3 findings not valid |
 | M2 Sentry | 1. Interface, empty implementation, sentry-native build, Makefile switch, init | done | `cf27254^..304f86f`, fixes `7c0f9bc`, `07ce91b`, `c48509d`, `51829b2` | 10 findings: all fixed |
 | M2 Sentry | 2. Scrubbing, opt-out, first-start notice, test crash, symbol upload | done | `304f86f..51829b2`, fixes `c2b91b5^..b80eb4e` | 9 findings: all fixed |
-| M2 Sentry | Pull request | open, work paused until it is merged | | |
-| M3 macOS | | next | | |
+| M2 Sentry | Pull request | merged as [#12](https://github.com/cuong-tran/FreeFileSync/pull/12) (squash, `fea5409`) | | no review threads |
+| M3 macOS | 1. `zen` core compiles and `Tests/zen` passes on macOS | in progress | | |
+| M3 macOS | 2. `zen` features: FSEvents watcher, recycle bin, shutdown, network | | | |
+| M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | | | |
+| M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | | | |
+| M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | | | |
 | M4 Windows | | | | |
 
 ## How the work runs
