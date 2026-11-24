@@ -7,10 +7,15 @@
 #include "crash_report.h"
 #include <atomic>
 #include <csignal>
+#include <cerrno>
 #include <cstdlib>
+#include <thread>
 #include "build_info.h"
 #ifndef ZEN_WIN
+    #include <fcntl.h>
+    #include <poll.h>
     #include <pthread.h>
+    #include <unistd.h>
 #endif
 #include <sentry.h>
 #include "file_access.h"
@@ -30,6 +35,8 @@ namespace
 {
 std::atomic<bool> globalActive = false;
 std::atomic<CrashReportConsent> globalConsent = CrashReportConsent::unknown; //as last set by this process
+//this process has no answer, but another process recorded "send" in the shared database: send nothing of our own
+std::atomic<bool> globalWithholdOwn = false;
 
 //set once in initCrashReporting() before any callback can run, read-only afterwards
 std::vector<std::string> globalPrivateWords;
@@ -142,8 +149,9 @@ void removePersonalData(sentry_value_t event)
 //not called for crashes (see onCrash()): only for reportInternalError() events, so it may allocate
 sentry_value_t beforeSend(sentry_value_t event, sentry_hint_t* hint, void* userData)
 {
-    //reporting turned off: drop the event right away, instead of keeping it in the cache (http_retry) until a later consent
-    if (globalConsent == CrashReportConsent::revoked)
+    //reporting turned off: drop the event right away, instead of keeping it in the cache (http_retry) until a later consent;
+    //same without an answer of our own while the shared database says "send" (it would be sent at once)
+    if (globalConsent == CrashReportConsent::revoked || globalWithholdOwn)
     {
         sentry_value_decref(event);
         return sentry_value_new_null();
@@ -154,11 +162,20 @@ sentry_value_t beforeSend(sentry_value_t event, sentry_hint_t* hint, void* userD
 }
 
 
-/*  Runs in the crashing process, inside the signal handler: must be async-signal-safe, so it does nothing but keep the event.
-    Setting it keeps beforeSend() out of the crash path. With Crashpad the event is empty anyway: what is sent is the minidump
-    plus the scope (tags, breadcrumbs), whose texts were scrubbed when they were set (addCrashBreadcrumb()).                                          */
+/*  Runs in the crashing process, inside the signal handler: async-signal-safe, it only reads an atomic. Setting it keeps
+    beforeSend() out of the crash path. With Crashpad the event is empty anyway: what is sent is the minidump plus the scope
+    (tags, breadcrumbs), whose texts were scrubbed when they were set (addCrashBreadcrumb()).
+    Discarding the event makes sentry-native skip the minidump and end the process (sentry_backend_crashpad.cpp):
+    - consent revoked: no dump at all. Crashpad would keep it pending (uploads are paused, not disabled, see
+      initCrashReporting()), and a later process with the answer "send" would upload a crash from the time it was off.
+    - no answer of our own while the shared database says "send": the dump would be uploaded at once.               */
 sentry_value_t onCrash(const sentry_ucontext_t* uctx, sentry_value_t event, sentry_hint_t* hint, void* userData)
 {
+    if (globalConsent == CrashReportConsent::revoked || globalWithholdOwn)
+    {
+        sentry_value_decref(event);
+        return sentry_value_new_null();
+    }
     return event;
 }
 
@@ -186,25 +203,65 @@ void deleteKeptReports(const Zstring& databasePath)
 }
 
 
-/*  zen::terminateProcess() ends both apps with std::quick_exit(), which skips OnExit(): send what is queued, bounded by the
-    shutdown timeout. Not when called from the apps' SIGTERM handler (application.cpp): sentry_close() is not async-signal-safe
-    and deadlocked there in tests. While a handler installed with signal() runs, its signal is blocked for the thread (no
-    SA_NODEFER), which pthread_sigmask() (async-signal-safe) tells.                                                     */
+/*  zen::terminateProcess() ends both apps with std::quick_exit(), which skips OnExit(): send what is queued, bounded in time.
+    No sentry-native code runs on the exiting thread, which may be inside a signal handler (the apps' SIGTERM handler calls
+    terminateProcess(), application.cpp): it only uses write() and poll(), both async-signal-safe (POSIX), to ask a helper
+    thread started by initCrashReporting() for sentry_flush() and waits at most 2.5 s for the answer. Inside the SIGTERM
+    handler it doesn't even ask: SIGTERM is blocked for the thread while its signal() handler runs (no SA_NODEFER), which
+    pthread_sigmask() tells; a flush there deadlocked in tests (sentry_close() at the time), and the app is being
+    terminated anyway. Windows has no such signal handler: flush directly.                                             */
+#ifndef ZEN_WIN
+int globalFlushRequest[2] = {-1, -1}; //pipes to and from the helper thread
+int globalFlushDone   [2] = {-1, -1};
+
 bool inSigtermHandler()
 {
-#ifdef ZEN_WIN
-    return false; //no SIGTERM handler that ends the app on Windows
-#else
     sigset_t blocked;
     return ::pthread_sigmask(SIG_BLOCK, nullptr, &blocked) == 0 && ::sigismember(&blocked, SIGTERM) == 1;
-#endif
+}
+
+bool makePipe(int (&fds)[2])
+{
+    if (::pipe(fds) != 0)
+        return false;
+    for (int fd : fds)
+        ::fcntl(fd, F_SETFD, FD_CLOEXEC); //child processes (e.g. crashpad_handler) don't inherit them
+    return true;
+}
+
+void startFlushHelper()
+{
+    if (!makePipe(globalFlushRequest) || !makePipe(globalFlushDone))
+        return;
+    std::thread([]
+    {
+        for (;;)
+        {
+            char c = 0;
+            const ssize_t n = ::read(globalFlushRequest[0], &c, 1);
+            if (n < 0 && errno == EINTR)
+                continue;
+            if (n != 1)
+                return;
+            sentry_flush(2000 /*ms*/);
+            [[maybe_unused]] const ssize_t rv = ::write(globalFlushDone[1], "1", 1);
+        }
+    }).detach(); //the process ends with it
 }
 
 void onQuickExit()
 {
-    if (!inSigtermHandler())
-        zen::shutdownCrashReporting();
+    if (!globalActive || globalFlushRequest[1] < 0 || inSigtermHandler())
+        return;
+    if (::write(globalFlushRequest[1], "1", 1) != 1)
+        return;
+    pollfd done{.fd = globalFlushDone[0], .events = POLLIN, .revents = 0};
+    ::poll(&done, 1, 2500 /*ms*/);
 }
+#else
+void startFlushHelper() {}
+void onQuickExit() { if (globalActive) sentry_flush(2000 /*ms*/); }
+#endif
 }
 
 
@@ -287,11 +344,19 @@ void zen::initCrashReporting(const CrashReportConfig& cfg) //throw SysError
     sentry_set_user(sentry_value_new_null());
     sentry_set_tag("app", cfg.appName.c_str());
 
+    //until the app applies its setting, the consent stored by the last process holds: "don't send" must already apply to
+    //a crash now (onCrash())
+    if (sentry_user_consent_get() == SENTRY_USER_CONSENT_REVOKED)
+        globalConsent = CrashReportConsent::revoked;
+
     globalActive = true;
 
     static bool quickExitRegistered = false;
     if (!quickExitRegistered)
+    {
+        startFlushHelper();
         quickExitRegistered = std::at_quick_exit(onQuickExit) == 0;
+    }
 }
 
 
@@ -303,10 +368,12 @@ void zen::setCrashReportingConsent(CrashReportConsent consent)
     if (!globalActive)
         return;
     globalConsent = consent;
+    globalWithholdOwn = consent == CrashReportConsent::unknown && sentry_user_consent_get() == SENTRY_USER_CONSENT_GIVEN;
     switch (consent)
     {
         case CrashReportConsent::unknown:
-            sentry_user_consent_reset();
+            //no answer of our own: leave the shared state as another process may have recorded it; reports are kept while it
+            //is unknown too, and ours are withheld if it says "send" (globalWithholdOwn)
             break;
         case CrashReportConsent::given:
             sentry_user_consent_give(); //sends the kept envelopes and lets Crashpad upload its pending reports

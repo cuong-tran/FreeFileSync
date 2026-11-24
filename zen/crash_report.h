@@ -56,7 +56,8 @@ bool isCrashReportingActive();
 
 enum class CrashReportConsent
 {
-    unknown, //not asked yet: reports are kept, not sent
+    unknown, //no answer in this process: nothing of its own is sent; the stored state shared with other processes stays
+             //as it is: kept reports wait for an answer if there is none yet
     given,   //send, including the reports kept so far
     revoked, //send nothing; reports kept so far are deleted
 };

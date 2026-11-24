@@ -265,6 +265,9 @@ std::pair<GlobalConfig, std::wstring /*warningMsg*/> readGlobalConfig(const Zstr
 void writeConfig(const FfsGuiConfig&      cfg, const Zstring& filePath); //
 void writeConfig(const FfsBatchConfig&    cfg, const Zstring& filePath); //throw FileError
 void writeConfig(const GlobalConfig& cfg, const Zstring& filePath); //
+//crash reporting: store the user's answer (cfg.crashReports) at once, without waiting for the save on exit, so that other
+//processes follow it right away: only <CrashReports> is changed in an existing file; a missing file gets the whole cfg
+void writeCrashReportSetting(const GlobalConfig& cfg, const Zstring& filePath); //throw FileError
 
 //convert (multiple) *.ffs_gui, *.ffs_batch files or combinations of both into target config structure:
 std::pair<FfsGuiConfig, std::wstring /*warningMsg*/> readAnyConfig(const std::vector<Zstring>& filePaths); //throw FileError

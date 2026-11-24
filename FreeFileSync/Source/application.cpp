@@ -260,6 +260,7 @@ int Application::OnExit()
         //assert(rv); -> fails if clipboard wasn't used
         localizationCleanup();
         imageResourcesCleanup();
+        stopCrashReportSettingWatch();
         shutdownCrashReporting(); //before teardownAfs(): its upload may still use libcurl (see crash_report_init.h)
         teardownAfs(); //bad_alloc possible when compressing large GDrive metadata stream
         colorThemeCleanup();
@@ -444,6 +445,7 @@ void Application::onEnterEventLoop()
         catch (const FileError& e) { logExtraError(e.toString()); } //not critical in this context
 
         applyCrashReportSetting("FreeFileSync", globalCfg.crashReports);
+        startCrashReportSettingWatch(globalCfgFilePath, globalCfg.crashReports);
 
 
         //-----------------------------------------------------------

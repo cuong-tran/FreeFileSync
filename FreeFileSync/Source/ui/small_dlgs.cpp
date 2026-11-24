@@ -1407,6 +1407,7 @@ private:
     std::unordered_map<std::wstring /*translation*/, std::wstring /*english*/> descriptionTransToEng_; //mapping for external application config
 
     const GlobalConfig defaultCfg_;
+    const bool crashReportsShown_; //initial state of the crash report checkbox: the stored answer, unticked if none
 
     EnumDescrList<ColorTheme> enumColorTheme_
     {
@@ -1468,6 +1469,7 @@ private:
 
 OptionsDlg::OptionsDlg(wxWindow* parent, GlobalConfig& globalCfg) :
     OptionsDlgGenerated(parent),
+    crashReportsShown_(globalCfg.crashReports.value_or(false)),
 
     logFolderSelector_(this, *m_panelLogfile, *m_buttonSelectLogFolder, *m_bpButtonSelectAltLogFolder, *m_logFolderPath, globalCfg.logFolderLastSelected, globalCfg.sftpKeyFileLastSelected,
                        nullptr /*staticText*/, nullptr /*dropWindow2*/, nullptr /*droppedPathsFilter*/,
@@ -1565,7 +1567,7 @@ OptionsDlg::OptionsDlg(wxWindow* parent, GlobalConfig& globalCfg) :
     m_checkBoxCopyPermissions->SetValue(globalCfg.copyFilePermissions);
 
     m_checkBoxCrashReports->Show(isCrashReportingAvailable()); //only in builds with crash reporting (zen/crash_report.h)
-    m_checkBoxCrashReports->SetValue(globalCfg.crashReports.value_or(true));
+    m_checkBoxCrashReports->SetValue(crashReportsShown_); //no answer yet: unticked, it claims no consent
 
     bSizerColorTheme->Show(darkModeAvailable());
     enumColorTheme_.set(globalCfg.appColorTheme);
@@ -1856,7 +1858,6 @@ void OptionsDlg::onDefault(wxCommandEvent& event)
     m_checkBoxFailSafe       ->SetValue(defaultCfg_.failSafeFileCopy);
     m_checkBoxCopyLocked     ->SetValue(defaultCfg_.copyLockedFiles);
     m_checkBoxCopyPermissions->SetValue(defaultCfg_.copyFilePermissions);
-    m_checkBoxCrashReports   ->SetValue(defaultCfg_.crashReports.value_or(true));
 
     enumColorTheme_.set(defaultCfg_.appColorTheme);
 
@@ -1901,7 +1902,8 @@ void OptionsDlg::onOkay(wxCommandEvent& event)
     globalCfgOut_.failSafeFileCopy    = m_checkBoxFailSafe->GetValue();
     globalCfgOut_.copyLockedFiles     = m_checkBoxCopyLocked->GetValue();
     globalCfgOut_.copyFilePermissions = m_checkBoxCopyPermissions->GetValue();
-    if (isCrashReportingAvailable()) //keep the setting of a build with crash reporting untouched
+    //the setting records consent: it changes only when the user changes the checkbox (the caller stores it at once)
+    if (isCrashReportingAvailable() && m_checkBoxCrashReports->GetValue() != crashReportsShown_)
     {
         globalCfgOut_.crashReports = m_checkBoxCrashReports->GetValue();
         setCrashReportingConsent(*globalCfgOut_.crashReports ? CrashReportConsent::given : CrashReportConsent::revoked);

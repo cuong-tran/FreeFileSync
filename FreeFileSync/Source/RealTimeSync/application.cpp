@@ -84,6 +84,8 @@ bool Application::OnInit()
     catch (const FileError& e) { logExtraError(e.toString()); }
 
     fff::applyCrashReportSetting("RealTimeSync", globalCfg.crashReports);
+    //RealTimeSync runs for days: follow an answer FreeFileSync stores meanwhile (crash_report_init.h)
+    fff::startCrashReportSettingWatch(appendPath(fff::getConfigDirPath(), Zstr("GlobalSettings.xml")), globalCfg.crashReports);
 
     try { fff::setLanguage(globalCfg.programLanguage); } //throw FileError
     catch (const FileError& e) { logExtraError(e.toString()); }
@@ -218,6 +220,7 @@ int Application::OnExit()
     //assert(rv); -> fails if clipboard wasn't used
     fff::localizationCleanup();
     imageResourcesCleanup();
+    fff::stopCrashReportSettingWatch();
     shutdownCrashReporting();
     return wxApp::OnExit();
 }

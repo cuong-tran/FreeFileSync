@@ -2115,6 +2115,27 @@ void writeConfig(const ConfigType& cfg, const char* cfgType, int xmlFormatVer, c
 }
 }
 
+void fff::writeCrashReportSetting(const GlobalConfig& cfg, const Zstring& filePath) //throw FileError
+{
+    assert(cfg.crashReports);
+    if (!cfg.crashReports)
+        return;
+    if (!itemExists(filePath)) //throw FileError
+        return writeConfig(cfg, filePath); //throw FileError
+
+    XmlDoc doc = loadXml(filePath); //throw FileError
+    if (std::string type; doc.root().getName() != "FreeFileSync" || !doc.root().getAttribute("XmlType", type) || type != "GLOBAL")
+        throw FileError(replaceCpy(_("File %x does not contain a valid configuration."), L"%x", fmtPath(filePath)));
+
+    XmlElement* elem = doc.root().getChild("CrashReports");
+    if (!elem)
+        elem = &doc.root().addChild("CrashReports");
+    elem->setAttribute("Enabled", *cfg.crashReports);
+
+    saveXml(doc, filePath); //throw FileError
+}
+
+
 void fff::writeConfig(const FfsGuiConfig& cfg, const Zstring& filePath)
 {
     ::writeConfig(cfg, "GUI", XML_FORMAT_SYNC_CFG, filePath); //throw FileError

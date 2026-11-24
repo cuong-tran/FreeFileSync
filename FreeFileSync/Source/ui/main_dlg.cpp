@@ -585,7 +585,12 @@ void MainDialog::create(const FfsGuiConfig& guiCfg, const std::vector<Zstring>& 
 
     //crash reporting (zen/crash_report.h): say once what is sent, with the choice to turn it off => right after the welcome dialog
     const bool crashReportNotice = !mainDlg->globalCfg_.crashReports && isCrashReportingActive();
-    auto showCrashNotice = [mainDlg] { mainDlg->globalCfg_.crashReports = showCrashReportNotice(mainDlg); };
+    auto showCrashNotice = [mainDlg]
+    {
+        mainDlg->globalCfg_.crashReports = showCrashReportNotice(mainDlg);
+        try { writeCrashReportSetting(mainDlg->globalCfg_, mainDlg->globalCfgFilePath_); } //throw FileError
+        catch (const FileError& e) { showNotificationDialog(mainDlg, DialogInfoType::error, PopupDialogCfg().setDetailInstructions(e.toString())); }
+    };
 
     //show welcome dialog after FreeFileSync update => show *before* any other dialogs
     if (mainDlg->globalCfg_.welcomeDialogLastVersion != ffsVersion)
@@ -6223,8 +6228,13 @@ void MainDialog::setAddFolderPairs(const std::vector<LocalPairConfig>& newPairs)
 void MainDialog::onMenuOptions(wxCommandEvent& event)
 {
     const ColorTheme colorThemeOld = globalCfg_.appColorTheme;
+    const std::optional<bool> crashReportsOld = globalCfg_.crashReports;
 
     showOptionsDlg(this, globalCfg_);
+
+    if (globalCfg_.crashReports != crashReportsOld) //the user's consent: stored at once for the other processes (crash_report_init.h)
+        try { writeCrashReportSetting(globalCfg_, globalCfgFilePath_); } //throw FileError
+        catch (const FileError& e) { showNotificationDialog(this, DialogInfoType::error, PopupDialogCfg().setDetailInstructions(e.toString())); }
 
     if (!equalAppearance(globalCfg_.appColorTheme, colorThemeOld))
     {
