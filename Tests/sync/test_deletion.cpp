@@ -5,6 +5,7 @@
 // items get names unique to this run and the test deletes them from the trash again; nothing else in the trash is touched.
 
 #include <cstdlib> //getenv
+#include <zen/scope_guard.h>
 #include "sync_test.h"
 
 using namespace zen;
@@ -164,48 +165,73 @@ SANDBOX_TEST_CASE(syncRecycleBin)
     const std::string changedFile = uniqueName("changed.txt"); //its old version is moved to the trash when overwritten
     makeDeletionTrees(left, right, goneFile, goneFolder, changedFile);
 
+    //where the items go: the trash of the volume they are on
+#if defined ZEN_LINUX //gio: the home trash (the sandbox's XDG_DATA_HOME, on the same file system as the test folders)
+    const std::vector<Zstring> trashFolders{appendPath(appendPath(std::getenv("XDG_DATA_HOME") ? Zstring(std::getenv("XDG_DATA_HOME")) : Zstring(), "Trash"), "files")};
+#elif defined ZEN_MAC //NSFileManager: ~/.Trash on the home folder's volume, <volume>/.Trashes/<uid> on any other
+    std::vector<Zstring> trashFolders{appendPath(realHomePath(), ".Trash")};
+    try
+    {
+        //mount point of the test folder's volume: the last column of "df -P" (may contain blanks: everything after the 5th field)
+        const std::string dfOut = runShell("df -P " + escapeCommandArg(testDir)); //throw SysError
+        const std::vector<std::string> fields = splitCpy(afterFirst(trimCpy(dfOut), '\n', IfNotFoundReturn::none), ' ', SplitOnEmpty::skip);
+        if (fields.size() >= 6)
+        {
+            std::string mountPoint = fields[5];
+            for (size_t i = 6; i < fields.size(); ++i)
+                mountPoint += ' ' + fields[i];
+            trashFolders.push_back(appendPath(appendPath(utfTo<Zstring>(mountPoint), ".Trashes"), utfTo<Zstring>(trimCpy(runShell("id -u")))));
+        }
+    }
+    catch (const SysError& e) { std::cout << "   cannot locate the volume trash: " << utfTo<std::string>(e.toString()) << std::endl; }
+
+    //clean up what this test put into a trash, whatever the checks below find: the items have names unique to this run
+    const auto cleanUpTrash = [&]
+    {
+        for (const Zstring& trashFolder : trashFolders)
+        {
+            std::error_code ec;
+            for (const std::string& name : {goneFile, goneFolder, changedFile})
+                std::filesystem::remove_all(toPath(appendPath(trashFolder, utfTo<Zstring>(name))), ec);
+            //renamed on a name clash ("name 2"): found by the run's prefix, if the folder can be listed (~/.Trash may need Full Disk Access)
+            std::vector<std::filesystem::path> leftovers;
+            for (auto it = std::filesystem::directory_iterator(toPath(trashFolder), ec); !ec && it != std::filesystem::directory_iterator(); it.increment(ec))
+                if (startsWith(toZ(it->path().filename()), utfTo<Zstring>(uniqueName(""))))
+                    leftovers.push_back(it->path());
+            for (const std::filesystem::path& p : leftovers)
+                std::filesystem::remove_all(p, ec);
+        }
+    };
+    ZEN_ON_SCOPE_EXIT(cleanUpTrash());
+#else
+    #error which trash?
+#endif
+
     const RunResult res = runSync({.left = left, .right = right, .deletion = DeletionVariant::recycler});
     CHECK_NO_ERRORS(res);
     CHECK_TREES_EQUAL(readTree(right), expectedRightTree(changedFile));
 
-    //where the items went: the trash folder holds them under their names (or a variant of it if the name was taken)
-#if defined ZEN_LINUX
-    const Zstring trashFiles = appendPath(appendPath(std::getenv("XDG_DATA_HOME") ? Zstring(std::getenv("XDG_DATA_HOME")) : Zstring(), "Trash"), "files");
-#elif defined ZEN_MAC
-    const Zstring trashFiles = appendPath(realHomePath(), ".Trash");
-#endif
-    const Zstring trashedFile   = appendPath(trashFiles, utfTo<Zstring>(goneFile));
-    const Zstring trashedFolder = appendPath(trashFiles, utfTo<Zstring>(goneFolder));
-    const Zstring trashedOldVersion = appendPath(trashFiles, utfTo<Zstring>(changedFile));
-
-    bool recycled = false;
     for (const std::string& w : res.warnings)
         if (contains(w, "recycle bin") || contains(w, "Recycle Bin"))
             std::cout << "   warning: " << w << std::endl;
 
-    if (pathExists(trashedFile))
+    const auto trashFolderIt = std::find_if(trashFolders.begin(), trashFolders.end(), [&](const Zstring& trashFolder)
     {
-        recycled = true;
-        CHECK_EQUAL(readFile(trashedFile), std::string("deleted file"));
-        CHECK(pathExists(appendPath(trashedFolder, "inside.txt")));
-        CHECK(pathExists(trashedOldVersion) && readFile(trashedOldVersion) == "old version"); //the overwritten version, too
+        return pathExists(appendPath(trashFolder, utfTo<Zstring>(goneFile)));
+    });
+    if (trashFolderIt != trashFolders.end())
+    {
+        const Zstring& trashFolder = *trashFolderIt;
+        std::cout << "   moved to " << utfTo<std::string>(trashFolder) << std::endl;
+        CHECK_EQUAL(readFile(appendPath(trashFolder, utfTo<Zstring>(goneFile))), std::string("deleted file"));
+        CHECK(pathExists(appendPath(appendPath(trashFolder, utfTo<Zstring>(goneFolder)), "inside.txt")));
+        const Zstring oldVersion = appendPath(trashFolder, utfTo<Zstring>(changedFile)); //the overwritten version, too
+        CHECK(pathExists(oldVersion) && readFile(oldVersion) == "old version");
     }
     else
     {
         //no recycle bin on this machine: the engine warns (warnRecyclerMissing) and deletes permanently
-        std::cout << "   recycle bin not used: " << utfTo<std::string>(trashedFile) << " does not exist" << std::endl;
+        std::cout << "   recycle bin not used: " << goneFile << " is in none of the trash folders" << std::endl;
         CHECK(!res.warnings.empty());
     }
-
-#if defined ZEN_MAC //clean up what this test put into the user's trash
-    if (recycled)
-    {
-        CHECK_NO_THROW(removeFilePlain(trashedFile)); //throw FileError
-        CHECK_NO_THROW(removeDirectoryPlainRecursion(trashedFolder)); //throw FileError
-        if (pathExists(trashedOldVersion))
-            CHECK_NO_THROW(removeFilePlain(trashedOldVersion)); //throw FileError
-    }
-#else
-    (void)recycled;
-#endif
 }
