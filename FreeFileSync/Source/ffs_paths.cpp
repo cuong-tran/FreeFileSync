@@ -96,8 +96,13 @@ Zstring fff::getConfigDirPath()
 //this function is called by RealTimeSync!!!
 Zstring fff::getFreeFileSyncLauncherPath() //throw FileError
 {
-#if defined ZEN_MAC //the executable in the same bundle (Contents/MacOS); where RealTimeSync.app goes is decided with the app bundles (M3 step 4)
-    return appendPath(getInstallDirPath(), Zstr("MacOS/FreeFileSync"));
+#if defined ZEN_MAC //bundles side by side, as in the official Mac package: <folder>/RealTimeSync.app and <folder>/FreeFileSync.app
+    const Zstring installDirPath = getInstallDirPath(); //bundle: <folder>/RealTimeSync.app/Contents
+    if (endsWith(installDirPath, Zstr(".app/Contents")))
+        if (const std::optional<Zstring> bundlePath = getParentFolderPath(installDirPath))
+            if (const std::optional<Zstring> folderPath = getParentFolderPath(*bundlePath))
+                return appendPath(*folderPath, Zstr("FreeFileSync.app/Contents/MacOS/FreeFileSync"));
+    return appendPath(installDirPath, Zstr("FreeFileSync")); //unbundled: as on Linux
 #else
     return appendPath(getInstallDirPath(), Zstr("FreeFileSync"));
 #endif

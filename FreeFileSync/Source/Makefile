@@ -254,13 +254,19 @@ engineLib   := $(objPath)/libffs_engine.a
 
 .PHONY: all clean debug debugResources engine engine-flags
 
-ifeq ($(TARGET_OS),linux)
 all: $(target)
-else
-#the GUI is not ported yet (M3 step 4 of docs/PORTING_PLAN.md): only "make engine" works on macOS
-all:
-	@echo 'FreeFileSync does not build for TARGET_OS=$(TARGET_OS) yet (the wxWidgets UI is ported in M3 step 4); "make engine" builds the engine library' >&2
-	@exit 1
+
+#macOS: the app bundle, next to RealTimeSync.app (as in the official Mac package): mac_bundle.sh writes Info.plist and the icon, copies
+#the resources (and crashpad_handler of a Sentry build) and signs it ad hoc
+ifeq ($(TARGET_OS),mac)
+macBundle := $(buildRoot)/Bin/macos-$(ARCH)/FreeFileSync.app
+all: $(macBundle)
+
+$(macBundle): $(target) mac_bundle.sh version/version.h $(wildcard ../Build/Resources/*)
+	mkdir -p $(objPath)
+	unzip -p ../Build/Resources/Icons.zip FreeFileSync.png > $(objPath)/FreeFileSync.png
+	MAC_BUNDLE_HELPERS='$(if $(filter 1,$(FFS_SENTRY)),$(buildRoot)/Bin/crashpad_handler)' $(SHELL) mac_bundle.sh $@ $(target) FreeFileSync \
+	    io.github.cuong-tran.freefilesync $(objPath)/FreeFileSync.png $(macDeploymentTarget) "ffs_gui ffs_batch" ../Build/Resources
 endif
 
 engine: $(engineLib)
@@ -333,6 +339,9 @@ $(wxColorHookStamp): FORCE
 clean:
 	rm -rf $(objPath)
 	rm -f $(target) $(crashReportStamp)
+ifeq ($(TARGET_OS),mac)
+	rm -rf $(macBundle)
+endif
 ifeq ($(FFS_SENTRY),1)
 	if ! compgen -G '$(buildRoot)/Bin/FreeFileSync_*' > /dev/null && ! compgen -G '$(buildRoot)/Bin/RealTimeSync_*' > /dev/null; then rm -f $(buildRoot)/Bin/crashpad_handler; fi #still needed by another binary?
 endif

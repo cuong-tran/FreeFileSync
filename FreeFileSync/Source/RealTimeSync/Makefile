@@ -145,13 +145,18 @@ objPath := ../../Build/Obj/$(exeName)$(crashReportSuffix)
 
 objFiles := $(cppFiles:%=$(objPath)/ffs/src/rts/%.o)
 
-ifeq ($(TARGET_OS),linux)
 all: ../../Build/Bin/$(exeName)
-else
-#the GUI is not ported yet (M3 step 4 of docs/PORTING_PLAN.md)
-all:
-	@echo 'RealTimeSync does not build for TARGET_OS=$(TARGET_OS) yet (the wxWidgets UI is ported in M3 step 4)' >&2
-	@exit 1
+
+#macOS: the app bundle, next to FreeFileSync.app (see ../Makefile and ../mac_bundle.sh)
+ifeq ($(TARGET_OS),mac)
+macBundle := ../../Build/Bin/macos-$(ARCH)/RealTimeSync.app
+all: $(macBundle)
+
+$(macBundle): ../../Build/Bin/$(exeName) ../mac_bundle.sh ../version/version.h $(wildcard ../../Build/Resources/*)
+	mkdir -p $(objPath)
+	unzip -p ../../Build/Resources/Icons.zip RealTimeSync.png > $(objPath)/RealTimeSync.png
+	MAC_BUNDLE_HELPERS='$(if $(filter 1,$(FFS_SENTRY)),../../Build/Bin/crashpad_handler)' $(SHELL) ../mac_bundle.sh $@ ../../Build/Bin/$(exeName) RealTimeSync \
+	    io.github.cuong-tran.realtimesync $(objPath)/RealTimeSync.png $(macDeploymentTarget) "ffs_real" ../../Build/Resources
 endif
 
 #relink after switching between the default and the FFS_SENTRY=1 build (see ../Makefile)
@@ -192,6 +197,9 @@ $(wxColorHookStamp): FORCE
 clean:
 	rm -rf $(objPath)
 	rm -f ../../Build/Bin/$(exeName) $(crashReportStamp)
+ifeq ($(TARGET_OS),mac)
+	rm -rf $(macBundle)
+endif
 ifeq ($(FFS_SENTRY),1)
 	if ! compgen -G '../../Build/Bin/FreeFileSync_*' > /dev/null && ! compgen -G '../../Build/Bin/RealTimeSync_*' > /dev/null; then rm -f ../../Build/Bin/crashpad_handler; fi #still needed by another binary?
 endif

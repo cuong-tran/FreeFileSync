@@ -241,6 +241,90 @@ jobs:
           fi
           bash Tests/zen/run.sh
 
+      # the apps (M3 step 4): FreeFileSync.app and RealTimeSync.app side by side in FreeFileSync/Build/Bin/macos-<arch>, built with the
+      # makefiles (objects of the engine step reused), ad-hoc signed by FreeFileSync/Source/mac_bundle.sh
+      - name: Build the apps
+        id: apps
+        if: ${{ !cancelled() && steps.libcheck.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          jobs="$(sysctl -n hw.ncpu)"
+          {
+            gmake -C FreeFileSync/Source -k -j"$jobs" ARCH=${{ matrix.arch }} objPath="$RUNNER_TEMP/engine-obj"
+            gmake -C FreeFileSync/Source/RealTimeSync -k -j"$jobs" ARCH=${{ matrix.arch }} objPath="$RUNNER_TEMP/rts-obj"
+          } 2>&1 | tee apps-${{ matrix.arch }}.txt
+          ls -l FreeFileSync/Build/Bin/macos-${{ matrix.arch }}
+
+      # signatures, architecture, deployment target, and no library outside the system: the bundles run on any Mac of the architecture
+      - name: Check the apps
+        if: ${{ !cancelled() && steps.apps.outcome == 'success' }}
+        run: |
+          target="$(sed -nE 's/^FFS_MACOS_DEPLOYMENT_TARGET=([0-9.]+).*/\1/p' .github/build/common.sh)"
+          for app in FreeFileSync RealTimeSync; do
+            bundle="FreeFileSync/Build/Bin/macos-${{ matrix.arch }}/$app.app"
+            exe="$bundle/Contents/MacOS/$app"
+            codesign --verify --strict --verbose=2 "$bundle"
+            plutil -lint "$bundle/Contents/Info.plist"
+            lipo -info "$exe"
+            [ "$(lipo -archs "$exe")" = "${{ matrix.arch }}" ] || { echo "::error::$exe is not ${{ matrix.arch }} only"; exit 1; }
+            minos="$(otool -l "$exe" | awk '/LC_BUILD_VERSION/ { found = 1 } found && $1 == "minos" && !done { print $2; done = 1 }')"
+            [ "$minos" = "$target" ] || { echo "::error::$exe is built for macOS $minos, not $target"; exit 1; }
+            otool -L "$exe" | tee otool.txt
+            if nonSystem="$(tail -n +2 otool.txt | grep -vE '^\s+(/usr/lib/|/System/Library/)')"; then
+              echo "::error::$app links libraries outside the system:"; echo "$nonSystem"; exit 1
+            fi
+          done
+
+      - name: Zip the apps
+        if: ${{ !cancelled() && steps.apps.outcome == 'success' }}
+        run: |
+          version="$(sed -nE 's/.*ffsVersion\[\] = "([0-9.]+)".*/\1/p' FreeFileSync/Source/version/version.h)"
+          dir="$RUNNER_TEMP/FreeFileSync-$version-macos-${{ matrix.arch }}"
+          mkdir -p "$dir"
+          cp -R FreeFileSync/Build/Bin/macos-${{ matrix.arch }}/{FreeFileSync,RealTimeSync}.app "$dir/"
+          # ditto keeps signatures, extended attributes and symlinks
+          ditto -c -k --keepParent "$dir" "FreeFileSync-$version-macos-${{ matrix.arch }}.zip"
+          echo "APP_ZIP=FreeFileSync-$version-macos-${{ matrix.arch }}.zip" >> "$GITHUB_ENV"
+
+      - name: Upload the apps
+        if: ${{ !cancelled() && steps.apps.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ env.APP_ZIP }}
+          archive: false
+          if-no-files-found: error
+
+      # each app starts with a fresh HOME, shows a window, ends on SIGTERM without crashing (x86_64 under Rosetta 2)
+      - name: Start the apps
+        if: ${{ !cancelled() && steps.apps.outcome == 'success' }}
+        run: |
+          if [ "${{ matrix.arch }}" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "::warning::Rosetta 2 not available: x86_64 apps not started"; exit 0
+          fi
+          mkdir -p screenshots
+          for app in FreeFileSync RealTimeSync; do
+            .github/build/check-mac-app-starts.sh "FreeFileSync/Build/Bin/macos-${{ matrix.arch }}/$app.app" "screenshots/$app-${{ matrix.arch }}.png"
+          done
+
+      - name: Upload screenshots
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-macos-${{ matrix.arch }}
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload app build log
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          path: apps-${{ matrix.arch }}.txt
+          archive: false
+          if-no-files-found: ignore
+
       - name: Upload zen compile log
         if: always()
         continue-on-error: true
