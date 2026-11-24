@@ -9,9 +9,13 @@
 #include "file_access.h"
 #include "file_io.h"
 
+#include "build_info.h"
     #include <unistd.h> //fork, pipe
     #include <sys/wait.h> //waitpid
     #include <fcntl.h>
+#if defined ZEN_MAC
+    #include <mutex>
+#endif
 
 using namespace zen;
 
@@ -87,8 +91,27 @@ std::pair<int /*exit code*/, std::string> processExecuteImpl(const Zstring& file
     //--------------------------------------------------------------
     //waitpid() is a useless pile of garbage without time out => check EOF from dummy pipe instead
     int pipe[2] = {};
+#if defined ZEN_MAC
+    /*  no pipe2() on macOS: pipe() + FD_CLOEXEC is not atomic. A fork() on another thread in between would leak the pipe into
+        that child: its copy of fdLifeSignW would delay our EOF until it exits (bounded by timeoutMs). All forks in zen happen
+        below under the same lock, so they can't interleave; forks by other code (none in FreeFileSync) are not covered.     */
+    static constinit std::mutex forkMutex; //no destructor issue: never destroyed while a process is executed
+    std::unique_lock forkLock(forkMutex);
+
+    if (::pipe(pipe) != 0)
+        THROW_LAST_SYS_ERROR("pipe");
+    for (const int fd : pipe)
+        if (::fcntl(fd, F_SETFD, FD_CLOEXEC) == -1)
+        {
+            const ErrorCode ec = getLastError();
+            ::close(pipe[0]);
+            ::close(pipe[1]);
+            throw SysError(formatSystemError("fcntl(FD_CLOEXEC)", ec));
+        }
+#else
     if (::pipe2(pipe, O_CLOEXEC) != 0)
         THROW_LAST_SYS_ERROR("pipe2");
+#endif
 
     const int fdLifeSignR = pipe[0]; //for parent process
     const int fdLifeSignW = pipe[1]; //for child process
@@ -101,6 +124,10 @@ std::pair<int /*exit code*/, std::string> processExecuteImpl(const Zstring& file
     const pid_t pid = ::fork();
     if (pid < 0) //pids are never negative, empiric proof: https://linux.die.net/man/2/wait
         THROW_LAST_SYS_ERROR("fork");
+#if defined ZEN_MAC
+    if (pid != 0)
+        forkLock.unlock(); //parent only: the child never touches its copy of the lock (it ends in execv() or _exit())
+#endif
 
     if (pid == 0) //child process
         try
@@ -263,8 +290,12 @@ void zen::openWithDefaultApp(const Zstring& itemPath) //throw FileError
     try
     {
         std::optional<int> timeoutMs;
+#if defined ZEN_MAC
+        const Zstring cmdTemplate = "open %x"; //LaunchServices: returns once the app was asked to open the item
+#else
         const Zstring cmdTemplate = "xdg-open %x"; //*might* block!
         timeoutMs = 0; //e.g. on Lubuntu if Firefox is started and not already running => no need for time out! https://freefilesync.org/forum/viewtopic.php?t=8260
+#endif
         const Zstring cmdLine = replaceCpy(cmdTemplate, Zstr("%x"), escapeCommandArg(itemPath));
 
         if (const auto& [exitCode, output] = consoleExecute(cmdLine, timeoutMs); //throw SysError, SysErrorTimeOut

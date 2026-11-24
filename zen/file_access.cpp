@@ -15,14 +15,24 @@
 #include "guid.h"
 #include "ring_buffer.h"
 
+#include "build_info.h"
+#if defined ZEN_LINUX
     #include <sys/vfs.h> //statfs
     #ifdef HAVE_SELINUX
         #include <selinux/selinux.h>
     #endif
+#elif defined ZEN_MAC
+    #include <sys/mount.h> //statfs
+    #include <copyfile.h>  //(f)copyfile: extended attributes, ACLs
+#endif
 
 
     #include <fcntl.h> //open, close, AT_SYMLINK_NOFOLLOW, UTIME_OMIT
     #include <sys/stat.h>
+
+#if defined ZEN_MAC && !defined st_mtim
+    #define st_mtim st_mtimespec //macOS names the nanosecond time stamps of struct stat st_*timespec
+#endif
 
 using namespace zen;
 
@@ -512,6 +522,10 @@ void zen::copyItemPermissions(const Zstring& sourcePath, const Zstring& targetPa
         if (::lchown(targetPath.c_str(), fileInfo.st_uid, fileInfo.st_gid) != 0) // may require admin rights!
             THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot write permissions of %x."), L"%x", fmtPath(targetPath)), "lchown");
 
+#if defined ZEN_MAC //macOS has lchmod(): symlinks carry their own permissions
+        if (::lchmod(targetPath.c_str(), fileInfo.st_mode) != 0)
+            THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot write permissions of %x."), L"%x", fmtPath(targetPath)), "lchmod");
+#else
         try
         {
             if (getItemTypeImpl(targetPath) != ItemType::symlink && //throw SysErrorCode
@@ -520,8 +534,13 @@ void zen::copyItemPermissions(const Zstring& sourcePath, const Zstring& targetPa
                 THROW_LAST_SYS_ERROR("chmod");
         }
         catch (const SysError& e) { throw FileError(replaceCpy(_("Cannot write permissions of %x."), L"%x", fmtPath(targetPath)), e.toString()); }
+#endif
     }
 
+#if defined ZEN_MAC //access control list (the macOS counterpart of the SELinux context above); copyfile() does not change owner or mode here
+    if (::copyfile(sourcePath.c_str(), targetPath.c_str(), nullptr /*state*/, COPYFILE_ACL | (procSl == ProcSymlink::asLink ? COPYFILE_NOFOLLOW : 0)) != 0)
+        THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot write permissions of %x."), L"%x", fmtPath(targetPath)), "copyfile(COPYFILE_ACL)");
+#endif
 }
 
 
@@ -641,6 +660,11 @@ void zen::copyDirectoryAttributes(const Zstring& sourcePath, const Zstring& targ
     if (!getParentFolderPath(sourcePath)) //=> root path
         return;
 
+#if defined ZEN_MAC //extended attributes (Finder tags/info, custom icons, ...), like copyNewFile() does for files
+    if (::copyfile(sourcePath.c_str(), targetPath.c_str(), nullptr /*state*/, COPYFILE_XATTR) != 0)
+        if (errno != ENOTSUP) //target file system without extended attributes
+            THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot write file attributes of %x."), L"%x", fmtPath(targetPath)), "copyfile(COPYFILE_XATTR)");
+#endif
 }
 
 
@@ -730,6 +754,12 @@ FileCopyResult zen::copyNewFile(const Zstring& sourceFile, const Zstring& target
     fileOut.getBlockSize() /*throw FileError*/); //throw FileError, X
 
     //possible improvement: copy_file_range() performs an in-kernel copy: https://github.com/coreutils/coreutils/blob/17479ef60c8edbd2fe8664e31a7f69704f0cd221/src/copy.c#L342
+
+#if defined ZEN_MAC //extended attributes (incl. resource forks, Finder info): not part of the byte count, like on Windows ADS
+    if (::fcopyfile(fileIn.getHandle(), fileOut.getHandle(), nullptr /*state*/, COPYFILE_XATTR) != 0)
+        if (errno != ENOTSUP) //target file system without extended attributes
+            THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot write file attributes of %x."), L"%x", fmtPath(targetFile)), "fcopyfile(COPYFILE_XATTR)");
+#endif
 
 #if 0
     //clean file system cache: needed at all? no user complaints at all so far!!!

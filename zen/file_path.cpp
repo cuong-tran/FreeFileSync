@@ -7,7 +7,11 @@
 #include "file_path.h"
 #include "thread.h"
 #include "zstring.h"
+#include "build_info.h"
     #include <unistd.h>
+#if defined ZEN_MAC
+    #include <crt_externs.h> //_NSGetEnviron
+#endif
 
 using namespace zen;
 
@@ -35,6 +39,10 @@ std::optional<PathComponents> zen::parsePathComponents(const Zstring& itemPath)
 
     std::optional<PathComponents> pc; //"/media/zenju/" and "/Volumes/" should not fail to parse
 
+#if defined ZEN_MAC
+    if (!pc && startsWith(itemPath, "/Volumes/")) //e.g. /Volumes/DEVICE_NAME: mount points of external/network volumes
+        pc = doParse(3 /*sepCountVolumeRoot*/, false /*rootWithSep*/);
+#elif defined ZEN_LINUX
     if (!pc && startsWith(itemPath, "/mnt/")) //e.g. /mnt/DEVICE_NAME
         pc = doParse(3 /*sepCountVolumeRoot*/, false /*rootWithSep*/);
 
@@ -55,6 +63,7 @@ std::optional<PathComponents> zen::parsePathComponents(const Zstring& itemPath)
         if (!tmp.empty() && std::all_of(tmp.begin(), tmp.end(), [](const char c) { return isDigit(c); }))
         /**/pc = doParse(6 /*sepCountVolumeRoot*/, false /*rootWithSep*/);
     }
+#endif
 
 
     if (!pc && startsWith(itemPath, "/"))
@@ -152,7 +161,14 @@ std::weak_ordering zen::compareNativePath(const Zstring& lhs, const Zstring& rhs
     assert(!contains(lhs, Zchar('\0'))); //don't expect embedded nulls!
     assert(!contains(rhs, Zchar('\0'))); //
 
+#if defined ZEN_MAC
+    /*  APFS/HFS+ volumes are case-insensitive (but case-preserving) by default and always normalization-insensitive
+        => follow the default, independent of the actual volume: equal if equal after Unicode normalization and upper-case
+        mapping; a case-sensitive APFS volume still compares "a" and "A" as the same path here */
+    return compareNoCase(lhs, rhs);
+#else
     return lhs <=> rhs;
+#endif
 
 }
 
@@ -178,7 +194,11 @@ std::optional<Zstring> zen::getEnvironmentVar(const ZstringView name)
         assert(runningOnMainThread());
 
         auto envVars = std::make_unique<std::unordered_map<Zstring, Zstring>>();
+#if defined ZEN_MAC
+        if (char** line = *::_NSGetEnviron()) //"environ" is not available to shared libraries/bundles on macOS
+#else
         if (char** line = environ)
+#endif
             for (; *line; ++line)
             {
                 const std::string_view l(*line);

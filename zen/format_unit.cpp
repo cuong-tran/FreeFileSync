@@ -12,8 +12,12 @@
 #include "globals.h"
 #include "utf.h"
 
+#include "build_info.h"
     #include <iostream>
     #include <langinfo.h>
+#if defined ZEN_MAC
+    #include <CoreFoundation/CoreFoundation.h> //CFCalendarGetFirstWeekday
+#endif
     #include <clocale> //thousands separator
     #include "utf.h"   //
 
@@ -210,10 +214,20 @@ WeekDay impl::getFirstDayOfWeekImpl() //throw SysError
         ---------------------------------------
         LC_TIME=en_DK.utf8    => Monday
         LC_TIME=en_US.utf8    => Sunday       */
+#if defined ZEN_MAC //the user's region setting in System Settings, not LC_TIME
+    CFCalendarRef calendar = ::CFCalendarCopyCurrent();
+    ASSERT_SYSERROR(calendar);
+    ZEN_ON_SCOPE_EXIT(::CFRelease(calendar));
+    const CFIndex firstDay = ::CFCalendarGetFirstWeekday(calendar); //[1-Sunday, 7-Saturday]
+    ASSERT_SYSERROR(1 <= firstDay && firstDay <= 7);
+
+    const int weekDayStartSunday = static_cast<int>(firstDay);       //[1-Sunday, 7-Saturday]
+#else
     const char* firstDay = ::nl_langinfo(_NL_TIME_FIRST_WEEKDAY); //[1-Sunday, 7-Saturday]
     ASSERT_SYSERROR(firstDay && 1 <= *firstDay && *firstDay <= 7);
 
     const int weekDayStartSunday = *firstDay;                        //[1-Sunday, 7-Saturday]
+#endif
     const int weekDayStartMonday = (weekDayStartSunday - 2 + 7) % 7; //[0-Monday, 6-Sunday]  7 == 0 in Z_7
 
     return static_cast<WeekDay>(weekDayStartMonday);

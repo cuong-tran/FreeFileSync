@@ -5,6 +5,7 @@
 // *****************************************************************************
 
 #include "file_io.h"
+#include "build_info.h"
     #include <sys/stat.h>
     #include <fcntl.h>  //open
     #include <unistd.h> //close, read, write
@@ -133,8 +134,13 @@ FileInputPlain::FileInputPlain(FileHandle handle, const Zstring& filePath) :
     FileBase(handle, filePath)
 {
     //optimize read-ahead on input file:
+#if defined ZEN_MAC //no posix_fadvise(); read-ahead is on by default, F_RDAHEAD makes sure
+    if (::fcntl(getHandle(), F_RDAHEAD, 1) == -1)
+        THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot read file %x."), L"%x", fmtPath(filePath)), "fcntl(F_RDAHEAD)");
+#else
     if (::posix_fadvise(getHandle(), 0 /*offset*/, 0 /*len*/, POSIX_FADV_SEQUENTIAL) != 0) //"len == 0" means "end of the file"
         THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot read file %x."), L"%x", fmtPath(filePath)), "posix_fadvise(POSIX_FADV_SEQUENTIAL)");
+#endif
 
     /*  - POSIX_FADV_SEQUENTIAL is like POSIX_FADV_NORMAL, but with twice the read-ahead buffer size
         - POSIX_FADV_NOREUSE "since  kernel  2.6.18 this flag is a no-op" WTF!?

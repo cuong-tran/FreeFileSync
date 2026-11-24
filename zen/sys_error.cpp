@@ -5,7 +5,11 @@
 // *****************************************************************************
 
 #include "sys_error.h"
+#if defined ZEN_LINUX
     #include <gio/gio.h>
+#elif defined ZEN_MAC
+    #include <cstring> //strerror_r
+#endif
 
 using namespace zen;
 
@@ -104,6 +108,7 @@ std::wstring formatSystemErrorCode(ErrorCode ec)
             ZEN_CASE_RETURN_STRING(EOWNERDEAD);
             ZEN_CASE_RETURN_STRING(ENOTRECOVERABLE);
 
+#if defined ZEN_LINUX
             ZEN_CASE_RETURN_STRING(ECHRNG);
             ZEN_CASE_RETURN_STRING(EL2NSYNC);
             ZEN_CASE_RETURN_STRING(EL3HLT);
@@ -148,6 +153,27 @@ std::wstring formatSystemErrorCode(ErrorCode ec)
             ZEN_CASE_RETURN_STRING(EKEYREJECTED);
             ZEN_CASE_RETURN_STRING(ERFKILL);
             ZEN_CASE_RETURN_STRING(EHWPOISON);
+#elif defined ZEN_MAC //BSD/Darwin-specific codes (ENOTSUP and EOPNOTSUPP differ on macOS, but are the same value on Linux)
+            ZEN_CASE_RETURN_STRING(EOPNOTSUPP);
+            ZEN_CASE_RETURN_STRING(EPROCLIM);
+            ZEN_CASE_RETURN_STRING(EBADRPC);
+            ZEN_CASE_RETURN_STRING(ERPCMISMATCH);
+            ZEN_CASE_RETURN_STRING(EPROGUNAVAIL);
+            ZEN_CASE_RETURN_STRING(EPROGMISMATCH);
+            ZEN_CASE_RETURN_STRING(EPROCUNAVAIL);
+            ZEN_CASE_RETURN_STRING(EFTYPE);
+            ZEN_CASE_RETURN_STRING(EAUTH);
+            ZEN_CASE_RETURN_STRING(ENEEDAUTH);
+            ZEN_CASE_RETURN_STRING(EPWROFF);
+            ZEN_CASE_RETURN_STRING(EDEVERR);
+            ZEN_CASE_RETURN_STRING(EBADEXEC);
+            ZEN_CASE_RETURN_STRING(EBADARCH);
+            ZEN_CASE_RETURN_STRING(ESHLIBVERS);
+            ZEN_CASE_RETURN_STRING(EBADMACHO);
+            ZEN_CASE_RETURN_STRING(ENOATTR);
+            ZEN_CASE_RETURN_STRING(ENOPOLICY);
+            ZEN_CASE_RETURN_STRING(EQFULL);
+#endif
         default:
             return replaceCpy(_("Error code %x"), L"%x", numberTo<std::wstring>(ec));
     }
@@ -155,6 +181,7 @@ std::wstring formatSystemErrorCode(ErrorCode ec)
 }
 
 
+#if defined ZEN_LINUX
 std::wstring zen::formatGlibError(const std::string& functionName, GError* error)
 {
     if (!error)
@@ -243,6 +270,7 @@ std::wstring zen::formatGlibError(const std::string& functionName, GError* error
 
     return formatSystemError(functionName, errorCode, errorMsg);
 }
+#endif
 
 
 
@@ -251,7 +279,13 @@ std::wstring zen::getSystemErrorDescription(ErrorCode ec) //return empty string 
     const ErrorCode ecCurrent = getLastError(); //not necessarily == ec
     ZEN_ON_SCOPE_EXIT(errno = ecCurrent);
 
+#if defined ZEN_LINUX
     std::wstring errorMsg = utfTo<std::wstring>(::g_strerror(ec)); //... vs strerror(): "marginally improves thread safety, and marginally improves consistency"
+#elif defined ZEN_MAC
+    char buf[1024] = {}; //POSIX strerror_r(): thread-safe; on error (e.g. unknown code) the buffer still holds "Unknown error: <ec>"
+    (void)::strerror_r(ec, buf, sizeof(buf));
+    std::wstring errorMsg = utfTo<std::wstring>(buf);
+#endif
 
     trim(errorMsg); //Windows messages seem to end with a space...
     return errorMsg;

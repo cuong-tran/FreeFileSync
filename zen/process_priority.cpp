@@ -6,8 +6,11 @@
 
 #include "process_priority.h"
 
+#include "build_info.h"
     #include <sys/resource.h> //setpriority
+#if defined ZEN_LINUX
     #include <sys/syscall.h>
+#endif
     #include <unistd.h> //getpid
 
 using namespace zen;
@@ -46,6 +49,7 @@ void setCpuPriority(int prio) //throw SysError
 #endif
 //---------------------------------------------------------------------------------------------------
 
+#if defined ZEN_LINUX
 //- required functions ioprio_get/ioprio_set are not part of glibc: https://linux.die.net/man/2/ioprio_set
 //- and probably never will: https://sourceware.org/bugzilla/show_bug.cgi?id=4464
 //https://github.com/torvalds/linux/blob/master/include/uapi/linux/ioprio.h
@@ -91,6 +95,23 @@ void setIoPriority(int ioPrio) //throw SysError
     if (::syscall(SYS_ioprio_set, IOPRIO_WHO_PROCESS, ::getpid(), ioPrio) != 0)
         THROW_LAST_SYS_ERROR("ioprio_set(0x" + printNumber<std::string>("%x", static_cast<unsigned int>(ioPrio)) + ')');
 }
+#elif defined ZEN_MAC
+//disk I/O policy of the process (all its threads, unless a thread has its own): https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/setiopolicy_np.3.html
+int getIoPriority() //throw SysError
+{
+    const int rv = ::getiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_PROCESS);
+    if (rv == -1)
+        THROW_LAST_SYS_ERROR("getiopolicy_np");
+    return rv;
+}
+
+
+void setIoPriority(int ioPolicy) //throw SysError
+{
+    if (::setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_PROCESS, ioPolicy) != 0)
+        THROW_LAST_SYS_ERROR("setiopolicy_np(" + numberTo<std::string>(ioPolicy) + ')');
+}
+#endif
 }
 
 
@@ -108,8 +129,13 @@ SetProcessPriority::SetProcessPriority(ProcessPriority prio) : //throw FileError
         {
             pimpl_->oldIoPrio = getIoPriority(); //throw SysError
 
+#if defined ZEN_LINUX
             setIoPriority(IOPRIO_PRIO_VALUE(IOPRIO_CLASS_BE, 6 /*0 (highest) to 7 (lowest)*/)); //throw SysError
             //maybe even IOPRIO_PRIO_VALUE(IOPRIO_CLASS_IDLE, 0)  ? nope: "only served when no one else is using the disk"
+#elif defined ZEN_MAC
+            setIoPriority(IOPOL_UTILITY); //throw SysError
+            //like "nice" I/O, but not IOPOL_THROTTLE ("only served when no one else is using the disk"): same reasoning as on Linux
+#endif
         }
         catch (const SysError& e) { throw FileError(_("Cannot change process I/O priorities."), e.toString()); }
 }
