@@ -163,6 +163,7 @@ jobs:
 
       # fails the job if a library is missing, has another architecture or another deployment target (also on a cache hit)
       - name: Check libraries and write the manifest
+        id: libcheck
         run: |
           prefix=".build/deps/macos-${{ matrix.arch }}"
           target="$(sed -nE 's/^FFS_MACOS_DEPLOYMENT_TARGET=([0-9.]+).*/\1/p' .github/build/common.sh)"
@@ -218,6 +219,7 @@ jobs:
       # crash reporting (zen/crash_report_sentry.cpp) against the sentry-native above, through the makefile's FFS_SENTRY=1 rules
       # (generated build header, sentry-native's flags); compiled only: the apps that link it come with M3 steps 4 and 5
       - name: Compile crash reporting
+        if: ${{ !cancelled() && steps.libcheck.outcome == 'success' }} # also after a failed engine build: one run reports everything
         env:
           SENTRY_DSN: https://public@127.0.0.1/1 # placeholder: nothing is sent, the object is not linked
         run: |
@@ -228,6 +230,7 @@ jobs:
 
       # the zen unit tests (also run by zen-tests.yml); x86_64 runs under Rosetta 2, or is only compiled without it
       - name: zen tests
+        if: ${{ !cancelled() && steps.libcheck.outcome == 'success' }}
         env:
           ARCH: ${{ matrix.arch }}
           ZEN_TEST_ALL_ERRORS: 1

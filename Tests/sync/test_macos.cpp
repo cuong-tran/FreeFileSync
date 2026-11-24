@@ -1,7 +1,11 @@
 // macOS only: extended attributes are synchronized on APFS; a FAT volume (disk image, attached without admin rights) gets no
-// AppleDouble "._name" files, which the next comparison would see as extra items, and compares equal after the sync
+// AppleDouble "._name" files, which the next comparison would see as extra items, and compares equal after the sync;
+// the icon loader (base/icon_loader_mac.*) renders file icons and thumbnails off the main thread
 
+#include <thread>
+#include <zen/base64.h>
 #include <zen/scope_guard.h>
+#include <FreeFileSync/Source/base/icon_loader.h>
 #include "sync_test.h"
 
 using namespace zen;
@@ -91,5 +95,42 @@ TEST_CASE(syncMacFatVolume)
     CHECK_NO_ERRORS(renamed);
     CHECK_EQUAL(renamed.opCount(SO_RENAME_RIGHT), 1);
     CHECK_TREES_EQUAL(readTree(right), readTree(left), 2);
+}
+
+
+TEST_CASE(syncMacIcons)
+{
+    makeFile(testDir, "doc.txt", "text", timeBase());
+    const Zstring pngPath = itemPath(testDir, "pixel.png");
+    writeFile(pngPath, stringDecodeBase64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")); //1 x 1 pixel
+
+    const auto checkIcon = [](const FileIconHolder& fih, int maxSize)
+    {
+        CHECK(static_cast<bool>(fih));
+        CHECK(fih.image.getWidth() > 0 && fih.image.getWidth() <= maxSize && fih.image.getHeight() > 0 && fih.image.getHeight() <= maxSize);
+        CHECK(fih.maxSize == maxSize);
+    };
+    //on a worker thread, as the GUI's icon buffer does
+    std::thread([&]
+    {
+        try
+        {
+            checkIcon(getFileIcon(itemPath(testDir, "doc.txt"), 32), 32); //throw SysError
+            checkIcon(getFileIcon(testDir, 48), 48);                       //a folder
+            checkIcon(getIconByTemplatePath(Zstr("file.pdf"), 16), 16);
+            checkIcon(getIconByTemplatePath(Zstr("no extension"), 16), 16);
+            checkIcon(genericFileIcon(24), 24);
+            checkIcon(genericDirIcon(24), 24);
+            checkIcon(getTrashIcon(24), 24);
+            checkIcon(getFileManagerIcon(24), 24);
+
+            const ImageHolder thumb = getThumbnailImage(pngPath, 64); //throw SysError
+            CHECK(thumb.getWidth() == 1 && thumb.getHeight() == 1); //not enlarged
+        }
+        catch (const SysError& e) { reportFailure(__FILE__, __LINE__, "icon loader: " + utfTo<std::string>(e.toString())); }
+
+        CHECK_THROWS(SysError, getFileIcon(itemPath(testDir, "missing"), 32));
+        CHECK_THROWS(SysError, getThumbnailImage(itemPath(testDir, "doc.txt"), 64)); //not an image
+    }).join();
 }
 #endif

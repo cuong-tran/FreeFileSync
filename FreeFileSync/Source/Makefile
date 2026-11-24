@@ -237,6 +237,7 @@ ifeq ($(TARGET_OS),mac)
 cppFiles := $(filter-out ../../zen/recycler.cpp base/icon_loader.cpp,$(cppFiles))
 cppFiles += ../../zen/recycler_mac.mm
 cppFiles += ../../zen/sys_error_mac.mm
+cppFiles += base/icon_loader_mac.cpp
 cppFiles += base/icon_loader_mac.mm
 endif
 
@@ -313,6 +314,9 @@ $(objPath)/ffs/src/%.o : % $(objPath)/ffs/src/%.d
 
 #Objective-C++ (macOS *_mac.mm files) with automatic reference counting
 $(filter %.mm.o,$(objFiles)): CXXFLAGS += -fobjc-arc
+#AppKit/CoreGraphics headers of the macOS 26 SDK are no valid C++26 (enumerators of different enumeration types combined, P2864):
+#the files that include them are C++23, behind a header with standard types only (base/icon_loader_mac.h)
+$(filter %/icon_loader_mac.mm.o,$(objFiles)): CXXFLAGS += -std=c++23
 
 #recompile wx+/darkmode.cpp when the wxColorHook check above changes its result (e.g. after switching between a patched and a stock wxWidgets):
 #make doesn't track compiler flags, so keep the result in a stamp file that is rewritten only when the result changes
