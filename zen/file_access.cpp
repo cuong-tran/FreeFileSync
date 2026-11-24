@@ -23,7 +23,8 @@
     #endif
 #elif defined ZEN_MAC
     #include <sys/mount.h> //statfs
-    #include <copyfile.h>  //(f)copyfile: extended attributes, ACLs
+    #include <copyfile.h>  //fcopyfile: extended attributes
+    #include <sys/acl.h>
 #endif
 
 
@@ -491,6 +492,64 @@ void copySecurityContext(const Zstring& source, const Zstring& target, ProcSymli
         THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot write security context of %x."), L"%x", fmtPath(target)), "setfilecon");
 }
 #endif
+
+#if defined ZEN_MAC
+/*  extended attributes: best-effort metadata, never a reason to fail (and discard) a copy whose data is complete
+    - silently skipped where the target can't take them: not supported (FAT/exFAT without AppleDouble, some SMB/NFS/FUSE),
+      not permitted (protected names, e.g. com.apple.rootless), invalid name or value for the target
+    - any other error (e.g. ERANGE, E2BIG, ENOSPC, EIO) is reported through logExtraError() (the sync log), and the item is kept:
+      file_access.h has no warning channel for a copy that succeeded                                                          */
+void copyExtendedAttributes(int fdSource, int fdTarget, const Zstring& targetPath) //nothrow
+{
+    if (::fcopyfile(fdSource, fdTarget, nullptr /*state*/, COPYFILE_XATTR) != 0)
+    {
+        const ErrorCode ec = errno;
+        if (ec == ENOTSUP || ec == EOPNOTSUPP || ec == EPERM || ec == EACCES || ec == EINVAL || ec == ENOATTR)
+            return;
+        logExtraError(replaceCpy(_("Cannot write file attributes of %x."), L"%x", fmtPath(targetPath)) + L"\n\n" +
+                      formatSystemError("fcopyfile(COPYFILE_XATTR)", ec));
+    }
+}
+
+
+//copy the extended ACL (macOS counterpart of the SELinux context), and remove the target's if the source has none;
+//acl_set_*() neither opens the target for writing nor changes owner or mode (unlike copyfile(COPYFILE_ACL))
+void copyAccessControlList(const Zstring& source, const Zstring& target, ProcSymlink procSl) //throw FileError
+{
+    acl_t acl = procSl == ProcSymlink::follow ?
+                ::acl_get_file   (source.c_str(), ACL_TYPE_EXTENDED) :
+                ::acl_get_link_np(source.c_str(), ACL_TYPE_EXTENDED);
+    if (!acl)
+    {
+        const ErrorCode ec = errno;
+        if (ec == ENOTSUP) //file system without ACLs: nothing to copy
+            return;
+
+        struct stat sourceInfo = {};
+        if (ec != ENOENT || //"no ACL" is ENOENT, too: tell it from a missing source
+            (procSl == ProcSymlink::follow ? ::stat(source.c_str(), &sourceInfo) : ::lstat(source.c_str(), &sourceInfo)) != 0)
+            throw FileError(replaceCpy(_("Cannot read permissions of %x."), L"%x", fmtPath(source)),
+                            formatSystemError(procSl == ProcSymlink::follow ? "acl_get_file" : "acl_get_link_np", ec));
+
+        acl = ::acl_init(0); //no ACL => empty ACL
+        if (!acl)
+            THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot read permissions of %x."), L"%x", fmtPath(source)), "acl_init");
+    }
+    ZEN_ON_SCOPE_EXIT(::acl_free(acl));
+
+    if ((procSl == ProcSymlink::follow ?
+         ::acl_set_file   (target.c_str(), ACL_TYPE_EXTENDED, acl) :
+         ::acl_set_link_np(target.c_str(), ACL_TYPE_EXTENDED, acl)) != 0)
+    {
+        const ErrorCode ec = errno;
+        acl_entry_t entry = nullptr;
+        if (ec == ENOTSUP && ::acl_get_entry(acl, ACL_FIRST_ENTRY, &entry) != 0) //target without ACL support: fine if there is nothing to copy
+            return;
+        throw FileError(replaceCpy(_("Cannot write permissions of %x."), L"%x", fmtPath(target)),
+                        formatSystemError(procSl == ProcSymlink::follow ? "acl_set_file" : "acl_set_link_np", ec));
+    }
+}
+#endif
 }
 
 
@@ -500,6 +559,9 @@ void zen::copyItemPermissions(const Zstring& sourcePath, const Zstring& targetPa
 
 #ifdef HAVE_SELINUX  //copy SELinux security context
     copySecurityContext(sourcePath, targetPath, procSl); //throw FileError
+#endif
+#if defined ZEN_MAC //access control list: before owner and mode (setting it needs ownership of the target)
+    copyAccessControlList(sourcePath, targetPath, procSl); //throw FileError
 #endif
 
     struct stat fileInfo = {};
@@ -537,10 +599,6 @@ void zen::copyItemPermissions(const Zstring& sourcePath, const Zstring& targetPa
 #endif
     }
 
-#if defined ZEN_MAC //access control list (the macOS counterpart of the SELinux context above); copyfile() does not change owner or mode here
-    if (::copyfile(sourcePath.c_str(), targetPath.c_str(), nullptr /*state*/, COPYFILE_ACL | (procSl == ProcSymlink::asLink ? COPYFILE_NOFOLLOW : 0)) != 0)
-        THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot write permissions of %x."), L"%x", fmtPath(targetPath)), "copyfile(COPYFILE_ACL)");
-#endif
 }
 
 
@@ -661,9 +719,17 @@ void zen::copyDirectoryAttributes(const Zstring& sourcePath, const Zstring& targ
         return;
 
 #if defined ZEN_MAC //extended attributes (Finder tags/info, custom icons, ...), like copyNewFile() does for files
-    if (::copyfile(sourcePath.c_str(), targetPath.c_str(), nullptr /*state*/, COPYFILE_XATTR) != 0)
-        if (errno != ENOTSUP) //target file system without extended attributes
-            THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot write file attributes of %x."), L"%x", fmtPath(targetPath)), "copyfile(COPYFILE_XATTR)");
+    const int fdSource = ::open(sourcePath.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC); //own descriptors: copyfile() would open
+    if (fdSource == -1)                                                                   //them without O_CLOEXEC
+        THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot read file attributes of %x."), L"%x", fmtPath(sourcePath)), "open");
+    ZEN_ON_SCOPE_EXIT(::close(fdSource));
+
+    const int fdTarget = ::open(targetPath.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (fdTarget == -1)
+        THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot write file attributes of %x."), L"%x", fmtPath(targetPath)), "open");
+    ZEN_ON_SCOPE_EXIT(::close(fdTarget));
+
+    copyExtendedAttributes(fdSource, fdTarget, targetPath); //nothrow
 #endif
 }
 
@@ -756,9 +822,7 @@ FileCopyResult zen::copyNewFile(const Zstring& sourceFile, const Zstring& target
     //possible improvement: copy_file_range() performs an in-kernel copy: https://github.com/coreutils/coreutils/blob/17479ef60c8edbd2fe8664e31a7f69704f0cd221/src/copy.c#L342
 
 #if defined ZEN_MAC //extended attributes (incl. resource forks, Finder info): not part of the byte count, like on Windows ADS
-    if (::fcopyfile(fileIn.getHandle(), fileOut.getHandle(), nullptr /*state*/, COPYFILE_XATTR) != 0)
-        if (errno != ENOTSUP) //target file system without extended attributes
-            THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot write file attributes of %x."), L"%x", fmtPath(targetFile)), "fcopyfile(COPYFILE_XATTR)");
+    copyExtendedAttributes(fileIn.getHandle(), fileOut.getHandle(), targetFile); //nothrow
 #endif
 
 #if 0
