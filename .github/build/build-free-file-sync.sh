@@ -52,8 +52,6 @@ FFS_BIN_DIR="$BIN_DIR"
 # (e.g. FreeFileSync_x86_64-clang-libc++ for CXX=clang++-20 STDLIB=libc++); empty for the default g++ build.
 TOOLCHAIN_SUFFIX="$(toolchain_suffix)"
 rm -f "$FFS_BIN_DIR/FreeFileSync_$ARCH$TOOLCHAIN_SUFFIX" "$BIN_DIR/RealTimeSync_$ARCH$TOOLCHAIN_SUFFIX"
-# only a Sentry build ships the crash handler; don't leave one from an earlier build next to binaries without reporting
-rm -f "$FFS_BIN_DIR/crashpad_handler" "$BIN_DIR/crashpad_handler"
 
 # Crash reporting: same binary names, but separate object folders (like the makefiles' own objPath)
 OBJ_SUFFIX=""
@@ -75,3 +73,16 @@ esac
 # FFS_SENTRY and SENTRY_DSN reach the makefiles through the environment, never through the command line.
 make -C "$REPO_ROOT/FreeFileSync/Source" -j "$JOBS" objPath="$OBJ_DIR/FreeFileSync_$ARCH$TOOLCHAIN_SUFFIX$OBJ_SUFFIX"
 make -C "$REPO_ROOT/FreeFileSync/Source/RealTimeSync" -j "$JOBS" objPath="$OBJ_DIR/RealTimeSync_$ARCH$TOOLCHAIN_SUFFIX$OBJ_SUFFIX"
+
+# A Sentry build copies crashpad_handler next to its binaries (the makefiles). After a build without reporting, delete a
+# handler left there by an earlier build, unless a binary of another toolchain in the same folder is a Sentry build and needs it.
+# (Captured first: "grep -q" in a pipeline could kill strings with SIGPIPE, which pipefail turns into a wrong answer.)
+for dir in "$FFS_BIN_DIR" "$BIN_DIR"; do
+    [ -z "${FFS_SENTRY:-}" ] && [ -e "$dir/crashpad_handler" ] || continue
+    needed=no
+    for bin in "$dir"/FreeFileSync_* "$dir"/RealTimeSync_*; do
+        [ -f "$bin" ] || continue
+        if strs="$(strings -a "$bin")" && grep -q 'sentry[.]native' <<<"$strs"; then needed=yes; break; fi
+    done
+    if [ "$needed" = no ]; then rm -f "$dir/crashpad_handler"; else log "Keeping $dir/crashpad_handler: another binary there reports crashes"; fi
+done
