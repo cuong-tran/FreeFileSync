@@ -10,11 +10,13 @@ on:
       - 'zen/**'
       - 'Tests/zen/**'
       - '.github/workflows/zen-tests.yml'
+      - '.github/build/common.sh' #FFS_MACOS_DEPLOYMENT_TARGET
   pull_request:
     paths:
       - 'zen/**'
       - 'Tests/zen/**'
       - '.github/workflows/zen-tests.yml'
+      - '.github/build/common.sh' #FFS_MACOS_DEPLOYMENT_TARGET
   workflow_dispatch:
 
 concurrency: #like the other workflows: a newer push cancels the run it supersedes
@@ -88,7 +90,7 @@ jobs:
       - name: Install dependencies (macOS)
         if: matrix.platform == 'macos'
         run: |
-          brew list bash >/dev/null 2>&1 || brew install bash #run.sh needs bash 4.3+ (macOS ships 3.2)
+          brew list bash >/dev/null 2>&1 || brew install bash #run.sh needs bash 4.4+ (macOS ships 3.2)
           bash --version | sed -n 1p
           clang++ --version | sed -n 1p
       #x86_64 test binaries run under Rosetta 2; without it (and if it can't be installed), the entry only compiles

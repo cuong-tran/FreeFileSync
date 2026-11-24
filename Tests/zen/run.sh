@@ -17,8 +17,8 @@
 # live in a temporary folder that is removed on exit, and HOME/XDG_DATA_HOME point there so the recycle bin test can't touch the
 # user's real trash (Linux).
 set -euo pipefail
-if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 3) )); then
-    echo "bash 4.3 or newer needed (this is $BASH_VERSION); on macOS: brew install bash" >&2 # wait -n, negative array indexes
+if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4) )); then
+    echo "bash 4.4 or newer needed (this is $BASH_VERSION); on macOS: brew install bash" >&2 # wait -n, empty arrays under set -u
     exit 2
 fi
 

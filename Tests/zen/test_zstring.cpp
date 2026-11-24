@@ -1,6 +1,8 @@
 // zen/zstring.h: comparison, case conversion, natural sort, Unicode normalization
 
 #include <algorithm>
+#include <chrono>
+#include <random>
 #include <set>
 #include <zen/zstring.h>
 #include "test.h"
@@ -56,6 +58,14 @@ TEST_CASE(zstringCase)
     CHECK_EQUAL(getUpperCase("\xD0\xB4\xD0\xB0"), Zstring("\xD0\x94\xD0\x90")); //Cyrillic да => ДА
     CHECK_EQUAL(getUpperCase(nonBmp), nonBmp);
     CHECK_EQUAL(getUpperCase(Zstring()), Zstring());
+    //simple (1:1) case mapping per code point on all platforms (Linux: GLib, macOS: table from CoreFoundation)
+    CHECK_EQUAL(getUpperCase("\xC3\x9F"), Zstring("\xC3\x9F")); //ß has no 1:1 upper case ("SS" is a full mapping)
+    CHECK_EQUAL(getUpperCase("\xEF\xAC\x80"), Zstring("\xEF\xAC\x80")); //ligature ﬀ: likewise
+    CHECK_EQUAL(getUpperCase("\xC7\x86"), Zstring("\xC7\x84")); //ǆ => Ǆ
+    CHECK_EQUAL(getUpperCase("\xC3\xBF"), Zstring("\xC5\xB8")); //ÿ => Ÿ (outside Latin-1)
+    CHECK_EQUAL(getUpperCase("\xF0\x90\x90\xA8"), Zstring("\xF0\x90\x90\x80")); //Deseret U+10428 => U+10400 (outside the BMP)
+    CHECK_EQUAL(getUpperCase("\xE5\x86\x99\xE7\x9C\x9F"), Zstring("\xE5\x86\x99\xE7\x9C\x9F")); //CJK: no case
+    CHECK(!equalNoCase("\xC3\x9F", "SS"));
 
     CHECK(equalNoCase("Hello World", "hELLO wORLD"));
     CHECK(!equalNoCase("Hello", "Hello "));
@@ -100,4 +110,37 @@ TEST_CASE(zstringNaturalSort)
     if (names != expected)
         for (const Zstring& name : names)
             std::cerr << "    " << toPrintable(name) << '\n';
+}
+
+
+//sorting many non-ASCII names must stay fast (comparisons run millions of times in the file grid): fails only on gross regressions
+TEST_CASE(zstringSortPerformance)
+{
+    const Zstring stems[] =
+    {
+        "file", "Report", "zebra",
+        "\xC3\x84rger", "A\xCC\x88rger",         //Ärger NFC, NFD
+        "caf\xC3\xA9", "cafe\xCC\x81",           //café NFC, NFD
+        "\xD0\x94\xD0\xB0\xD0\xBD\xD0\xBD\xD1\x8B\xD0\xB5", //Данные
+        "\xE5\x86\x99\xE7\x9C\x9F",             //写真
+        "\xF0\x9F\x98\x80 smile",                 //emoji
+    };
+    std::mt19937 rng(42); //deterministic
+    std::vector<Zstring> names;
+    for (int i = 0; i < 100'000; ++i)
+        names.push_back(stems[rng() % std::size(stems)] + Zstr(' ') + numberTo<Zstring>(rng() % 10'000) + (rng() % 2 ? ".txt" : ".JPG"));
+
+    auto timeSort = [&](const char* what, auto less)
+    {
+        std::vector<Zstring> sorted = names;
+        const auto startTime = std::chrono::steady_clock::now();
+        std::sort(sorted.begin(), sorted.end(), less);
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startTime).count();
+        std::cout << "   sort 100k mixed names, " << what << ": " << ms << " ms" << std::endl;
+        CHECK(std::is_sorted(sorted.begin(), sorted.end(), less));
+        CHECK(ms < 60'000); //gross regressions only: a few hundred ms are expected on Linux and macOS
+    };
+    timeSort("LessNaturalSort", LessNaturalSort());
+    timeSort("LessNativePath", LessNativePath());
+    timeSort("compareNoCase", [](const Zstring& lhs, const Zstring& rhs) { return compareNoCase(lhs, rhs) < 0; });
 }
