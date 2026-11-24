@@ -5,6 +5,8 @@
 // *****************************************************************************
 #pragma once
 
+#include <zen/build_info.h>
+
 #include <wx/bmpbuttn.h>
 #include <wx/settings.h>
 #include <wx/statbmp.h>
@@ -85,6 +87,11 @@ void setButtonLabel(wxAnyButton& btn, const wxImage& img, int pad)
     //wxWidgets excels at screwing up consistently once again:
     //the first call to SetBitmapLabel() *implicitly* sets the disabled bitmap, too, subsequent calls, DON'T!
     btn.SetBitmapDisabled(toDpiScaledBitmap(img.ConvertToDisabled()));
+
+#if defined ZEN_MAC //wxOSX shows a bitmap button's label next to its bitmap (wxGTK doesn't): the text, if any, is part of the image already
+    if (!btn.GetLabel().empty())
+        btn.SetLabel(wxString());
+#endif
 
     const int margin = 0;
     const int border = 1;

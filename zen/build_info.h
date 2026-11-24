@@ -35,6 +35,10 @@ static_assert((BuildArch::program == BuildArch::bit32 ? 32 : 64) == sizeof(void*
 
 
 //harmonize with os_arch enum in update_checks table:
+#if defined ZEN_MAC && defined __arm64__ //Apple silicon (Linux keeps upstream's value)
+constexpr const char* cpuArchName = "arm64";
+#else
 constexpr const char* cpuArchName = BuildArch::program == BuildArch::bit32 ? "i686": "x86-64";
+#endif
 
 }
