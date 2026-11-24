@@ -260,9 +260,9 @@ int Application::OnExit()
         //assert(rv); -> fails if clipboard wasn't used
         localizationCleanup();
         imageResourcesCleanup();
+        shutdownCrashReporting(); //before teardownAfs(): its upload may still use libcurl (see crash_report_init.h)
         teardownAfs(); //bad_alloc possible when compressing large GDrive metadata stream
         colorThemeCleanup();
-        shutdownCrashReporting();
         return wxApp::OnExit();
 
 }
