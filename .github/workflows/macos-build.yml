@@ -306,6 +306,29 @@ jobs:
             .github/build/check-mac-app-starts.sh "FreeFileSync/Build/Bin/macos-${{ matrix.arch }}/$app.app" "screenshots/$app-${{ matrix.arch }}.png"
           done
 
+      # FreeFileSync in batch mode: a mirror job (written by the engine's config writer through Tests/sync's sync_test --write-batch)
+      # must end with exit code 0 and leave the right folder equal to the left one
+      - name: Batch run
+        if: ${{ !cancelled() && steps.apps.outcome == 'success' }}
+        run: |
+          if [ "${{ matrix.arch }}" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "::warning::Rosetta 2 not available: x86_64 batch run skipped"; exit 0
+          fi
+          work="$RUNNER_TEMP/batch"
+          mkdir -p "$work/left/sub dir" "$work/right" "$work/logs" "$work/home"
+          echo "a" > "$work/left/a.txt"
+          echo "b" > "$work/left/sub dir/b é.txt"
+          echo "deleted by mirror" > "$work/right/old.txt"
+          ARCH=${{ matrix.arch }} SYNC_TEST_OBJ="$RUNNER_TEMP/engine-obj" SYNC_TEST_BIN="$RUNNER_TEMP/sync-bin" SYNC_TEST_COMPILE_ONLY=1 bash Tests/sync/run.sh
+          "$RUNNER_TEMP/sync-bin/sync_test" --write-batch "$work/job.ffs_batch" "$work/left" "$work/right" "$work/logs"
+          start=$SECONDS
+          HOME="$work/home" gtimeout 300 FreeFileSync/Build/Bin/macos-${{ matrix.arch }}/FreeFileSync.app/Contents/MacOS/FreeFileSync "$work/job.ffs_batch" && rc=0 || rc=$?
+          echo "batch run: exit code $rc after $((SECONDS - start)) s"
+          ls -l "$work/logs" || true
+          [ "$rc" = 0 ] || { cat "$work"/logs/* 2>/dev/null || true; echo "::error::batch run ended with exit code $rc"; exit 1; }
+          diff -r "$work/left" "$work/right"
+          echo "batch run: right folder equals left folder"
+
       - name: Upload screenshots
         if: always()
         continue-on-error: true

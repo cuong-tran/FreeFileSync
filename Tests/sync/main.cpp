@@ -3,8 +3,12 @@
 // apps do. No wxWidgets initialization: the engine needs no wxApp, translations are off (English texts).
 //
 // usage: sync_test [--root <folder>] [--list] [<test name>...]
+//        sync_test --write-batch <file.ffs_batch> <left folder> <right folder> <log folder>
 //   --root: parent folder for the per-test temporary folders (default: the system temp folder); must exist
 //   names:  run only these tests (default: all)
+//   --write-batch: writes a batch job that mirrors <left folder> to <right folder> through the engine's own config writer
+//                  (fff::writeConfig()), for running the app in batch mode in CI: no popups (errors cancel the job), the progress
+//                  window closes itself, the log goes to <log folder>
 //
 // Each test runs in a new folder "<root>/sync_test-<random>/<test name>", removed afterwards with everything in it.
 // SANDBOX_TEST_CASE tests (recycle bin) run only if ZEN_TEST_SANDBOX is set, as Tests/sync/run.sh does after pointing HOME and
@@ -13,6 +17,7 @@
 #include <cstdlib>
 #include <random>
 #include <FreeFileSync/Source/afs/concrete.h>
+#include <FreeFileSync/Source/config.h>
 #include "../zen/test.h"
 
 using namespace zentest;
@@ -21,6 +26,26 @@ namespace fs = std::filesystem;
 
 int main(int argc, char* argv[])
 {
+    if (argc == 6 && std::string(argv[1]) == "--write-batch")
+        try
+        {
+            fff::FfsBatchConfig cfg;
+            cfg.guiCfg.mainCfg.syncCfg.directionCfg = fff::getDefaultSyncCfg(fff::SyncVariant::mirror);
+            cfg.guiCfg.mainCfg.syncCfg.deletionVariant = fff::DeletionVariant::permanent;
+            cfg.guiCfg.mainCfg.firstPair.folderPathPhraseLeft  = argv[3];
+            cfg.guiCfg.mainCfg.firstPair.folderPathPhraseRight = argv[4];
+            cfg.guiCfg.mainCfg.altLogFolderPathPhrase = argv[5];
+            cfg.batchExCfg.autoCloseSummary   = true;
+            cfg.batchExCfg.batchErrorHandling = fff::BatchErrorHandling::cancel;
+            fff::writeConfig(cfg, argv[2]); //throw FileError
+            return 0;
+        }
+        catch (const zen::FileError& e)
+        {
+            std::cerr << zen::utfTo<std::string>(e.toString()) << '\n';
+            return 1;
+        }
+
     fs::path rootPath = fs::temp_directory_path();
     std::vector<std::string> selected;
     bool listOnly = false;
