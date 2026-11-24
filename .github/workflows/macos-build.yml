@@ -401,3 +401,61 @@ jobs:
           path: macos-libraries-${{ matrix.arch }}.tar.gz
           archive: false
           if-no-files-found: error
+
+  # one drag-to-Applications disk image per architecture with both apps (the shape of Musikku's wrap-mac-dmg job): the app zips
+  # stay zips through the artifact download (skip-decompress: the artifact action's own unpacking would lose the bundle structure),
+  # ditto -x -k unpacks them with signatures and extended attributes, .github/build/wrap-mac-dmg.sh builds and checks the image
+  dmg:
+    name: DMG
+    needs: libraries
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install create-dmg
+        run: |
+          brew install create-dmg || echo "::warning::create-dmg not installed: the images are made with hdiutil alone"
+
+      - name: Download the app zips
+        uses: actions/download-artifact@v8
+        with:
+          pattern: FreeFileSync-*-macos-*.zip
+          path: mac-zips
+          merge-multiple: true
+          skip-decompress: true
+
+      - name: Wrap each architecture's apps into a .dmg
+        run: |
+          shopt -s nullglob
+          zips=(mac-zips/FreeFileSync-*-macos-*.zip)
+          ls -l mac-zips
+          [ "${#zips[@]}" -eq 2 ] || { echo "::error::expected two app zips (arm64, x86_64), found ${#zips[@]}"; exit 1; }
+          mkdir -p dist
+          for zip in "${zips[@]}"; do
+            base="$(basename "$zip" .zip)" # FreeFileSync-<version>-macos-<arch>
+            work="$(mktemp -d)"
+            ditto -x -k "$zip" "$work"
+            .github/build/wrap-mac-dmg.sh "$work/$base" "dist/$base.dmg" 2>&1 | tee -a dmg.log
+            method="$(sed -nE 's/^\[wrap-mac-dmg\] made with (.*): .*/\1/p' dmg.log | tail -1)"
+            echo "- \`$base.dmg\`: made with $method, both apps' signatures valid inside the mounted image" >> "$GITHUB_STEP_SUMMARY"
+            rm -rf "$work"
+          done
+          ls -lh dist
+
+      - name: Upload the .dmg (arm64)
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/*-macos-arm64.dmg
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload the .dmg (x86_64)
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/*-macos-x86_64.dmg
+          archive: false
+          if-no-files-found: error
