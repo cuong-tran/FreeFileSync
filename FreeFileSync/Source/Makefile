@@ -43,7 +43,7 @@ endif
 #crash reporting (zen/crash_report.h): "make FFS_SENTRY=1 SENTRY_DSN=<dsn>" builds with sentry-native (crash_report.mk), the default
 #build without any reporting code (zen/crash_report_none.cpp). Same binary name, but its own object folder, so switching never mixes objects
 ifeq ($(FFS_SENTRY),1)
-    ifeq ($(strip $(SENTRY_DSN))$(filter clean,$(MAKECMDGOALS)),) #"make clean" needs no DSN
+    ifeq ($(strip $(SENTRY_DSN))$(if $(filter-out clean,$(MAKECMDGOALS)),,$(filter clean,$(MAKECMDGOALS))),) #"make clean" alone needs no DSN
         $(error FFS_SENTRY=1 needs a DSN: make FFS_SENTRY=1 SENTRY_DSN=<dsn>, or SENTRY_DSN in the environment)
     endif
     crashReportSuffix := -sentry
@@ -215,8 +215,8 @@ $(target): $(objFiles) $(crashReportStamp)
 	mkdir -p $(dir $@)
 	$(CXX) -o $@ $(objFiles) $(LDFLAGS)
 
-#not for "make clean": crash_report.mk checks that sentry-native is installed
-ifeq ($(FFS_SENTRY)$(filter clean,$(MAKECMDGOALS)),1)
+#not for "make clean" alone: crash_report.mk checks that sentry-native is installed ("make clean all" still includes it)
+ifeq ($(FFS_SENTRY)$(if $(filter-out clean,$(MAKECMDGOALS)),,$(filter clean,$(MAKECMDGOALS))),1)
 binDir := $(buildRoot)/Bin
 include crash_report.mk
 endif
@@ -258,7 +258,7 @@ clean:
 	rm -rf $(objPath)
 	rm -f $(target) $(crashReportStamp)
 ifeq ($(FFS_SENTRY),1)
-	rm -f $(buildRoot)/Bin/crashpad_handler
+	if ! compgen -G '$(buildRoot)/Bin/FreeFileSync_*' > /dev/null && ! compgen -G '$(buildRoot)/Bin/RealTimeSync_*' > /dev/null; then rm -f $(buildRoot)/Bin/crashpad_handler; fi #still needed by another binary?
 endif
 ifeq ($(BUILD),debug)
 	rm -rf $(buildRoot)

@@ -78,7 +78,7 @@ make -C "$REPO_ROOT/FreeFileSync/Source/RealTimeSync" -j "$JOBS" objPath="$OBJ_D
 # handler left there by an earlier build, unless a binary of another toolchain in the same folder is a Sentry build and needs it.
 # (Captured first: "grep -q" in a pipeline could kill strings with SIGPIPE, which pipefail turns into a wrong answer.)
 for dir in "$FFS_BIN_DIR" "$BIN_DIR"; do
-    [ -z "${FFS_SENTRY:-}" ] && [ -e "$dir/crashpad_handler" ] || continue
+    [ "${FFS_SENTRY:-}" != 1 ] && [ -e "$dir/crashpad_handler" ] || continue
     needed=no
     for bin in "$dir"/FreeFileSync_* "$dir"/RealTimeSync_*; do
         [ -f "$bin" ] || continue

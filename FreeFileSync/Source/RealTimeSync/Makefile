@@ -42,7 +42,7 @@ endif
 
 #crash reporting: see ../Makefile
 ifeq ($(FFS_SENTRY),1)
-    ifeq ($(strip $(SENTRY_DSN))$(filter clean,$(MAKECMDGOALS)),) #"make clean" needs no DSN
+    ifeq ($(strip $(SENTRY_DSN))$(if $(filter-out clean,$(MAKECMDGOALS)),,$(filter clean,$(MAKECMDGOALS))),) #"make clean" alone needs no DSN
         $(error FFS_SENTRY=1 needs a DSN: make FFS_SENTRY=1 SENTRY_DSN=<dsn>, or SENTRY_DSN in the environment)
     endif
     crashReportSuffix := -sentry
@@ -126,8 +126,8 @@ $(shell mkdir -p $(dir $(crashReportStamp)) && { echo '$(FFS_SENTRY)' | cmp -s -
 	mkdir -p $(dir $@)
 	$(CXX) -o $@ $(objFiles) $(LDFLAGS)
 
-#not for "make clean": crash_report.mk checks that sentry-native is installed
-ifeq ($(FFS_SENTRY)$(filter clean,$(MAKECMDGOALS)),1)
+#not for "make clean" alone: crash_report.mk checks that sentry-native is installed ("make clean all" still includes it)
+ifeq ($(FFS_SENTRY)$(if $(filter-out clean,$(MAKECMDGOALS)),,$(filter clean,$(MAKECMDGOALS))),1)
 binDir := ../../Build/Bin
 include ../crash_report.mk
 endif
@@ -152,5 +152,5 @@ clean:
 	rm -rf $(objPath)
 	rm -f ../../Build/Bin/$(exeName) $(crashReportStamp)
 ifeq ($(FFS_SENTRY),1)
-	rm -f ../../Build/Bin/crashpad_handler
+	if ! compgen -G '../../Build/Bin/FreeFileSync_*' > /dev/null && ! compgen -G '../../Build/Bin/RealTimeSync_*' > /dev/null; then rm -f ../../Build/Bin/crashpad_handler; fi #still needed by another binary?
 endif
