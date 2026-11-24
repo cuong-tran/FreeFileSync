@@ -17,7 +17,7 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M3 macOS | 1. `zen` core compiles and `Tests/zen` passes on macOS | done | `a0b5c3f..50065e4`, fixes in `50065e4..292907c` | 8 findings: all fixed |
 | M3 macOS | 2. `zen` features: FSEvents watcher, recycle bin, shutdown, network | done | `50065e4..292907c`, fixes `292907c..f5c9b53` | 8 findings: all fixed |
 | M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | done | `b4b35bb..3289e88`, fixes `f3e2601..bd9f1bf` | 7 findings: 6 fixed, 1 kept |
-| M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | in progress | | |
+| M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | apps build and start; review fixes and a button-label defect in progress | `bd9f1bf..1152282` | 9 findings, see below |
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | | | |
 | M4 Windows | | | | |
 
@@ -60,6 +60,10 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | 2026-11-24 | Files that include AppKit are compiled as C++23, behind headers with standard types | The macOS 26 SDK's CoreGraphics headers are not valid C++26. |
 | 2026-11-24 | Mac bundle ids are `io.github.cuong-tran.freefilesync` and `.realtimesync` | This is a fork; upstream's ids are not used. |
 | 2026-11-24 | Scheduled pause at 23:00 UTC (06:00 UTC+7 on 2026-11-25) | Asked by the owner. |
+| 2026-11-24 | The Mac apps are two bundles side by side, `FreeFileSync.app` and `RealTimeSync.app` | Same layout as the official Mac package. |
+| 2026-11-24 | `Resources/Animal.dat` is an own image (a drawn cartoon cat, `.github/build/resources`), used by the Mac bundles and the Linux packages | It is missing from the source zip; upstream's artwork is not copied. |
+| 2026-11-24 | macOS: a `.ffs_batch` opened from Finder while the app runs starts a new process that runs the job | macOS runs one instance per bundle; loading the job into the open window would not run it. |
+| 2026-11-24 | macOS builds of this fork do not use upstream's online update check | It would report this fork's builds to upstream's server with values it does not expect and point users at upstream's package. Linux keeps upstream's behavior. |
 
 ## Needed from the repository owner
 
@@ -83,6 +87,7 @@ Marked `KNOWN_ISSUE` in `Tests/zen`, not fixed (upstream code):
 - GitHub's macOS arm64 runners are short of capacity: jobs wait 10 minutes or more, and some are cancelled as "not acquired by Runner". A re-run fixes it.
 - Network file systems (FTP, SFTP, Google Drive) are only compiled on macOS, not run.
 - `afs/gdrive.cpp` (upstream): the OAuth login loop never closes the accepted client socket. Left as is.
+- The Mac UI has only been seen through CI screenshots. To check on a real Mac: main window layout (fonts and sizes were set for GTK), dark mode, Dock icon, tray item, the application menu, opening files from Finder, drag and drop, folder picker, sounds, "Show in Finder". Dock progress is not implemented; the app icon is upscaled from a 128 px image.
 
 ## Review findings
 
@@ -202,3 +207,19 @@ Result of the step: `make engine` builds `libffs_engine.a` (everything but the U
 | 5 | `afs/ftp.cpp` platform branches have no `#else`, so Windows would compile functions without a return | nit | fixed in `42df8c0`: `#else #error` added to every platform branch that must produce a value |
 | 6 | `Tests/zip_afs/run.sh` needs bash 4.4 on macOS but does not check | nit | fixed in `bd9f1bf` |
 | 7 | The makefiles stop on hosts other than Linux and macOS | nit | no change needed: intended, like the `#error` in `zen/build_info.h` |
+
+### M3 step 4 (`bd9f1bf..1152282`, `/code-review medium`)
+
+Result of the step: `FreeFileSync.app` and `RealTimeSync.app` build for arm64 and x86_64 in `macos-build.yml`, ad-hoc signed and linked against system libraries only; they start on the runner and show a window, and FreeFileSync runs a mirror job in batch mode. Artifacts: `FreeFileSync-14.13-macos-<arch>.zip` and screenshots. Known defect at the end of the step: buttons with icon and text draw their text twice on macOS.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | The attempted fix for doubled button text clears the label, so Compare and Synchronize lose their text after the first refresh | important | sent for fixing |
+| 2 | A config opened from Finder replaces the configuration underneath an open modal dialog | important | sent for fixing |
+| 3 | Quit, Preferences and About from the application menu are not blocked while a modal dialog is open (Cmd+Q can destroy the main window under it) | important | sent for fixing |
+| 4 | Double-clicking a `.ffs_batch` while the app runs loads it instead of running it | important | sent for fixing |
+| 5 | Files passed by Finder at launch skip the checks command-line arguments get | nit | sent for fixing |
+| 6 | The start check can pass for an app that only shows an error popup | nit | sent for fixing |
+| 7 | The bundle makefile rule misses inputs (own image, deployment target, crash handler) | nit | sent for fixing |
+| 8 | `mac_bundle.sh` and its recipes break with spaces in paths | nit | sent for fixing |
+| 9 | The Mac build posts unexpected values to upstream's update server | nit | sent for fixing (update check off on macOS) |
