@@ -533,6 +533,34 @@ TEST_CASE(fileAccessMacMetadata)
     CHECK_NO_THROW(copyItemPermissions(appendPath(testDir, "source"), aclTarget, ProcSymlink::follow));
     CHECK(getAcl(aclTarget).empty());
 
+    //inherited entries (from an inheritable entry of the target's parent folder) are kept: the target's ACL becomes the
+    //source's explicit entries followed by its own inherited ones
+    const Zstring inheritDir = appendPath(testDir, "inheritDir");
+    createDirectory(inheritDir);
+    runShell("chmod +a 'everyone allow readattr,file_inherit,directory_inherit' " + escapeCommandArg(inheritDir));
+    const Zstring inheritTarget  = appendPath(inheritDir, "target");
+    const Zstring inheritTarget2 = appendPath(inheritDir, "target2");
+    writeFile(inheritTarget,  "t");
+    writeFile(inheritTarget2, "t");
+    auto isInherited = [](const std::string& line) { return contains(line, " inherited "); };
+    const std::vector<std::string> aclInherited = getAcl(inheritTarget);
+    CHECK(aclInherited.size() == 1 && isInherited(aclInherited[0])); //the kernel added it on create
+    std::cout << "   inherited ACL: " << (aclInherited.empty() ? std::string("none") : aclInherited[0]) << std::endl;
+
+    CHECK_NO_THROW(copyItemPermissions(aclSource, inheritTarget, ProcSymlink::follow)); //explicit "everyone allow read"
+    const std::vector<std::string> aclMerged = getAcl(inheritTarget);
+    CHECK(aclMerged.size() == 2 && aclMerged.size() == aclInherited.size() + getAcl(aclSource).size());
+    if (aclMerged.size() == 2)
+    {
+        CHECK(!isInherited(aclMerged[0]) && contains(aclMerged[0], "allow read")); //explicit entries first
+        CHECK(isInherited(aclMerged[1]));
+    }
+    //source without explicit entries: a target with only inherited entries is left as it is, explicit ones are removed
+    CHECK_NO_THROW(copyItemPermissions(appendPath(testDir, "source"), inheritTarget2, ProcSymlink::follow));
+    CHECK(getAcl(inheritTarget2) == aclInherited);
+    CHECK_NO_THROW(copyItemPermissions(appendPath(testDir, "source"), inheritTarget, ProcSymlink::follow));
+    CHECK(getAcl(inheritTarget) == aclInherited);
+
     //symlinks (ProcSymlink::asLink): mode and ACL of the link itself, the link targets are untouched
     const Zstring linkSource = appendPath(testDir, "linkSource");
     const Zstring linkTarget = appendPath(testDir, "linkTarget");
@@ -577,16 +605,23 @@ TEST_CASE(fileAccessMacSecondVolume)
     const Zstring target = appendPath(mountPath, "copy.txt");
     CHECK_NO_THROW((void)copyNewFile(source, target, nullptr));
     CHECK(pathExists(target) && readFile(target) == "content");
-    std::cout << "   extended attributes on FAT: " << trimCpy(runShell("xattr " + escapeCommandArg(target))) << std::endl;
-    for (const LogEntry& entry : fetchExtraLog())
-        std::cout << "   logged: " << trimCpy(std::string(entry.message.begin(), entry.message.end())) << std::endl;
-
+    //...and are not copied at all to a volume without native extended attributes: macOS would emulate them with AppleDouble
+    //"._<name>" files, which the next comparison sees as target-only items
     const Zstring sourceDir = appendPath(testDir, "sourceDir");
     createDirectory(sourceDir);
     runShell("xattr -w com.freefilesync.small 'folder value' " + escapeCommandArg(sourceDir));
     createDirectory(appendPath(mountPath, "dir"));
     CHECK_NO_THROW(copyDirectoryAttributes(sourceDir, appendPath(mountPath, "dir")));
-    (void)fetchExtraLog();
+    CHECK_NO_THROW((void)copyNewFile(source, appendPath(mountPath, nativeRelPath("dir/copy2.txt")), nullptr));
+
+    CHECK(trimCpy(runShell("xattr " + escapeCommandArg(target))).empty());
+    CHECK(trimCpy(runShell("xattr " + escapeCommandArg(appendPath(mountPath, "dir")))).empty());
+    for (const Zstring& folder : {mountPath, appendPath(mountPath, "dir")})
+        traverseFolder(folder,
+        [&](const FileInfo& fi) { CHECK(!startsWith(fi.itemName, "._")); if (startsWith(fi.itemName, "._")) std::cerr << "   AppleDouble file: " << fi.fullPath << '\n'; },
+        [&](const FolderInfo& fi) { CHECK(!startsWith(fi.itemName, "._")); }, nullptr);
+    for (const LogEntry& entry : fetchExtraLog())
+        reportFailure(__FILE__, __LINE__, "logged: " + std::string(entry.message.begin(), entry.message.end()));
 
     //no ACLs on FAT (owner and mode depend on the mount: just report)
     try
