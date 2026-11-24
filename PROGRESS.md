@@ -12,8 +12,9 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M1 Foundation | 3. macOS dependency builds in CI | done | `8f3c1fd..5ef2d42`, fixes `93c562e^..c28f8f2` | 7 findings: all fixed |
 | M1 Foundation | Pull request | merged as [#11](https://github.com/cuong-tran/FreeFileSync/pull/11) (squash, `9b6221a`); `dev` restarted from `main` | | bot review: 1 doc fix (`1cf3840`), 3 findings not valid |
 | M2 Sentry | 1. Interface, empty implementation, sentry-native build, Makefile switch, init | done | `cf27254^..304f86f`, fixes `7c0f9bc`, `07ce91b`, `c48509d`, `51829b2` | 10 findings: all fixed |
-| M2 Sentry | 2. Scrubbing, opt-out, first-start notice, test crash, symbol upload | done, review fixes in progress | `304f86f..51829b2` | 9 findings, see below |
-| M3 macOS | | | | |
+| M2 Sentry | 2. Scrubbing, opt-out, first-start notice, test crash, symbol upload | done | `304f86f..51829b2`, fixes `c2b91b5^..b80eb4e` | 9 findings: all fixed |
+| M2 Sentry | Pull request | open, work paused until it is merged | | |
+| M3 macOS | | next | | |
 | M4 Windows | | | | |
 
 ## How the work runs
@@ -127,12 +128,12 @@ Result of the step: `zen/crash_scrub.*` removes paths, URLs, user and host names
 
 | # | Finding | Severity | Outcome |
 |---|---|---|---|
-| 1 | OK in the options dialog stores consent "on" for a user who never saw the notice | important | sent for fixing |
-| 2 | Scrubber leaks paths after an unmatched quote or containing an apostrophe | important | sent for fixing |
-| 3 | The "no Sentry code in default builds" check can pass a binary full of it (SIGPIPE under `pipefail`) | important | sent for fixing |
-| 4 | RealTimeSync keeps sending after the user opts out in FreeFileSync | important | sent for fixing |
-| 5 | The "Default" button turns reporting back on after an opt-out | important | sent for fixing |
-| 6 | A second process can re-apply an old consent value while the GUI holds an unsaved change | important | sent for fixing |
-| 7 | `make clean FFS_SENTRY=1` for one app removes the crash handler of the other | nit | sent for fixing |
-| 8 | `make clean all FFS_SENTRY=1` builds without the Sentry makefile part | nit | sent for fixing |
-| 9 | `FFS_SENTRY=0` skips the stale-handler cleanup | nit | sent for fixing |
+| 1 | OK in the options dialog stores consent "on" for a user who never saw the notice | important | fixed in `48bf917`: the checkbox starts unticked without an answer and is stored only when the user changes it; covered by a test |
+| 2 | Scrubber leaks paths after an unmatched quote or containing an apostrophe | important | fixed in `c2b91b5`: quotes are boundaries, unterminated quoted paths are scrubbed to the end of the line, linear time; adversarial and 10^6-character tests added |
+| 3 | The "no Sentry code in default builds" check can pass a binary full of it (SIGPIPE under `pipefail`) | important | fixed in `2083164`; CI now proves the check fails on a Sentry binary |
+| 4 | RealTimeSync keeps sending after the user opts out in FreeFileSync | important | fixed in `48bf917`: both apps watch `GlobalSettings.xml` (every 5 s) and apply a changed answer; covered by a test |
+| 5 | The "Default" button turns reporting back on after an opt-out | important | fixed in `48bf917` |
+| 6 | A second process can re-apply an old consent value while the GUI holds an unsaved change | important | fixed in `48bf917`: the answer is written to `GlobalSettings.xml` at once; a process without an answer withholds its own reports and leaves the shared state alone; two-process test added |
+| 7 | `make clean FFS_SENTRY=1` for one app removes the crash handler of the other | nit | fixed in `b80eb4e` |
+| 8 | `make clean all FFS_SENTRY=1` builds without the Sentry makefile part | nit | fixed in `b80eb4e` |
+| 9 | `FFS_SENTRY=0` skips the stale-handler cleanup | nit | fixed in `b80eb4e` |

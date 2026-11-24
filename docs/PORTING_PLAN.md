@@ -78,7 +78,8 @@ Same shape as Musikku's `crashlytics` / `crashlytics-empty` pair: one interface,
 
 - `zen/crash_report.h`: `initCrashReporting(config)`, `addBreadcrumb()`, `captureError()`, `shutdownCrashReporting()`. `zen/crash_report_sentry.cpp` implements it with sentry-native (Crashpad backend, handler shipped next to the binary); `zen/crash_report_none.cpp` is empty.
 - `make FFS_SENTRY=1 SENTRY_DSN=...` selects the real one. The default build, and any build without a DSN, links the empty one and contains no Sentry code. CI passes the DSN from the `SENTRY_DSN` repository secret, as Musikku does through `local.properties`.
-- Privacy: only crashes and unexpected internal errors are sent, never sync logs. File paths are scrubbed from messages in `before_send`, `send_default_pii` stays off, and a setting in `GlobalSettings.xml` turns reporting off. The first start shows what is sent.
+- Privacy: only crashes and unexpected internal errors are sent, never sync logs. Paths, URLs, user and host names are scrubbed from report texts (`zen/crash_scrub.*`); minidumps still carry module paths and stack memory, which cannot be removed on the client.
+- Consent: nothing is uploaded before the user has answered the first-start notice. Until then reports are kept; the answer (stored as `<CrashReports Enabled=.../>` in `GlobalSettings.xml`, written at once) sends or deletes them. Batch runs without a stored answer send nothing, running apps pick up a changed answer within seconds, and `FFS_NO_CRASH_REPORT=1` always turns reporting off.
 - Release name `freefilesync@<ffsVersion>+<short sha>`. CI uploads debug symbols (ELF debug files, dSYM, PDB) with `sentry-cli` using `SENTRY_AUTH_TOKEN`, `SENTRY_ORG` and `SENTRY_PROJECT`.
 
 ## Steps
