@@ -29,6 +29,8 @@
 #   FFS_EXE, RTS_EXE         binary names in the bin folder (default FreeFileSync_<arch>, RealTimeSync_<arch>)
 #   WAIT_SECONDS             longest wait for an upload (default 60); waits poll, they don't sleep for fixed times
 #   SCREENSHOT_DIR           keep the screenshots of (h) and (o) there
+#   SENTRY_TEST_NO_CRASH_CAPTURE=<reason>  skip the scenarios that need a real crash captured ((a), (c) setting, (f)), printing the
+#                            reason: for environments where Crashpad catches no crashes, e.g. x86_64 apps under Rosetta 2
 # Build first, e.g.: FFS_SENTRY=1 SENTRY_DSN=http://testkey@127.0.0.1:38917/1 SENTRY_ENVIRONMENT=ci .github/build/build-free-file-sync.sh
 # Needs python3, xvfb-run and xdotool (and for (d) what check-app-starts.sh needs). Started as root, the apps run as "nobody":
 # as root FreeFileSync keeps its settings in root's home, not in $HOME.
@@ -296,8 +298,16 @@ crash_test() # <name> <binary> <app tag> <FFS_TEST_CRASH value>
     wait_handler_done "$name"
     stop_server
 }
+# skipped <scenario...>: true (and says so) when crash capture is not available here (SENTRY_TEST_NO_CRASH_CAPTURE)
+skipped()
+{
+    [ -n "${SENTRY_TEST_NO_CRASH_CAPTURE:-}" ] || return 1
+    echo "== skipped: $*: $SENTRY_TEST_NO_CRASH_CAPTURE"
+}
+skipped a-segv a-abort || {
 crash_test a-segv  "$FFS" FreeFileSync segv
 crash_test a-abort "$RTS" RealTimeSync abort
+}
 
 # (b) internal error with paths in the message, with the user's consent
 name=b-internal
@@ -320,6 +330,7 @@ wait_handler_done "$name"
 stop_server
 
 # (c) turned off in GlobalSettings.xml: a real crash, nothing arrives, and the dump is not kept for later
+skipped c-setting-FreeFileSync c-setting-RealTimeSync ||
 for app in FreeFileSync RealTimeSync; do
     name="c-setting-$app"
     bin="$FFS"; [ "$app" = RealTimeSync ] && bin="$RTS"
@@ -424,8 +435,10 @@ run_app_bg_until_requests() # <name> <count>
     fi
     wait_handler_done "$name"
 }
+skipped f-kept-then-sent f-kept-then-deleted || {
 kept_test f-kept-then-sent    true
 kept_test f-kept-then-deleted false
+}
 
 # poll <seconds> <command...>: true once the command succeeds (every 0.1 s)
 poll()

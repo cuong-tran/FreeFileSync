@@ -465,6 +465,11 @@ jobs:
           if [ "${{ matrix.arch }}" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
             echo "::warning::Rosetta 2 not available: x86_64 Sentry tests skipped"; exit 0
           fi
+          if [ "${{ matrix.arch }}" = x86_64 ] && [ "$(uname -m)" = arm64 ]; then
+            # seen in CI: the x86_64 apps' crashes end them with the signal, no dump (exit code 139); arm64 natively is fine
+            export SENTRY_TEST_NO_CRASH_CAPTURE="Crashpad catches no crashes of x86_64 apps under Rosetta 2 (needs an Intel Mac)"
+            echo "::warning::x86_64 under Rosetta 2: the scenarios that need a captured crash are skipped ($SENTRY_TEST_NO_CRASH_CAPTURE)"
+          fi
           Tests/sentry/run.sh "FreeFileSync/Build/Bin/macos-${{ matrix.arch }}"
 
       - name: Upload screenshots
