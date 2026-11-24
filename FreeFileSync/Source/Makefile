@@ -101,15 +101,21 @@ CXXFLAGS += $(shell pkg-config --cflags gtk+-3.0)
 CXXFLAGS += -isystem/usr/include/gtk-3.0
 
 else ifeq ($(TARGET_OS),mac)
-#static libraries from FFS_DEPS_PREFIX (platform.mk) for ARCH and the deployment target; zlib and the frameworks come from the SDK
+#static libraries from FFS_DEPS_PREFIX (platform.mk) for ARCH and the deployment target; zlib (.github/build/pkgconfig-macos) and the
+#frameworks come from the SDK
 CXXFLAGS += $(macTargetFlags)
 LDFLAGS  += $(macTargetFlags)
 
 CXXFLAGS += $(shell $(macWxConfig) --cxxflags --debug=no)
 LDFLAGS  += $(shell $(macWxConfig) --libs std, aui, richtext --debug=no)
 
+#pkg-config prints nothing when a package or one it requires is missing: stop instead of building without the flags
+ifeq ($(filter-out clean,$(or $(MAKECMDGOALS),all)),)
+else ifneq ($(shell $(macPkgConfig) --exists openssl libcurl libidn2 libssh2 && echo YES),YES)
+    $(error TARGET_OS=mac: pkg-config does not find openssl, libcurl, libidn2 and libssh2 in $(FFS_DEPS_PREFIX): $(shell $(macPkgConfig) --print-errors --exists openssl libcurl libidn2 libssh2 2>&1))
+endif
 CXXFLAGS += $(shell $(macPkgConfig) --cflags openssl libcurl libidn2 libssh2)
-LDFLAGS  += $(shell $(macPkgConfig) --static --libs libcurl libssh2 libidn2 openssl) -lz
+LDFLAGS  += $(shell $(macPkgConfig) --static --libs libcurl libssh2 libidn2 openssl)
 
 #CoreServices: FSEvents; Foundation: NSFileManager, NSError; AppKit, ImageIO, UniformTypeIdentifiers: file icons and thumbnails
 #(base/icon_loader_mac.mm); Security, SystemConfiguration: libcurl (macOS trust store, proxy settings)

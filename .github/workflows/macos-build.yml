@@ -221,7 +221,7 @@ jobs:
         env:
           SENTRY_DSN: https://public@127.0.0.1/1 # placeholder: nothing is sent, the object is not linked
         run: |
-          export PKG_CONFIG_PATH="$PWD/.build/sentry/macos-${{ matrix.arch }}/lib/pkgconfig:$PWD/.build/deps/macos-${{ matrix.arch }}/lib/pkgconfig"
+          export PKG_CONFIG_PATH="$PWD/.build/sentry/macos-${{ matrix.arch }}/lib/pkgconfig:$PWD/.build/deps/macos-${{ matrix.arch }}/lib/pkgconfig:$PWD/.github/build/pkgconfig-macos"
           obj="$RUNNER_TEMP/sentry-obj"
           gmake -C FreeFileSync/Source FFS_SENTRY=1 ARCH=${{ matrix.arch }} objPath="$obj" "$obj/ffs/src/../../zen/crash_report_sentry.cpp.o"
           lipo -archs "$obj/zen/crash_report_sentry.cpp.o"

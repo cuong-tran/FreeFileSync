@@ -46,8 +46,9 @@ else ifeq ($(TARGET_OS),mac)
         endif
     endif
     macWxConfig  := $(FFS_DEPS_PREFIX)/bin/wx-config
-    #the prefix's .pc files only: Homebrew's describe libraries for the host architecture
-    macPkgConfig := PKG_CONFIG_LIBDIR=$(FFS_DEPS_PREFIX)/lib/pkgconfig pkg-config
+    #the prefix's .pc files only (Homebrew's describe libraries for the host architecture), plus one for the SDK's zlib, which
+    #the prefix's libcurl and libssh2 require (without it, pkg-config fails for them and prints nothing on stdout)
+    macPkgConfig := PKG_CONFIG_LIBDIR=$(FFS_DEPS_PREFIX)/lib/pkgconfig:$(abspath $(platformMkDir)../../.github/build/pkgconfig-macos) pkg-config
 else
     $(error TARGET_OS must be "linux" or "mac", not "$(TARGET_OS)")
 endif

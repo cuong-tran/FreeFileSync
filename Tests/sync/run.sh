@@ -68,8 +68,8 @@ MAKE_VERSION="$("$MAKE" --version 2>/dev/null || true)" # captured first: "| gre
 JOBS="$(getconf _NPROCESSORS_ONLN)"
 read -r -a CXX_WORDS <<< "$CXX" # may be a command with arguments, e.g. "ccache clang++"
 echo "== engine ($("${CXX_WORDS[@]}" --version | sed -n 1p)${STDLIB:+, $STDLIB}${ARCH:+, $ARCH})"
-if ! "$MAKE" -C "$SRC_DIR" -j "$JOBS" engine objPath="$OBJ" "${MAKE_ARGS[@]}" > "$WORK/engine.log" 2>&1; then
-    cat "$WORK/engine.log" >&2
+if ! "$MAKE" -C "$SRC_DIR" -k -j "$JOBS" engine objPath="$OBJ" "${MAKE_ARGS[@]}" > "$WORK/engine.log" 2>&1; then # -k: every failing file
+    grep -E "error:|Error [0-9]" "$WORK/engine.log" >&2 || cat "$WORK/engine.log" >&2
     echo "== engine build failed" >&2
     exit 1
 fi
