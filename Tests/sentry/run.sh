@@ -154,8 +154,18 @@ run_app()
         sleep 0.1
     done
     if [ ! -f "$WORK/$name/exit" ]; then
-        # still running: SIGTERM ends FreeFileSync and RealTimeSync right away (their shutdown handler); then xvfb-run ends
-        pkill -TERM -x -f -- "$(sed 's/[][\\.*^$+?(){}|]/\\&/g' <<<"$bin")" 2>/dev/null || true
+        # still running: SIGTERM normally ends FreeFileSync and RealTimeSync right away (their shutdown handler), then xvfb-run
+        # ends. That handler isn't async-signal-safe (upstream says so) and can deadlock, rarely: SIGKILL after 10 s.
+        local pattern; pattern="$(sed 's/[][\\.*^$+?(){}|]/\\&/g' <<<"$bin")"
+        pkill -TERM -x -f -- "$pattern" 2>/dev/null || true
+        for (( i = 0; i < 100; ++i )); do
+            [ -f "$WORK/$name/exit" ] && break
+            sleep 0.1
+        done
+        if [ ! -f "$WORK/$name/exit" ]; then
+            echo "note: $(basename "$bin") did not end on SIGTERM within 10 s, killed" >&2
+            pkill -KILL -x -f -- "$pattern" 2>/dev/null || true
+        fi
     fi
     wait "$pid" 2>/dev/null || true
 }
