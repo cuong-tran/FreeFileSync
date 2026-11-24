@@ -178,6 +178,27 @@ FreeFileSync itself doesn't build on macOS yet, but the libraries it needs do: `
 
 When something compiles with libstdc++ but not with libc++, the usual causes are a missing `#include` that libstdc++ happened to provide transitively, and integer types that differ between the libraries (`std::chrono` durations use `long long` in libc++ and `long` in libstdc++). Fix the source in standard form; for a library feature libc++ lacks, add a fallback to `zen/legacy_compiler.h` keyed on its `__cpp_lib_*` macro rather than on the compiler name.
 
+### Crash reporting
+
+The apps report crashes with [sentry-native](https://github.com/getsentry/sentry-native) when built with `FFS_SENTRY=1`; the default build compiles the empty implementation and contains no reporting code (same shape as Musikku's `crashlytics`/`crashlytics-empty` modules). The interface is `zen/crash_report.h`, implemented by `zen/crash_report_sentry.cpp` and `zen/crash_report_none.cpp`; `FreeFileSync/Source/crash_report_init.h` starts it in both apps, and `zen/crash_scrub.*` removes paths, user and host name from report texts. What is sent and how users turn it off is in the [README](README.md#crash-reporting).
+
+```bash
+CC=gcc-14 CXX=g++-14 FFS_SENTRY=1 .github/build/build.sh       # the libraries plus sentry-native (into .build/sentry)
+export FFS_SENTRY=1 SENTRY_DSN='https://<key>@<org>.ingest.sentry.io/<project>' SENTRY_ENVIRONMENT=dev
+CXX=g++-14 .github/build/build-free-file-sync.sh                 # also copies crashpad_handler to FreeFileSync/Build/Bin
+FFS_SENTRY=1 .github/build/package.sh                            # ships crashpad_handler, splits the debug info off
+```
+
+- `SENTRY_DSN` is required with `FFS_SENTRY=1` and must come from the environment (or a make variable); it is compiled in through a header generated into the object folder (`FreeFileSync/Source/crash_report_header.sh`), so it doesn't show up in make's command echo. Never commit a DSN. `SENTRY_ENVIRONMENT` is `dev` (default), `ci` or `release`; `FFS_GIT_SHA` (default: the short hash of `HEAD`) goes into the release name `freefilesync@<version>+<sha>`.
+- With plain `make`: `PKG_CONFIG_PATH=$PWD/.build/sentry/lib/pkgconfig make -C FreeFileSync/Source FFS_SENTRY=1` with `SENTRY_DSN` in the environment. Sentry builds keep the binary names but use their own object folders (`…-sentry`), add `-g`, and copy `crashpad_handler` next to the binaries; the apps look for it there and start without reporting if it is missing.
+- `package.sh` with `FFS_SENTRY=1` moves the debug info out of the shipped binaries into `.build/debug-files` (`<exe>.debug` plus the shipped `<exe>`, checked to have the same build ID) for `sentry-cli debug-files upload`.
+- `.github/build/build-sentry-native.sh` builds the pinned sentry-native (Crashpad backend, curl transport, static) with the apps' compiler and C++ library, also for `FFS_TARGET=macos-arm64|macos-x86_64`.
+- For debugging, `FFS_CRASH_REPORT_DEBUG=1` turns on sentry-native's log on stderr, and `FFS_TEST_CRASH=segv|abort|internal-error` makes a Sentry build fail on purpose once its settings are read.
+
+**CI and secrets.** The Packages jobs of the Linux build workflow build with crash reporting only when the repository secret `SENTRY_DSN` is set, and upload the debug files when `SENTRY_AUTH_TOKEN`, `SENTRY_ORG` and `SENTRY_PROJECT` are set too (a pinned `sentry-cli`, `.github/build/fetch-sentry-cli.sh`). Without the secrets (forks, pull requests from forks) they build exactly as before and say so in the job summary. The secrets reach only the steps that need them, through their environment.
+
+**Test.** `Tests/sentry/run.sh [<bin folder>]` runs a Sentry build against a fake Sentry endpoint on 127.0.0.1 (`Tests/sentry/fake_sentry.py`, Python standard library only): a crash of each app arrives as a minidump upload with the right release and environment and without user name, host name or home folder; an internal error arrives with its paths scrubbed; with the setting off or `FFS_NO_CRASH_REPORT=1` a real crash sends nothing; without `crashpad_handler` the app starts normally. Build for it with the DSN it expects, `SENTRY_DSN=http://testkey@127.0.0.1:38917/1 SENTRY_ENVIRONMENT=ci` (or set `SENTRY_TEST_DSN`), and install `python3`, `xvfb` and `xdotool`. `Tests/sentry/run.sh --default-build <binary>...` checks that a default build contains no sentry code and no DSN. The `Sentry build` job of the Linux build workflow runs the test on the build and on its package; the `clang + libc++` job, and the Packages jobs when they build without the secret, run the `--default-build` check. The scrubber has unit tests in `Tests/zen` (`crashScrub*`).
+
 ### ZIP archive test
 
 `Tests/zip_afs/run.sh` builds the read-only ZIP file system (`afs/zip.cpp`) with the zen sources it needs, without wxWidgets, and checks it against archives it generates with Python's `zipfile` and Info-ZIP `zip`: listing, sizes, timestamps and content, the `zip:<archive>|<folder>` syntax, read-only behavior, a missing archive, a corrupted entry and an archive with more than 65535 entries. It needs a C++26 compiler (g++ 14+ or clang 20+), the zlib and glib dev packages, `python3` and `zip`; set `CXX` to pick the compiler and `STDLIB=libc++` to use libc++:

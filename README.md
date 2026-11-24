@@ -46,6 +46,17 @@ Per the [FAQ](https://freefilesync.org/faq.php#features), FreeFileSync runs nati
 | --- | --- | --- |
 | Windows 11, 10, 8.1, 8 and 7 | macOS 10.12 Sierra through macOS 27 Golden Gate | All major distributions, including Arch Linux, CentOS, Debian, Fedora, Manjaro, Mint, openSUSE and Ubuntu |
 
+## Crash reporting
+
+Builds from these sources contain no crash reporting unless they are made with `FFS_SENTRY=1` (see [CONTRIBUTING.md](CONTRIBUTING.md#crash-reporting)); a default `make` has no reporting code at all. The packages built by this repository's CI use [Sentry](https://sentry.io) once the repository owner has set up the `SENTRY_DSN` secret.
+
+In such a build:
+
+- **What is sent**: when FreeFileSync or RealTimeSync crashes, a crash dump (the state of the program at the moment of the crash: the call stacks, the threads' stack memory, the CPU registers and the list of loaded program files with their paths), the program version, the operating system version and the name of the app. Unexpected internal errors (bugs, not errors such as "cannot open file") are sent as a message. Nothing else: no sync logs, no file lists, no settings, no user or computer name.
+- **Paths are removed** from messages and breadcrumbs before they leave the machine (anything that looks like a path, an `sftp://`/`ftp://`/`gdrive:`/`mtp:`/`zip:` phrase or a URL becomes `<path>`; user and computer name become `<redacted>`). A crash dump can't be cleaned on the machine: the paths of the loaded program files (e.g. `/opt/FreeFileSync/Bin/FreeFileSync_x86_64` or a folder in your home) are part of it, and stack memory may hold fragments of what the program was working on when it crashed.
+- **First start**: a notice says what is sent; its checkbox turns reporting off.
+- **Turning it off**: uncheck *Send crash reports* in *Tools → Options* (stored as `<CrashReports Enabled="false"/>` in `GlobalSettings.xml`, which RealTimeSync honors too), or start the apps with the environment variable `FFS_NO_CRASH_REPORT=1`. Either way nothing is uploaded. With the setting off, a crash dump is still written to `~/.config/FreeFileSync/CrashReports` and stays there (the setting is read only after start-up); with `FFS_NO_CRASH_REPORT=1` the reporter isn't started at all.
+
 ## Documentation
 
 - [MANUAL.md](MANUAL.md): summary of the user manual (command line, filters, macros, RealTimeSync, scheduling, versioning, …)
