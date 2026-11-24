@@ -175,6 +175,40 @@ gunichar g_unichar_toupper(gunichar cp)
     }();
     return upperBmp[cp];
 }
+
+
+/*  fast path of compareNoCase()/equalNoCase() (e.g. compareNativePath()): if both strings are NFC already (quick check) and contain
+    nothing getValidUtf() replaces, compare their upper case code point by code point, without any allocation. Same result as
+    comparing getUpperCaseNonAscii() of both: memcmp() order of UTF-8 == code point order.                                       */
+std::optional<std::weak_ordering> compareNoCaseNormalized(const Zstring& lhs, const Zstring& rhs)
+{
+    auto isNormalizedValidUtf = [](const Zstring& str)
+    {
+        UtfDecoder<char> decoder(str.c_str(), str.size());
+        while (const std::optional<impl::CodePoint> cp = decoder.getNext())
+            if (*cp == impl::REPLACEMENT_CHAR || //broken UTF-8 (or a literal U+FFFD: the slow path handles both)
+                (0xfdd0 <= *cp && *cp <= 0xfdef) || *cp % 0x10'000 >= 0xfffe || //Unicode non-characters (see getValidUtf())
+                !isNormalizedCodePoint(*cp, G_NORMALIZE_NFC))
+                return false;
+        return true;
+    };
+    if (!isNormalizedValidUtf(lhs) || !isNormalizedValidUtf(rhs))
+        return std::nullopt;
+
+    UtfDecoder<char> decL(lhs.c_str(), lhs.size());
+    UtfDecoder<char> decR(rhs.c_str(), rhs.size());
+    for (;;)
+    {
+        const std::optional<impl::CodePoint> cpL = decL.getNext();
+        const std::optional<impl::CodePoint> cpR = decR.getNext();
+        if (!cpL || !cpR)
+            return !cpR <=> !cpL;
+
+        if (const gunichar upL = g_unichar_toupper(*cpL), upR = g_unichar_toupper(*cpR);
+            upL != upR)
+            return upL <=> upR;
+    }
+}
 }
 #endif
 
@@ -445,6 +479,10 @@ std::weak_ordering compareNoCase(const Zstring& lhs, const Zstring& rhs)
 
     //can't we instead skip isAsciiString() and compare chars as long as isAsciiChar()?
     // => NOPE! e.g. decomposed Unicode! A seemingly single isAsciiChar() might be followed by a combining character!!!
+#if defined ZEN_MAC
+    if (const std::optional<std::weak_ordering> cmp = compareNoCaseNormalized(lhs, rhs)) //no allocations for most text
+        return *cmp;
+#endif
 
     return (isAsciiL ? getAsciiUpperCase(lhs) : getUpperCaseNonAscii(lhs)) <=>
            (isAsciiR ? getAsciiUpperCase(rhs) : getUpperCaseNonAscii(rhs));
@@ -470,6 +508,10 @@ bool equalNoCase(const Zstring& lhs, const Zstring& rhs)
     }
 
     //caveat: ASCII-char and non-ASCII Unicode *can* compare case-insensitive equal!!! e.g. i and ı https://freefilesync.org/forum/viewtopic.php?t=9718
+#if defined ZEN_MAC
+    if (const std::optional<std::weak_ordering> cmp = compareNoCaseNormalized(lhs, rhs)) //no allocations for most text
+        return *cmp == std::weak_ordering::equivalent;
+#endif
     return (isAsciiL ? getAsciiUpperCase(lhs) : getUpperCaseNonAscii(lhs)) ==
            (isAsciiR ? getAsciiUpperCase(rhs) : getUpperCaseNonAscii(rhs));
 }

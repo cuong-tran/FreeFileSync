@@ -83,6 +83,25 @@ TEST_CASE(zstringCase)
     //consistency of the ASCII fast path with the Unicode path: '_' sorts the same way in both
     CHECK((compareNoCase("a_", "aB") < 0) == (compareNoCase("a_" + eAcuteNfc, "aB" + eAcuteNfc) < 0));
 
+    //compareNoCase()/equalNoCase() (macOS: allocation-free fast path for normalized text) agree with comparing getUpperCase()
+    {
+        const Zstring samples[] =
+        {
+            "", "a", "A", "ab", "aB_", "\xC3\x9F", "SS", eAcuteNfc, eAcuteNfd, EAcuteNfc, "caf" + eAcuteNfd, "CAF" + EAcuteNfc,
+            "\xCF\x83", "\xCF\x82", "\xCE\xA3", "\xC7\x86", "\xC7\x84", "\xD0\xB4\xD0\xB0", "\xD0\x94\xD0\x90",
+            "\xE5\x86\x99", nonBmp, "\xF0\x90\x90\xA8", "\xF0\x90\x90\x80", "x\xFFy", "x\xEF\xBF\xBDy", "\xEF\xB7\x90",
+            angstromNfc, angstromNfd, "\xC4\xB1", "I", "i", "\xC4\xB0", //ı I i İ
+        };
+        for (const Zstring& lhs : samples)
+            for (const Zstring& rhs : samples)
+            {
+                ++checkCount;
+                const std::weak_ordering expected = getUpperCase(lhs) <=> getUpperCase(rhs);
+                if (compareNoCase(lhs, rhs) != expected || equalNoCase(lhs, rhs) != (expected == std::weak_ordering::equivalent))
+                    reportFailure(__FILE__, __LINE__, "compareNoCase()/equalNoCase() differ from getUpperCase() for " + toPrintable(lhs) + ", " + toPrintable(rhs));
+            }
+    }
+
     CHECK(ZstringNoCase(Zstring("Readme.TXT")) == ZstringNoCase(Zstring("README.txt")));
     CHECK_EQUAL(std::hash<ZstringNoCase>()(Zstring("abc")), std::hash<ZstringNoCase>()(Zstring("ABC")));
 }
