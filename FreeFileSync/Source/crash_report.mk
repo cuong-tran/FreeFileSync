@@ -1,5 +1,6 @@
 #Crash reporting with sentry-native ("make FFS_SENTRY=1 SENTRY_DSN=<dsn>", see zen/crash_report.h), included by the
-#FreeFileSync and RealTimeSync makefiles for that build only. Expects objPath, objFiles and binDir (the folder of the binary).
+#FreeFileSync and RealTimeSync makefiles for that build only, and not for "make clean". Expects objPath, objFiles and binDir
+#(the folder of the binary).
 #
 #sentry-native comes from pkg-config (sentry-native.pc, written by .github/build/build-sentry-native.sh). Build variables:
 #   SENTRY_DSN          required; compiled in through a generated header, so it is on no command line (keep it out of logs)
@@ -35,6 +36,9 @@ $(crashReportHeader): FORCE
 
 #the crash handler runs next to the binary (zen/crash_report.h: CrashReportConfig::handlerPath)
 crashHandlerSrc := $(shell pkg-config --variable=handler sentry-native)
+ifeq ($(crashHandlerSrc),)
+    $(error FFS_SENTRY=1: sentry-native.pc names no crash handler (variable "handler"). Rebuild sentry-native with .github/build/build-sentry-native.sh)
+endif
 crashHandler    := $(binDir)/crashpad_handler
 
 all: $(crashHandler)

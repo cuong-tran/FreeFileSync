@@ -42,7 +42,7 @@ endif
 
 #crash reporting: see ../Makefile
 ifeq ($(FFS_SENTRY),1)
-    ifeq ($(strip $(SENTRY_DSN)),)
+    ifeq ($(strip $(SENTRY_DSN))$(filter clean,$(MAKECMDGOALS)),) #"make clean" needs no DSN
         $(error FFS_SENTRY=1 needs a DSN: make FFS_SENTRY=1 SENTRY_DSN=<dsn>, or SENTRY_DSN in the environment)
     endif
     crashReportSuffix := -sentry
@@ -126,7 +126,8 @@ $(shell mkdir -p $(dir $(crashReportStamp)) && { echo '$(FFS_SENTRY)' | cmp -s -
 	mkdir -p $(dir $@)
 	$(CXX) -o $@ $(objFiles) $(LDFLAGS)
 
-ifeq ($(FFS_SENTRY),1)
+#not for "make clean": crash_report.mk checks that sentry-native is installed
+ifeq ($(FFS_SENTRY)$(filter clean,$(MAKECMDGOALS)),1)
 binDir := ../../Build/Bin
 include ../crash_report.mk
 endif
@@ -149,4 +150,7 @@ $(wxColorHookStamp): FORCE
 
 clean:
 	rm -rf $(objPath)
-	rm -f ../../Build/Bin/$(exeName)
+	rm -f ../../Build/Bin/$(exeName) $(crashReportStamp)
+ifeq ($(FFS_SENTRY),1)
+	rm -f ../../Build/Bin/crashpad_handler
+endif
