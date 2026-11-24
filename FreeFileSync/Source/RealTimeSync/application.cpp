@@ -20,6 +20,11 @@
 #include "../ffs_paths.h"
 #include "../return_codes.h"
 #include <zen/build_info.h>
+#if defined ZEN_MAC
+    #include <wx/dialog.h> //wxDialog::OSXHasModalDialogsOpen()
+    #include <wx/utils.h>  //wxBell()
+    #include <wx+/popup_dlg.h>
+#endif
 
 #if defined ZEN_LINUX
     #include <gtk/gtk.h>
@@ -193,12 +198,30 @@ void Application::MacOpenFiles(const wxArrayString& fileNames)
         filePaths.push_back(utfTo<Zstring>(fileName));
 
     if (!eventLoopEntered_) //launched by Finder: wxOSX calls MacOpenFiles() after OnInit(), before onEnterEventLoop() runs
-        macOpenFilesAtLaunch_.insert(macOpenFilesAtLaunch_.end(), filePaths.begin(), filePaths.end()); //=> handled like command line arguments
+        macOpenFilesAtLaunch_.insert(macOpenFilesAtLaunch_.end(), filePaths.begin(), filePaths.end()); //=> checked and handled like command line arguments
     else if (auto mainDlg = dynamic_cast<MainDialog*>(GetTopWindow());
-             mainDlg && mainDlg->IsShown() && !filePaths.empty()) //hidden while monitoring => ignore
+             mainDlg && !filePaths.empty())
     {
-        mainDlg->loadConfig(filePaths[0]); //like dropping the files on the main window
-        mainDlg->Raise();
+        //hidden while monitoring, or a modal dialog is open => don't replace the configuration underneath
+        if (!mainDlg->IsShown() || !mainDlg->IsEnabled() || wxDialog::OSXHasModalDialogsOpen())
+        {
+            wxBell();
+            return;
+        }
+
+        try
+        {
+            const Zstring& filePath = getResolvedFilePath(filePaths[0]); //the same checks as for command line arguments
+            if (!endsWithAsciiNoCase(filePath, Zstr(".ffs_real")) &&
+                !endsWithAsciiNoCase(filePath, Zstr(".ffs_batch")))
+                throw FileError(replaceCpy(_("Cannot open file %x."), L"%x", fmtPath(filePath)),
+                                _("Unexpected file extension:") + L' ' + fmtPath(getFileExtension(filePath)) + L'\n' +
+                                _("Expected:") + L" ffs_real, ffs_batch");
+
+            mainDlg->loadConfig(filePath); //like dropping the files on the main window
+            mainDlg->Raise();
+        }
+        catch (const FileError& e) { showNotificationDialog(mainDlg, DialogInfoType::error, PopupDialogCfg().setDetailInstructions(e.toString())); }
     }
 }
 #endif
@@ -218,9 +241,23 @@ void Application::onEnterEventLoop()
 
     try
     {
+#if defined ZEN_LINUX
         for (int i = 1; i < argc; ++i)
         {
             const Zstring& filePath = getResolvedFilePath(utfTo<Zstring>(argv[i]));
+#elif defined ZEN_MAC //plus the files Finder asked to open at launch (see MacOpenFiles()): checked the same way
+        std::vector<Zstring> launchArgs;
+        for (int i = 1; i < argc; ++i)
+            launchArgs.push_back(utfTo<Zstring>(argv[i]));
+        launchArgs.insert(launchArgs.end(), macOpenFilesAtLaunch_.begin(), macOpenFilesAtLaunch_.end());
+        macOpenFilesAtLaunch_.clear();
+
+        for (const Zstring& launchArg : launchArgs)
+        {
+            const Zstring& filePath = getResolvedFilePath(launchArg);
+#else
+    #error "not implemented for this platform"
+#endif
 #if 0
             if (!fileAvailable(filePath)) //...be a little tolerant
                 for (const Zchar* ext : {Zstr(".ffs_real"), Zstr(".ffs_batch")})
@@ -235,10 +272,6 @@ void Application::onEnterEventLoop()
                                 _("Unexpected file extension:") + L' ' + fmtPath(getFileExtension(filePath)) + L'\n' +
                                 _("Expected:") + L" ffs_real, ffs_batch");
         }
-#if defined ZEN_MAC //plus the files Finder asked to open at launch: see MacOpenFiles()
-        commandArgs.insert(commandArgs.end(), macOpenFilesAtLaunch_.begin(), macOpenFilesAtLaunch_.end());
-        macOpenFilesAtLaunch_.clear();
-#endif
 
         Zstring cfgFilePath;
         if (!commandArgs.empty())

@@ -284,6 +284,42 @@ int Application::OnExit()
 
 
 #if defined ZEN_MAC
+namespace
+{
+//a config file Finder asked the running app to open: the same checks as for a command line argument (see onEnterEventLoop())
+Zstring checkFinderFilePath(const Zstring& itemPath) //throw FileError
+{
+    const Zstring& filePath = getResolvedFilePath(itemPath);
+    if (!endsWithAsciiNoCase(filePath, Zstr(".ffs_gui")) &&
+        !endsWithAsciiNoCase(filePath, Zstr(".ffs_batch")))
+        throw FileError(replaceCpy(_("Cannot open file %x."), L"%x", fmtPath(filePath)),
+                        _("Unexpected file extension:") + L' ' + fmtPath(getFileExtension(filePath)) + L'\n' +
+                        _("Expected:") + L" ffs_gui, ffs_batch");
+    return filePath;
+}
+
+
+/* macOS runs one process per app bundle and hands later Finder opens to it: start a new process of our own executable for them
+   instead, so that a batch job runs as one, exactly as on Linux (and a .ffs_gui opens in a window of its own during batch mode) */
+void startNewProcess(const std::vector<Zstring>& args) //throw FileError
+{
+    const Zstring ffsLaunchPath = getProcessPath(); //throw FileError
+    Zstring cmdLine = escapeCommandArg(ffsLaunchPath);
+    for (const Zstring& arg : args)
+        cmdLine += Zstr(' ') + escapeCommandArg(arg);
+    try
+    {
+        //run async, but give consoleExecute() some "time to fail" (as for the restart in MainDialog::onMenuOptions())
+        const auto& [exitCode, output] = consoleExecute(cmdLine, 100 /*timeoutMs*/); //throw SysError, SysErrorTimeOut
+        if (exitCode == 126 || exitCode == 127) //sh: cannot execute/not found; other codes are the job's own result, which it reports itself
+            throw SysError(formatSystemError("", replaceCpy(_("Exit code %x"), L"%x", numberTo<std::wstring>(exitCode)), utfTo<std::wstring>(output)));
+    }
+    catch (SysErrorTimeOut&) {} //still running: fine
+    catch (const SysError& e) { throw FileError(replaceCpy(_("Command %x failed."), L"%x", fmtPath(cmdLine)), e.toString()); }
+}
+}
+
+
 void Application::MacOpenFiles(const wxArrayString& fileNames)
 {
     std::vector<Zstring> filePaths;
@@ -291,10 +327,33 @@ void Application::MacOpenFiles(const wxArrayString& fileNames)
         filePaths.push_back(utfTo<Zstring>(fileName));
 
     if (!eventLoopEntered_) //launched by Finder: wxOSX calls MacOpenFiles() after OnInit(), before onEnterEventLoop() runs
-        macOpenFilesAtLaunch_.insert(macOpenFilesAtLaunch_.end(), filePaths.begin(), filePaths.end()); //=> handled like command line arguments
-    else if (auto mainDlg = dynamic_cast<MainDialog*>(GetTopWindow())) //already running: like dropping the files on the main window
-        mainDlg->openConfigFilesFromFinder(filePaths);
-    //else: batch mode without main window => ignore
+    {
+        macOpenFilesAtLaunch_.insert(macOpenFilesAtLaunch_.end(), filePaths.begin(), filePaths.end()); //=> checked and handled like command line arguments
+        return;
+    }
+
+    //already running: .ffs_batch => a new process runs the job; .ffs_gui => like dropping the files on the main window
+    auto mainDlg = dynamic_cast<MainDialog*>(GetTopWindow()); //nullptr: batch mode without main window
+    std::vector<Zstring> guiFilePaths;
+    for (const Zstring& itemPath : filePaths)
+        try
+        {
+            const Zstring& filePath = checkFinderFilePath(itemPath); //throw FileError
+            if (endsWithAsciiNoCase(filePath, Zstr(".ffs_batch")))
+                startNewProcess({filePath}); //throw FileError
+            else
+                guiFilePaths.push_back(filePath);
+        }
+        catch (const FileError& e) { showNotificationDialog(mainDlg, DialogInfoType::error, PopupDialogCfg().setDetailInstructions(e.toString())); }
+
+    if (!guiFilePaths.empty())
+    {
+        if (mainDlg)
+            mainDlg->openConfigFilesFromFinder(guiFilePaths); //queued while the window is busy
+        else
+            try { startNewProcess(guiFilePaths); } //throw FileError
+            catch (const FileError& e) { showNotificationDialog(nullptr, DialogInfoType::error, PopupDialogCfg().setDetailInstructions(e.toString())); }
+    }
 }
 #endif
 

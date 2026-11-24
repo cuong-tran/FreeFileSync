@@ -25,6 +25,10 @@
 #if defined ZEN_LINUX
     #include <gtk/gtk.h>
 #endif
+#if defined ZEN_MAC
+    #include <wx/dialog.h> //wxDialog::OSXHasModalDialogsOpen()
+    #include <wx/utils.h>  //wxBell()
+#endif
 
 using namespace zen;
 using namespace rts;
@@ -124,8 +128,10 @@ MainDialog::MainDialog(const Zstring& cfgFilePath) :
 #if defined ZEN_MAC
     //wxOSX moves About/Quit into the application menu: their events reach this frame, but not the wxMenu handlers of gui_generated.cpp
     //hidden while monitoring (runFolderMonitor() on the stack) => ignore, the status item menu has "Quit"
-    Bind(wxEVT_MENU, [this](wxCommandEvent& event) { if (IsShown()) onMenuAbout(event); }, wxID_ABOUT);
-    Bind(wxEVT_MENU, [this](wxCommandEvent& event) { if (IsShown()) onMenuQuit (event); }, wxID_EXIT);
+    //a modal dialog open or the window disabled => ignore (beep): Quit would destroy this frame underneath the dialog's modal loop
+    auto appMenuAllowed = [this] { return IsShown() && IsEnabled() && !wxDialog::OSXHasModalDialogsOpen(); };
+    Bind(wxEVT_MENU, [this, appMenuAllowed](wxCommandEvent& event) { if (appMenuAllowed()) onMenuAbout(event); else wxBell(); }, wxID_ABOUT);
+    Bind(wxEVT_MENU, [this, appMenuAllowed](wxCommandEvent& event) { if (appMenuAllowed()) onMenuQuit (event); else wxBell(); }, wxID_EXIT);
 #endif
 
     //notify about (logical) application main window => program won't quit, but stay on this dialog

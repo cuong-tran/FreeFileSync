@@ -51,6 +51,10 @@
 #include "../localization.h"
 #include "../version/version.h"
 #include "../afs/gdrive.h"
+#if defined ZEN_MAC
+    #include <wx/dialog.h> //wxDialog::OSXHasModalDialogsOpen()
+    #include <wx/utils.h>  //wxBell()
+#endif
 
 using namespace zen;
 using namespace fff;
@@ -1081,9 +1085,10 @@ imgFileManagerSmall_([]
 #if defined ZEN_MAC
     //wxOSX moves About/Preferences/Quit into the application menu: their events reach this frame, but not the wxMenu handlers of
     //gui_generated.cpp; the application menu stays enabled during comparison/sync (see UiInputDisabler) => check operationInProgress_
-    Bind(wxEVT_MENU, [this](wxCommandEvent& event) { if (!operationInProgress_) onMenuAbout  (event); }, wxID_ABOUT);
-    Bind(wxEVT_MENU, [this](wxCommandEvent& event) { if (!operationInProgress_) onMenuOptions(event); }, wxID_PREFERENCES);
-    Bind(wxEVT_MENU, [this](wxCommandEvent& event) { onMenuQuit(event); /*onClose() vetoes during comparison/sync*/ }, wxID_EXIT);
+    //with a modal dialog open (or the window disabled) they are ignored: Quit would destroy this frame underneath the dialog's modal loop
+    Bind(wxEVT_MENU, [this](wxCommandEvent& event) { if (!operationInProgress_ && !isBlockedForAppMenu()) onMenuAbout  (event); else wxBell(); }, wxID_ABOUT);
+    Bind(wxEVT_MENU, [this](wxCommandEvent& event) { if (!operationInProgress_ && !isBlockedForAppMenu()) onMenuOptions(event); else wxBell(); }, wxID_PREFERENCES);
+    Bind(wxEVT_MENU, [this](wxCommandEvent& event) { if (!isBlockedForAppMenu()) onMenuQuit(event); /*onClose() vetoes during comparison/sync*/ else wxBell(); }, wxID_EXIT);
 #endif
 
     //calculate witdh of folder pair manually (if scrollbars are visible)
@@ -3257,17 +3262,48 @@ void MainDialog::onDialogFilesDropped(FileDropEvent& event)
 
 
 #if defined ZEN_MAC
+bool MainDialog::isBlockedForAppMenu() const
+{
+    //wxDialog::ShowModal() and the native file/folder/message dialogs register in wxOSX's modal stack
+    return !IsEnabled() || wxDialog::OSXHasModalDialogsOpen();
+}
+
+
 void MainDialog::openConfigFilesFromFinder(const std::vector<Zstring>& filePaths)
 {
-    if (operationInProgress_) //comparison/sync running: don't replace the configuration underneath
+    if (filePaths.empty())
         return;
+
+    if (operationInProgress_ || finderFilesLoading_ || isBlockedForAppMenu())
+    {
+        //don't replace the configuration underneath a dialog or a running comparison/sync: load once it is done (the latest request wins)
+        if (finderFilesPending_.empty())
+            Bind(wxEVT_IDLE, &MainDialog::onFinderFilesPendingIdle, this);
+        finderFilesPending_ = filePaths;
+        RequestUserAttention(wxUSER_ATTENTION_INFO);
+        return;
+    }
 
     if (IsIconized())
         Iconize(false);
     Raise();
 
-    if (!filePaths.empty())
-        loadConfiguration(filePaths);
+    finderFilesLoading_ = true;
+    ZEN_ON_SCOPE_EXIT(finderFilesLoading_ = false);
+    loadConfiguration(filePaths);
+}
+
+
+void MainDialog::onFinderFilesPendingIdle(wxIdleEvent& event)
+{
+    event.Skip();
+    if (operationInProgress_ || finderFilesLoading_ || isBlockedForAppMenu())
+        return; //idle events keep coming while the dialog's modal loop runs, and after it ends
+
+    [[maybe_unused]] const bool ubOk = Unbind(wxEVT_IDLE, &MainDialog::onFinderFilesPendingIdle, this);
+    assert(ubOk);
+    const std::vector<Zstring> filePaths = std::exchange(finderFilesPending_, {});
+    openConfigFilesFromFinder(filePaths);
 }
 #endif
 
