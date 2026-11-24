@@ -93,10 +93,10 @@ forbidden()
 
 # placeholder for the image the upstream source zip lacks (see linux-build.yml): a first start would show an error otherwise
 if [ ! -f "$RES_DIR/Animal.dat" ]; then
-    python3 -I - "$RES_DIR/Animal.dat" <<'EOF' # 1x1 gray PNG; wx detects the format from the content
+    python3 -I - "$RES_DIR/Animal.dat" <<'EOF' # an 8x8 gray JPEG (the welcome dialog loads it as JPEG)
 import base64, sys
 open(sys.argv[1], "wb").write(base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNoAAAAggCBd81ytgAAAABJRU5ErkJggg=="))
+    "/9j/4AAQSkZJRgABAQAAAAAAAAD/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/wAALCAAIAAgBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAAf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AH//Z"))
 EOF
     PLACEHOLDER="$RES_DIR/Animal.dat"
     trap 'cleanup; rm -f "$PLACEHOLDER"' EXIT
