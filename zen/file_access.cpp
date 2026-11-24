@@ -514,11 +514,23 @@ void copyExtendedAttributes(int fdSource, int fdTarget, const Zstring& targetPat
 
 //copy the extended ACL (macOS counterpart of the SELinux context), and remove the target's if the source has none;
 //acl_set_*() neither opens the target for writing nor changes owner or mode (unlike copyfile(COPYFILE_ACL))
+//symlinks: acl_*_link_np() fail with ENOTSUP on APFS, but a descriptor of the link itself (O_SYMLINK) works, like "chmod -h +a"
 void copyAccessControlList(const Zstring& source, const Zstring& target, ProcSymlink procSl) //throw FileError
 {
-    acl_t acl = procSl == ProcSymlink::follow ?
-                ::acl_get_file   (source.c_str(), ACL_TYPE_EXTENDED) :
-                ::acl_get_link_np(source.c_str(), ACL_TYPE_EXTENDED);
+    auto openLink = [](const Zstring& linkPath) { return ::open(linkPath.c_str(), O_RDONLY | O_SYMLINK | O_CLOEXEC); };
+
+    int fdSource = -1;
+    if (procSl == ProcSymlink::asLink)
+    {
+        fdSource = openLink(source);
+        if (fdSource == -1)
+            THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot read permissions of %x."), L"%x", fmtPath(source)), "open(O_SYMLINK)");
+    }
+    ZEN_ON_SCOPE_EXIT(if (fdSource != -1) ::close(fdSource));
+
+    acl_t acl = fdSource != -1 ?
+                ::acl_get_fd_np(fdSource, ACL_TYPE_EXTENDED) :
+                ::acl_get_file(source.c_str(), ACL_TYPE_EXTENDED);
     if (!acl)
     {
         const ErrorCode ec = errno;
@@ -527,9 +539,9 @@ void copyAccessControlList(const Zstring& source, const Zstring& target, ProcSym
 
         struct stat sourceInfo = {};
         if (ec != ENOENT || //"no ACL" is ENOENT, too: tell it from a missing source
-            (procSl == ProcSymlink::follow ? ::stat(source.c_str(), &sourceInfo) : ::lstat(source.c_str(), &sourceInfo)) != 0)
+            (fdSource == -1 && ::stat(source.c_str(), &sourceInfo) != 0))
             throw FileError(replaceCpy(_("Cannot read permissions of %x."), L"%x", fmtPath(source)),
-                            formatSystemError(procSl == ProcSymlink::follow ? "acl_get_file" : "acl_get_link_np", ec));
+                            formatSystemError(fdSource != -1 ? "acl_get_fd_np" : "acl_get_file", ec));
 
         acl = ::acl_init(0); //no ACL => empty ACL
         if (!acl)
@@ -537,16 +549,25 @@ void copyAccessControlList(const Zstring& source, const Zstring& target, ProcSym
     }
     ZEN_ON_SCOPE_EXIT(::acl_free(acl));
 
-    if ((procSl == ProcSymlink::follow ?
-         ::acl_set_file   (target.c_str(), ACL_TYPE_EXTENDED, acl) :
-         ::acl_set_link_np(target.c_str(), ACL_TYPE_EXTENDED, acl)) != 0)
+    int fdTarget = -1;
+    if (procSl == ProcSymlink::asLink)
+    {
+        fdTarget = openLink(target);
+        if (fdTarget == -1)
+            THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot write permissions of %x."), L"%x", fmtPath(target)), "open(O_SYMLINK)");
+    }
+    ZEN_ON_SCOPE_EXIT(if (fdTarget != -1) ::close(fdTarget));
+
+    if ((fdTarget != -1 ?
+         ::acl_set_fd_np(fdTarget, acl, ACL_TYPE_EXTENDED) :
+         ::acl_set_file(target.c_str(), ACL_TYPE_EXTENDED, acl)) != 0)
     {
         const ErrorCode ec = errno;
         acl_entry_t entry = nullptr;
         if (ec == ENOTSUP && ::acl_get_entry(acl, ACL_FIRST_ENTRY, &entry) != 0) //target without ACL support: fine if there is nothing to copy
             return;
         throw FileError(replaceCpy(_("Cannot write permissions of %x."), L"%x", fmtPath(target)),
-                        formatSystemError(procSl == ProcSymlink::follow ? "acl_set_file" : "acl_set_link_np", ec));
+                        formatSystemError(fdTarget != -1 ? "acl_set_fd_np" : "acl_set_file", ec));
     }
 }
 #endif
