@@ -17,8 +17,8 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M3 macOS | 1. `zen` core compiles and `Tests/zen` passes on macOS | done | `a0b5c3f..50065e4`, fixes in `50065e4..292907c` | 8 findings: all fixed |
 | M3 macOS | 2. `zen` features: FSEvents watcher, recycle bin, shutdown, network | done | `50065e4..292907c`, fixes `292907c..f5c9b53` | 8 findings: all fixed |
 | M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | done | `b4b35bb..3289e88`, fixes `f3e2601..bd9f1bf` | 7 findings: 6 fixed, 1 kept |
-| M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | apps build and start; review fixes and a button-label defect in progress | `bd9f1bf..1152282` | 9 findings, see below |
-| M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | | | |
+| M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | done | `bd9f1bf..1152282`, fixes `1152282..83f890e` | 9 findings: all fixed |
+| M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | in progress (pause at 23:00 UTC) | | |
 | M4 Windows | | | | |
 
 ## How the work runs
@@ -87,7 +87,7 @@ Marked `KNOWN_ISSUE` in `Tests/zen`, not fixed (upstream code):
 - GitHub's macOS arm64 runners are short of capacity: jobs wait 10 minutes or more, and some are cancelled as "not acquired by Runner". A re-run fixes it.
 - Network file systems (FTP, SFTP, Google Drive) are only compiled on macOS, not run.
 - `afs/gdrive.cpp` (upstream): the OAuth login loop never closes the accepted client socket. Left as is.
-- The Mac UI has only been seen through CI screenshots. To check on a real Mac: main window layout (fonts and sizes were set for GTK), dark mode, Dock icon, tray item, the application menu, opening files from Finder, drag and drop, folder picker, sounds, "Show in Finder". Dock progress is not implemented; the app icon is upscaled from a 128 px image.
+- The Mac UI has only been seen through CI screenshots. To check on a real Mac: main window layout (fonts and sizes were set for GTK), dark mode, Dock icon, tray item, the application menu, opening files from Finder, drag and drop, folder picker, sounds, "Show in Finder". Dock progress (`wx+/taskbar_mac.cpp`, `dock_tile_mac.mm`) is implemented but has never been seen. Not testable in CI: Finder opens, the modal-dialog guards, starting a batch process from a running app. The app icon is upscaled from a 128 px image.
 
 ## Review findings
 
@@ -214,12 +214,12 @@ Result of the step: `FreeFileSync.app` and `RealTimeSync.app` build for arm64 an
 
 | # | Finding | Severity | Outcome |
 |---|---|---|---|
-| 1 | The attempted fix for doubled button text clears the label, so Compare and Synchronize lose their text after the first refresh | important | sent for fixing |
-| 2 | A config opened from Finder replaces the configuration underneath an open modal dialog | important | sent for fixing |
-| 3 | Quit, Preferences and About from the application menu are not blocked while a modal dialog is open (Cmd+Q can destroy the main window under it) | important | sent for fixing |
-| 4 | Double-clicking a `.ffs_batch` while the app runs loads it instead of running it | important | sent for fixing |
-| 5 | Files passed by Finder at launch skip the checks command-line arguments get | nit | sent for fixing |
-| 6 | The start check can pass for an app that only shows an error popup | nit | sent for fixing |
-| 7 | The bundle makefile rule misses inputs (own image, deployment target, crash handler) | nit | sent for fixing |
-| 8 | `mac_bundle.sh` and its recipes break with spaces in paths | nit | sent for fixing |
-| 9 | The Mac build posts unexpected values to upstream's update server | nit | sent for fixing (update check off on macOS) |
+| 1 | The attempted fix for doubled button text clears the label, so Compare and Synchronize lose their text after the first refresh | important | fixed in `81b5a8f`: wxOSX's `SetFont()` re-applies the stored label as the native button title; the two button classes now hide the label only during `SetFont()`. Screenshots show each text once, also after a refresh |
+| 2 | A config opened from Finder replaces the configuration underneath an open modal dialog | important | fixed in `d3d229c`: Finder opens are queued while a dialog is open or an operation runs, and loaded afterwards |
+| 3 | Quit, Preferences and About from the application menu are not blocked while a modal dialog is open (Cmd+Q can destroy the main window under it) | important | fixed in `d3d229c`: ignored with a beep while a modal dialog is open, in both apps |
+| 4 | Double-clicking a `.ffs_batch` while the app runs loads it instead of running it | important | fixed in `d3d229c`: a new process of the app runs the job; failures show an error dialog |
+| 5 | Files passed by Finder at launch skip the checks command-line arguments get | nit | fixed in `d3d229c`, `b3f0612` |
+| 6 | The start check can pass for an app that only shows an error popup | nit | fixed in `fb2797e`: expected window title required; error windows, early exits and crash reports fail the check |
+| 7 | The bundle makefile rule misses inputs (own image, deployment target, crash handler) | nit | fixed in `b3f0612` |
+| 8 | `mac_bundle.sh` and its recipes break with spaces in paths | nit | fixed in `b3f0612` |
+| 9 | The Mac build posts unexpected values to upstream's update server | nit | fixed in `d84514f`: no update check on macOS; the menu item shows a notice pointing to this repository's releases |
