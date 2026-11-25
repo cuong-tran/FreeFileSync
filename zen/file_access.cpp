@@ -26,6 +26,7 @@
     #include <copyfile.h>  //fcopyfile: extended attributes
     #include <sys/acl.h>
     #include <sys/attr.h> //getattrlist: volume capabilities
+    #include <sys/xattr.h> //fremovexattr, removexattr: com.apple.provenance
     #include <map>
 #endif
 
@@ -502,7 +503,7 @@ enum class VolumeFeature
     acl,
 };
 //capabilities of the volume a statfs() result belongs to; looked up once per volume (getattrlist() on the mount point)
-bool volumeSupports(const struct statfs& volInfo, VolumeFeature feature) //nothrow: false if unknown
+std::optional<bool> volumeHas(const struct statfs& volInfo, VolumeFeature feature) //nothrow: nullopt if unknown
 {
     struct VolCapBuf
     {
@@ -532,13 +533,58 @@ bool volumeSupports(const struct statfs& volInfo, VolumeFeature feature) //nothr
             caps = buf.caps;
         volCapCache.access([&](auto& cache) { cache.emplace(key, caps); });
     }
-    if (!caps)
-        return false;
-
     const uint32_t bit = feature == VolumeFeature::nativeXattr ? VOL_CAP_INT_EXTENDED_ATTR : VOL_CAP_INT_EXTENDED_SECURITY;
-    return (caps->valid       [VOL_CAPABILITIES_INTERFACES] & bit) &&
-           (caps->capabilities[VOL_CAPABILITIES_INTERFACES] & bit);
+    if (!caps || !(caps->valid[VOL_CAPABILITIES_INTERFACES] & bit))
+        return std::nullopt;
+    return (caps->capabilities[VOL_CAPABILITIES_INTERFACES] & bit) != 0;
 }
+
+
+bool volumeSupports(const struct statfs& volInfo, VolumeFeature feature) { return volumeHas(volInfo, feature).value_or(false); } //nothrow: false if unknown
+
+
+/*  com.apple.provenance: macOS (13 and later) gives every item that a process it tracks creates this attribute; tracked are the
+    processes started from an app or tool macOS tagged with it, e.g. a downloaded app the user opened, or Homebrew's programs (and
+    whatever they start). A volume without native extended attributes (FAT, exFAT, many SMB/NFS shares) can keep it only in an
+    AppleDouble "._<name>" file, which the next comparison would see as a target-only item: seen on macOS 27.2, where every file and
+    folder a tracked process creates on FAT or exFAT gets one at creation (open(O_CREAT), mkdir, symlink), before any other call.
+    Like the attributes copyExtendedAttributes() leaves out there, it is dropped from the new item at once (fremovexattr() removes the
+    AppleDouble file with it). Volumes with native extended attributes keep it, and so do volumes whose capabilities are unknown.
+    Best effort, never a reason to fail the operation; ENOATTR: an untracked process, nothing to drop.                         */
+const char provenanceAttr[] = "com.apple.provenance";
+
+void logDropProvenanceError(const Zstring& itemPath, const char* functionName, ErrorCode ec) //nothrow
+{
+    if (ec != ENOATTR && ec != ENOTSUP && ec != EPERM && ec != EACCES)
+        logExtraError(replaceCpy(_("Cannot write file attributes of %x."), L"%x", fmtPath(itemPath)) + L"\n\n" + formatSystemError(functionName, ec));
+}
+}
+
+
+void zen::impl::dropProvenanceOnNonNativeVolume(int fd, const Zstring& itemPath) //nothrow
+{
+    struct statfs volInfo = {};
+    if (::fstatfs(fd, &volInfo) != 0 || volumeHas(volInfo, VolumeFeature::nativeXattr) != false)
+        return;
+    if (::fremovexattr(fd, provenanceAttr, 0) != 0)
+        logDropProvenanceError(itemPath, "fremovexattr", errno);
+}
+
+
+void zen::impl::dropProvenanceOnNonNativeVolume(const Zstring& itemPath) //nothrow
+{
+    //the volume of the parent folder: statfs() of a symlink would describe its target's
+    const std::optional<Zstring> parentPath = getParentFolderPath(itemPath);
+    struct statfs volInfo = {};
+    if (!parentPath || ::statfs(parentPath->c_str(), &volInfo) != 0 || volumeHas(volInfo, VolumeFeature::nativeXattr) != false)
+        return;
+    if (::removexattr(itemPath.c_str(), provenanceAttr, XATTR_NOFOLLOW) != 0)
+        logDropProvenanceError(itemPath, "removexattr", errno);
+}
+
+
+namespace
+{
 
 
 /*  extended attributes: best-effort metadata, never a reason to fail (and discard) a copy whose data is complete
@@ -733,7 +779,13 @@ void zen::createDirectory(const Zstring& dirPath) //throw FileError, ErrorTarget
 
         const mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO; //0777 => consider umask!
 
-        if (::mkdir(dirPath.c_str(), mode) != 0)
+        if (::mkdir(dirPath.c_str(), mode) == 0)
+        {
+#if defined ZEN_MAC
+            impl::dropProvenanceOnNonNativeVolume(dirPath); //nothrow
+#endif
+        }
+        else
         {
             const int ec = errno; //copy before making other system calls!
             std::wstring errorDescr = formatSystemError("mkdir", ec);
@@ -867,6 +919,9 @@ void zen::copySymlink(const Zstring& sourcePath, const Zstring& targetPath) //th
 
         if (::symlink(linkContent.targetPath.c_str(), targetPath.c_str()) != 0)
             THROW_LAST_SYS_ERROR("symlink");
+#if defined ZEN_MAC
+        impl::dropProvenanceOnNonNativeVolume(targetPath); //nothrow
+#endif
     }
     catch (const SysError& e)
     {
@@ -923,6 +978,9 @@ FileCopyResult zen::copyNewFile(const Zstring& sourceFile, const Zstring& target
         throw FileError(errorMsg, errorDescr);
     }
     FileOutputPlain fileOut(fdTarget, targetFile); //pass ownership
+#if defined ZEN_MAC
+    impl::dropProvenanceOnNonNativeVolume(fdTarget, targetFile); //nothrow
+#endif
 
     //preallocate disk space + reduce fragmentation
     fileOut.reserveSpace(sourceInfo.st_size); //throw FileError

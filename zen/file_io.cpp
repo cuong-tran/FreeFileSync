@@ -216,6 +216,9 @@ FileBase::FileHandle openHandleForWrite(const Zstring& filePath) //throw FileErr
 
             throw SysError(errorDescr);
         }
+#if defined ZEN_MAC
+        impl::dropProvenanceOnNonNativeVolume(fdFile, filePath); //nothrow
+#endif
         return fdFile; //pass ownership
     }
     catch (const SysError& e) { throw FileError(replaceCpy(_("Cannot write file %x."), L"%x", fmtPath(filePath)), e.toString()); }

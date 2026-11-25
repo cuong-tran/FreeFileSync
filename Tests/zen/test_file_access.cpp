@@ -2,6 +2,7 @@
 
 #include <zen/file_access.h>
 #include <zen/file_traverser.h>
+#include <zen/file_io.h>
 #include <zen/symlink_target.h>
 #include <zen/process_exec.h>
 #include <zen/extra_log.h>
@@ -613,6 +614,18 @@ TEST_CASE(fileAccessMacSecondVolume)
     createDirectory(appendPath(mountPath, "dir"));
     CHECK_NO_THROW(copyDirectoryAttributes(sourceDir, appendPath(mountPath, "dir")));
     CHECK_NO_THROW((void)copyNewFile(source, appendPath(mountPath, nativeRelPath("dir/copy2.txt")), nullptr));
+
+    //macOS gives every item a provenance-tracked process creates com.apple.provenance (e.g. a process started by Homebrew's bash,
+    //or by a downloaded app), which FAT keeps only as an AppleDouble file: zen drops it on such volumes (dropProvenanceOnNonNativeVolume),
+    //for each way of creating an item. Whether this run exercises that: a file made on the test folder's own volume shows it
+    writeFile(appendPath(testDir, "tracked probe.txt"), "x");
+    std::cout << "   process provenance-tracked: " <<
+              (contains(runShell("xattr " + escapeCommandArg(appendPath(testDir, "tracked probe.txt"))), "com.apple.provenance") ? "yes" : "no (the provenance case is not exercised)") << std::endl;
+    CHECK_NO_THROW({ FileOutputPlain out(appendPath(mountPath, "written.txt")); out.close(); }); //openHandleForWrite()
+    const Zstring linkSource = appendPath(testDir, "link");
+    std::filesystem::create_symlink("copy.txt", toPath(linkSource));
+    try { copySymlink(linkSource, appendPath(mountPath, "link")); } //macOS emulates symlinks on FAT; not this test's subject if it can't
+    catch (const FileError& e) { std::cout << "   symlink on FAT not created: " << utfTo<std::string>(e.toString()) << std::endl; }
 
     for (const Zstring& item : {target, appendPath(mountPath, "dir")})
     {
