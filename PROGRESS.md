@@ -20,7 +20,7 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | done | `bd9f1bf..1152282`, fixes `1152282..83f890e` | 9 findings: all fixed |
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | done | `83f890e..bf0ef72`, fixes `d284031..8420f50` | 7 findings: all fixed |
 | M3 macOS | Pull request | merged as [#13](https://github.com/cuong-tran/FreeFileSync/pull/13) (squash, `5b2dbe1`) after all checks passed | | no review threads |
-| CI | macOS jobs on the owner's self-hosted runner (label `self-hosted`) | in progress | | |
+| CI | macOS jobs on the owner's self-hosted runner (label `self-hosted`) | workflows switched (`79879b9..074c8df`); blocked on the Mac's setup, see "Needed from the repository owner"; not reviewed yet | | |
 | M4 Windows | | not started: paused by the owner for testing on a real Mac | | |
 
 ## Paused
@@ -78,6 +78,13 @@ To resume: read that report (or what the owner relays), fix what it found on `de
 | 2026-11-25 | The macOS CI jobs run on the owner's self-hosted runner (their own Mac, label `self-hosted`); hosted runners stay as fallback and for pull requests from forks | Asked by the owner; hosted macOS runners were short of capacity. Rules for that machine: no fork code, nothing from the screen or home folder in logs or artifacts, no software installs or `sudo`, tests clean up after themselves. |
 
 ## Needed from the repository owner
+
+- For the self-hosted Mac runner (a Mac mini, arm64, macOS 27.2, Xcode 27.2), before any build or test can run there:
+  1. `brew install bash coreutils flock pkgconf make cmake` (optional: `ccache create-dmg`).
+  2. Remove `SessionCreate` from `~/Library/LaunchAgents/actions.runner.*.plist` (or set it to false) and restart the runner service (`./svc.sh stop`, `./svc.sh start`): with it, jobs cannot open app windows.
+  3. Free disk space: 10 to 12 GB are free, and the jobs refuse to start below 10 GB.
+  4. Optional: Rosetta 2 (`softwareupdate --install-rosetta --agree-to-license`) so the x86_64 builds can be run, not only compiled.
+  5. Delete the logs of the four workflow runs for commit `5b0e321` (macOS build, zen tests, sync tests, ZIP AFS test): their checkout step shows the Mac's login name. Later runs mask it.
 
 - Repository secrets for Sentry (builds work without them, reporting stays off): `SENTRY_DSN`, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`.
 - Later, for notarized Mac builds: an Apple Developer ID certificate and app-specific password.
