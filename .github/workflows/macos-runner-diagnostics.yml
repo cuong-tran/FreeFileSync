@@ -46,6 +46,10 @@ jobs:
           probe="$RUNNER_TEMP/CaseProbe"; rm -f "$probe" "$RUNNER_TEMP/caseprobe"; touch "$probe"
           if [ -e "$RUNNER_TEMP/caseprobe" ]; then echo "case-insensitive file system"; else echo "case-SENSITIVE file system"; fi
           rm -f "$probe"
+          # mac-runner.sh setup points TMPDIR into $RUNNER_TEMP: does mktemp follow it here?
+          echo "TMPDIR: $(sed "s#^$RUNNER_TEMP#<runner temp>#" <<< "${TMPDIR:-unset}"), exists: $([ -d "${TMPDIR:-/nonexistent}" ] && echo yes || echo no)"
+          t="$(mktemp -d)"; echo "mktemp -d: $(sed -e "s#^$RUNNER_TEMP#<runner temp>#" -e "s#^/private/var/folders/.*#<per-user temp folder>/...#" -e "s#^/var/folders/.*#<per-user temp folder>/...#" <<< "$t")"; rmdir "$t"
+          t="$(/usr/bin/env bash -c 'mktemp -d')"; echo "mktemp -d from bash on PATH: $(sed -e "s#^$RUNNER_TEMP#<runner temp>#" -e "s#^/private/var/folders/.*#<per-user temp folder>/...#" -e "s#^/var/folders/.*#<per-user temp folder>/...#" <<< "$t")"; rmdir "$t"
 
       - name: Xcode
         run: |
@@ -178,6 +182,17 @@ jobs:
           echo "file written by a program built here, on the volume: attributes: $(xattr "$w/mnt/by-built-program.txt" | tr '\n' ' '); now on the volume: $(ls -A "$w/mnt" | tr '\n' ' ')"
           echo "file written by a program built here, on APFS: attributes: $(xattr "$w/by-built-program.txt" | tr '\n' ' ')"
           echo "attributes of the program itself: $(xattr "$w/writer" | tr '\n' ' ')"
+          # the zen test's image was mounted under the per-user temp folder (/var/folders/...), not under $RUNNER_TEMP: the same there
+          v="$(env -u TMPDIR mktemp -d)"
+          mkdir -p "$v/mnt"
+          hdiutil create -quiet -size 32m -fs MS-DOS -volname PROBE2 "$v/fat.dmg"
+          hdiutil attach -quiet -nobrowse -noverify -noautoopen -mountpoint "$v/mnt" "$v/fat.dmg"
+          trap 'hdiutil detach -quiet -force "$w/mnt" || true; hdiutil detach -quiet -force "$v/mnt" || true; rm -rf "$v"' EXIT
+          "$w/caps" "$v/mnt"
+          "$w/writer" "$v/mnt/by-built-program.txt"
+          printf 'x\n' > "$v/src.txt"; xattr -w com.freefilesync.probe value "$v/src.txt"
+          cp -X "$v/src.txt" "$v/mnt/cp-X.txt" # cp without extended attributes
+          echo "under the per-user temp folder, on the volume: $(ls -A "$v/mnt" | tr '\n' ' '); attributes: $(xattr "$v/mnt/by-built-program.txt" "$v/mnt/cp-X.txt" 2>&1 | tr '\n' ' ')"
 
       # finding of the review of the runner change: an app started by a relative path must still be found by cleanup (it matches
       # the resolved executable path from lsof, and the command path from ps). Last but one: it runs cleanup, which removes
