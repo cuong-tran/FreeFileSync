@@ -1,15 +1,12 @@
 # What the self-hosted macOS runner (the owner's own Mac, label "self-hosted") offers the macOS jobs: architecture, macOS and
-# Xcode versions, the tools the build scripts need, Rosetta 2, the GUI session and the permissions the start checks use, free
-# disk space. Read only: it installs nothing, changes no setting and prints nothing private (no directory listing of the home
-# folder or of /Applications beyond the Xcode bundles, no environment dump, no user, host or computer name: those are masked).
-# Run by hand (workflow_dispatch) or by a push that changes this file; never for pull requests.
+# Xcode versions, the tools the build scripts need, Rosetta 2, the window server session and the permissions the start checks
+# use, free disk space; and a test that mac-runner.sh cleanup ends a process started from the checkout by a relative path.
+# It installs nothing and changes no setting; like every macOS job it masks private names before the checkout, starts with
+# mac-runner.sh setup and ends with mac-runner.sh cleanup, and prints nothing private (no listing of the home folder or of
+# /Applications beyond the Xcode bundles, no environment dump, no security settings). Manual runs only (workflow_dispatch).
 name: macOS runner diagnostics
 
 on:
-  push:
-    branches: [dev, main]
-    paths:
-      - ".github/workflows/macos-runner-diagnostics.yml"
   workflow_dispatch:
 
 permissions:
@@ -24,30 +21,31 @@ jobs:
       run:
         shell: /bin/bash --noprofile --norc -eo pipefail {0} # the system's bash 3.2: Homebrew's may not be there
     steps:
-      - name: Mask user, host and computer names
+      - name: Mask private names
         run: |
-          for value in "$(id -un)" "$(id -F 2>/dev/null || true)" "$(hostname -s 2>/dev/null || true)" "$(hostname 2>/dev/null || true)" \
-                       "$(scutil --get ComputerName 2>/dev/null || true)" "$(scutil --get LocalHostName 2>/dev/null || true)"; do
-            if [ "${#value}" -ge 3 ]; then echo "::add-mask::$value"; fi
+          for v in "$(id -un)" "$(id -F 2>/dev/null || true)" "$(hostname -s 2>/dev/null || true)" "$(hostname 2>/dev/null || true)" \
+                   "$(scutil --get ComputerName 2>/dev/null || true)" "$(scutil --get LocalHostName 2>/dev/null || true)"; do
+            if [ "${#v}" -ge 3 ]; then echo "::add-mask::$v"; fi
           done
+
+      - uses: actions/checkout@v4
+
+      # outputs only (no tool needs: this run is to find out what is there), TMPDIR in $RUNNER_TEMP, state for cleanup
+      - name: Prepare the runner
+        id: runner
+        run: .github/build/mac-runner.sh setup
 
       - name: System
         run: |
           echo "uname -m: $(uname -m), sysctl.proc_translated: $(sysctl -n sysctl.proc_translated 2>/dev/null || echo n/a)"
-          echo "hw.optional.arm64: $(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)"
           sw_vers
           echo "CPU cores: $(sysctl -n hw.ncpu), memory: $(( $(sysctl -n hw.memsize) / 1073741824 )) GB"
           echo "runner: os $RUNNER_OS, arch $RUNNER_ARCH, environment ${{ runner.environment }}"
-          echo "uid: $(id -u), admin group: $(id -Gn | tr ' ' '\n' | grep -cx admin || true)"
           inHome=no; case "$GITHUB_WORKSPACE" in ("$HOME"/*) inHome=yes;; esac; echo "work folder inside the home folder: $inHome"
-          echo "free disk space where the work folder is:"
-          df -h "$GITHUB_WORKSPACE" | awk 'NR == 1 || NR == 2 { print "    " $2 " size, " $4 " free, " $5 " used" }'
-          echo "file system of the work folder: $(diskutil info "$(df "$GITHUB_WORKSPACE" | awk 'NR == 2 { print $1 }')" 2>/dev/null | awk -F': *' '/File System Personality|Type \(Bundle\)/ { print $2 }' | tr '\n' ' ')"
+          df -h "$GITHUB_WORKSPACE" | awk 'NR == 2 { print "disk of the work folder: " $2 " size, " $4 " free, " $5 " used" }'
           probe="$RUNNER_TEMP/CaseProbe"; rm -f "$probe" "$RUNNER_TEMP/caseprobe"; touch "$probe"
           if [ -e "$RUNNER_TEMP/caseprobe" ]; then echo "case-insensitive file system"; else echo "case-SENSITIVE file system"; fi
           rm -f "$probe"
-          echo "FileVault: $(fdesetup status 2>/dev/null | head -n 1 || true)"
-          echo "SIP: $(csrutil status 2>/dev/null || true)"
 
       - name: Xcode
         run: |
@@ -132,3 +130,27 @@ jobs:
           echo "~/Library/Logs/DiagnosticReports readable: $(ls "$HOME/Library/Logs/DiagnosticReports" >/dev/null 2>&1 && echo yes || echo no)"
           echo "mounted disk images: $(hdiutil info 2>/dev/null | grep -c '^image-path' || true)"
           echo "volumes named FreeFileSync*: $(ls -d /Volumes/FreeFileSync* 2>/dev/null | wc -l | tr -d ' ')"
+
+      # finding of the review of the runner change: an app started by a relative path must still be found by cleanup (it matches
+      # the resolved executable path from lsof, and the command path from ps)
+      - name: Cleanup ends a process started from the checkout by a relative path
+        run: |
+          printf '#include <unistd.h>\nint main(void) { for (;;) pause(); }\n' > "$RUNNER_TEMP/ffs-ci-dummy.c"
+          cd "$GITHUB_WORKSPACE"
+          mkdir -p ffs-ci-dummy-dir/sub
+          xcrun clang -o ffs-ci-dummy-dir/ffs-ci-dummy "$RUNNER_TEMP/ffs-ci-dummy.c"
+          ( cd ffs-ci-dummy-dir/sub && exec ../ffs-ci-dummy ) &
+          pid=$!
+          sleep 1
+          echo "started by a relative path: ps shows $(ps -o comm= -p "$pid" | sed "s#^$GITHUB_WORKSPACE/#<checkout>/#")"
+          .github/build/mac-runner.sh cleanup
+          sleep 1
+          st="$(ps -o stat= -p "$pid" || true)"
+          case "$st" in
+            ("" | Z*) echo "cleanup ended it" ;;
+            (*) echo "::error::cleanup did not end a process started from the checkout by a relative path"; kill -KILL "$pid"; exit 1 ;;
+          esac
+
+      - name: Clean up the self-hosted Mac
+        if: always()
+        run: .github/build/mac-runner.sh cleanup

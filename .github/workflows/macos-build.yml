@@ -104,17 +104,29 @@ jobs:
             echo "selected: $(xcode-select -p)"
             .github/build/macos-report.sh toolchain
           } 2>&1 | tee toolchain-report.txt
-          .github/build/mac-runner.sh scrub toolchain-report.txt # self-hosted: no home folder or private names in the artifact
           { echo '```'; cat toolchain-report.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload report
+      # self-hosted: no home folder path or private name in the artifact (a no-op on GitHub's runners); its own step, so that
+      # the file is scrubbed whatever failed before, and the upload only runs after a successful scrub
+      - name: Scrub the report for upload
+        id: scrub
         if: always()
+        run: .github/build/mac-runner.sh scrub toolchain-report.txt
+
+      - name: Upload report
+        if: always() && (runner.environment == 'github-hosted' || steps.scrub.outcome == 'success')
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           path: toolchain-report.txt
           archive: false
           if-no-files-found: ignore
+
+      # the checks that decide what cleanup deletes (trash validator with hostile paths, cache trimming, disk image list), in
+      # temporary folders; on GitHub's runners as well
+      - name: Self-test of mac-runner.sh
+        if: ${{ !cancelled() }}
+        run: .github/build/mac-runner.sh self-test
 
       - name: Clean up the self-hosted Mac
         if: always() && runner.environment == 'self-hosted'
@@ -390,9 +402,6 @@ jobs:
           } 2>&1 | tee apps-${{ matrix.arch }}.txt
           if [ -n "$SENTRY_DSN" ] && grep -qF "$SENTRY_DSN" apps-${{ matrix.arch }}.txt; then echo "::error::the DSN appears in the build log"; exit 1; fi
           ls -l FreeFileSync/Build/Bin/macos-${{ matrix.arch }}
-          # self-hosted: home folder paths left in the shipped executables (compiler paths are mapped to ~; what remains, e.g.
-          # OpenSSL's built-in directories under the deps prefix, is listed as a warning)
-          .github/build/mac-runner.sh check-binaries FreeFileSync/Build/Bin/macos-${{ matrix.arch }}/{FreeFileSync,RealTimeSync}.app/Contents/MacOS/{FreeFileSync,RealTimeSync}
 
       - name: Check the apps contain no crash reporting code
         if: ${{ !cancelled() && steps.apps.outcome == 'success' && steps.sentry.outputs.enabled != '1' }}
@@ -409,6 +418,7 @@ jobs:
       # shipped binary's, and sentry-cli must find both usable (also in a dry run, which uploads nothing). sentry-cli reads
       # token, organization and project from the environment, so nothing secret is on its command line
       - name: dSYMs
+        id: dsyms
         if: ${{ !cancelled() && steps.apps.outcome == 'success' && steps.sentry.outputs.enabled == '1' }}
         env:
           UPLOAD: ${{ steps.sentry.outputs.upload }}
@@ -439,6 +449,8 @@ jobs:
             "$cli" debug-files check "dsyms/$app.dSYM/Contents/Resources/DWARF/$app" # the debug file inside the bundle
             "$cli" debug-files check "$exe"
           done
+          # the debug information keeps source paths: they must be relative (mapped), not in the build machine's home folder
+          .github/build/mac-runner.sh check-binaries dsyms/*.dSYM/Contents/Resources/DWARF/*
           if [ "$UPLOAD" = 1 ]; then
             "$cli" debug-files upload dsyms
           else
@@ -446,7 +458,7 @@ jobs:
           fi
 
       - name: Upload the dSYMs
-        if: ${{ !cancelled() && steps.apps.outcome == 'success' && steps.sentry.outputs.enabled == '1' }}
+        if: ${{ !cancelled() && steps.apps.outcome == 'success' && steps.sentry.outputs.enabled == '1' && (runner.environment == 'github-hosted' || steps.dsyms.outcome == 'success') }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.sentry.outputs.dry == '1' && 'sentry-dry-run-' || '' }}dsyms-macos-${{ matrix.arch }}${{ steps.sentry.outputs.dry == '1' && '-NOT-FOR-RELEASE' || '' }}
@@ -473,6 +485,16 @@ jobs:
             fi
           done
 
+      # no path of the build machine's home folder in the shipped executables (source paths are mapped by the makefiles and
+      # common.sh, OpenSSL's built-in directories are neutral): on the self-hosted Mac that would be the owner's user name. An
+      # error on any runner; on the self-hosted Mac the apps are then not uploaded
+      - name: No build machine paths in the apps
+        id: binpaths
+        if: ${{ !cancelled() && steps.apps.outcome == 'success' }}
+        run: |
+          bin="FreeFileSync/Build/Bin/macos-${{ matrix.arch }}"
+          .github/build/mac-runner.sh check-binaries "$bin"/FreeFileSync.app/Contents/MacOS/* "$bin"/RealTimeSync.app/Contents/MacOS/*
+
       - name: Zip the apps
         if: ${{ !cancelled() && steps.apps.outcome == 'success' }}
         run: |
@@ -489,7 +511,7 @@ jobs:
           echo "APP_ZIP=$name.zip" >> "$GITHUB_ENV"
 
       - name: Upload the apps
-        if: ${{ !cancelled() && steps.apps.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.apps.outcome == 'success' && (runner.environment == 'github-hosted' || steps.binpaths.outcome == 'success') }}
         uses: actions/upload-artifact@v7
         with:
           path: ${{ env.APP_ZIP }}
@@ -558,7 +580,8 @@ jobs:
           echo "deleted by mirror" > "$work/right/old.txt"
           "$RUNNER_TEMP/sync-bin/sync_test" --write-batch "$work/job.ffs_batch" "$work/left" "$work/right" "$work/logs"
           start=$SECONDS
-          HOME="$work/home" gtimeout 300 FreeFileSync/Build/Bin/macos-${{ matrix.arch }}/FreeFileSync.app/Contents/MacOS/FreeFileSync "$work/job.ffs_batch" && rc=0 || rc=$?
+          # by absolute path: mac-runner.sh cleanup finds a process that survives a cancelled run by its executable's path
+          HOME="$work/home" gtimeout 300 "$GITHUB_WORKSPACE/FreeFileSync/Build/Bin/macos-${{ matrix.arch }}/FreeFileSync.app/Contents/MacOS/FreeFileSync" "$work/job.ffs_batch" && rc=0 || rc=$?
           echo "batch run: exit code $rc after $((SECONDS - start)) s"
           ls -l "$work/logs" || true
           [ "$rc" = 0 ] || { cat "$work"/logs/* 2>/dev/null || true; echo "::error::batch run ended with exit code $rc"; exit 1; }
@@ -607,6 +630,7 @@ jobs:
               codesign --force --sign - --timestamp=none "$bundle"
             done
           fi
+          .github/build/mac-runner.sh check-binaries "$dir"/*.app/Contents/MacOS/*
           ditto -c -k --keepParent "$dir" sentry-test-build-macos-x86_64-NOT-FOR-RELEASE.zip
 
       - name: Upload the Sentry build for the Intel runner
@@ -640,11 +664,13 @@ jobs:
       # self-hosted: no home folder path, user, host or computer name in the uploaded logs (mac-runner.sh scrub; a no-op on
       # GitHub's runners); the tar archive without owner names
       - name: Scrub logs for upload
+        id: scrub
         if: always()
         run: .github/build/mac-runner.sh scrub build.log sentry-build.log manifest.txt apps-${{ matrix.arch }}.txt zen-compile-${{ matrix.arch }}.txt engine-${{ matrix.arch }}.txt
 
+      # screenshots only from GitHub's runners: on the self-hosted Mac none is taken (check-mac-app-starts.sh) and none uploaded
       - name: Upload screenshots
-        if: always()
+        if: always() && runner.environment == 'github-hosted'
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -654,7 +680,7 @@ jobs:
           retention-days: 14
 
       - name: Upload app build log
-        if: always()
+        if: always() && (runner.environment == 'github-hosted' || steps.scrub.outcome == 'success')
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
@@ -663,7 +689,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload zen compile log
-        if: always()
+        if: always() && (runner.environment == 'github-hosted' || steps.scrub.outcome == 'success')
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
@@ -672,7 +698,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload engine build log
-        if: always()
+        if: always() && (runner.environment == 'github-hosted' || steps.scrub.outcome == 'success')
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
@@ -681,13 +707,13 @@ jobs:
           if-no-files-found: ignore
 
       - name: Pack build log and manifest
-        if: always()
+        if: always() && (runner.environment == 'github-hosted' || steps.scrub.outcome == 'success')
         run: |
           touch build.log sentry-build.log manifest.txt
           tar --numeric-owner -czf macos-libraries-${{ matrix.arch }}.tar.gz build.log sentry-build.log manifest.txt
 
       - name: Upload build log and manifest
-        if: always()
+        if: always() && (runner.environment == 'github-hosted' || steps.scrub.outcome == 'success')
         uses: actions/upload-artifact@v7
         with:
           path: macos-libraries-${{ matrix.arch }}.tar.gz
