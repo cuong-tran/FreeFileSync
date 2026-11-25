@@ -43,14 +43,24 @@ done
 
 mkdir -p "$(dirname "$out")"
 rm -f "$out"
-detachStale() # an earlier run's volume of the same name would make the new one mount as "<name> 1"
+# volumes named like the image: one already mounted (e.g. an earlier image the user has open) would make ours mount as "<name> 1";
+# refuse rather than detach it. Between attempts, what is mounted under that name was mounted by this run (by create-dmg).
+mountedLikeImage()
 {
     local v
     for v in "/Volumes/$volName" "/Volumes/$volName "*; do
-        if [ -e "$v" ]; then hdiutil detach -force "$v" >/dev/null 2>&1 || true; fi
+        if [ -e "$v" ]; then echo "$v"; fi
     done
 }
-detachStale
+if [ -n "$(mountedLikeImage)" ]; then
+    echo "a volume named like the image is mounted: $(mountedLikeImage | tr '\n' ' ')- eject it first" >&2
+    exit 1
+fi
+detachOurs()
+{
+    local v
+    while IFS= read -r v; do hdiutil detach -force "$v" >/dev/null 2>&1 || true; done < <(mountedLikeImage)
+}
 
 createDmg() # extra create-dmg options...
 {
@@ -65,14 +75,14 @@ if command -v create-dmg >/dev/null; then
         method="create-dmg"
     else
         echo "[wrap-mac-dmg] create-dmg failed (Finder not scriptable?): again without the window layout (--skip-jenkins)" >&2
-        rm -f "$out"; detachStale
+        rm -f "$out"; detachOurs
         if createDmg --skip-jenkins; then method="create-dmg --skip-jenkins"; fi
     fi
 else
     echo "[wrap-mac-dmg] create-dmg not installed (brew install create-dmg)" >&2
 fi
 if [ -z "$method" ]; then
-    rm -f "$out"; detachStale
+    rm -f "$out"; detachOurs
     ln -s /Applications "$staging/Applications"
     hdiutil create -volname "$volName" -srcfolder "$staging" -fs HFS+ -format UDZO -ov "$out"
     method="hdiutil create -format UDZO (no window layout, no volume icon)"
