@@ -30,6 +30,7 @@
 #include <wx+/popup_dlg.h>
 #include <wx+/image_resources.h>
 #include <wx+/darkmode.h>
+#include <wx+/edit_menu.h>
 #include "cfg_grid.h"
 #include "folder_selector.h"
 #include "tree_grid.h"
@@ -1124,6 +1125,8 @@ imgFileManagerSmall_([]
     Bind(wxEVT_MENU, [this](wxCommandEvent& event) { if (!operationInProgress_ && !isBlockedForAppMenu()) onMenuAbout  (event); else wxBell(); }, wxID_ABOUT);
     Bind(wxEVT_MENU, [this](wxCommandEvent& event) { if (!operationInProgress_ && !isBlockedForAppMenu()) onMenuOptions(event); else wxBell(); }, wxID_PREFERENCES);
     Bind(wxEVT_MENU, [this](wxCommandEvent& event) { if (!isBlockedForAppMenu()) onMenuQuit(event); /*onClose() vetoes during comparison/sync*/ else wxBell(); }, wxID_EXIT);
+
+    addEditMenu(*m_menubar, 1 /*after "File"*/); //Cmd+V, Cmd+Z, ... in text fields, also in dialogs
 #endif
 
     //calculate witdh of folder pair manually (if scrollbars are visible)

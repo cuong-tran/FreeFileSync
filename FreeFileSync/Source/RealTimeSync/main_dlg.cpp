@@ -11,6 +11,7 @@
 #include <wx+/window_tools.h>
 #include <wx+/popup_dlg.h>
 #include <wx+/image_resources.h>
+#include <wx+/edit_menu.h>
 #include <zen/file_access.h>
 #include <zen/build_info.h>
 #include <zen/shutdown.h>
@@ -145,6 +146,8 @@ MainDialog::MainDialog(const Zstring& cfgFilePath) :
     auto appMenuAllowed = [this] { return IsShown() && IsEnabled() && !wxDialog::OSXHasModalDialogsOpen(); };
     Bind(wxEVT_MENU, [this, appMenuAllowed](wxCommandEvent& event) { if (appMenuAllowed()) onMenuAbout(event); else wxBell(); }, wxID_ABOUT);
     Bind(wxEVT_MENU, [this, appMenuAllowed](wxCommandEvent& event) { if (appMenuAllowed()) onMenuQuit (event); else wxBell(); }, wxID_EXIT);
+
+    addEditMenu(*m_menubar1, 1 /*after "File"*/); //Cmd+V, Cmd+Z, ... in text fields, also in dialogs
 #endif
 
     //notify about (logical) application main window => program won't quit, but stay on this dialog

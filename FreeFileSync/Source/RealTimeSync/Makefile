@@ -138,6 +138,7 @@ cppFiles += ../../../zen/sys_error_mac.mm
 cppFiles += ../base/icon_loader_mac.cpp
 cppFiles += ../base/icon_loader_mac.mm
 cppFiles += ../ffs_paths_mac.cpp
+cppFiles += ../../../wx+/edit_menu_mac.mm
 endif
 
 #object files stay inside this checkout instead of a fixed folder in the shared temp directory:
@@ -187,7 +188,7 @@ $(objPath)/ffs/src/rts/%.o : %
 #Objective-C++ (macOS *_mac.mm files) with automatic reference counting
 $(filter %.mm.o,$(objFiles)): CXXFLAGS += -fobjc-arc
 #AppKit/CoreGraphics headers of the macOS 26 SDK are no valid C++26: see ../Makefile
-$(filter %/icon_loader_mac.mm.o,$(objFiles)): CXXFLAGS += -std=c++23
+$(filter %/icon_loader_mac.mm.o %/edit_menu_mac.mm.o,$(objFiles)): CXXFLAGS += -std=c++23
 
 #recompile wx+/darkmode.cpp when the wxColorHook check above changes its result (e.g. after switching between a patched and a stock wxWidgets):
 #make doesn't track compiler flags, so keep the result in a stamp file that is rewritten only when the result changes
