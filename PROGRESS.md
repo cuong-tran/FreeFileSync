@@ -19,8 +19,14 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | done | `b4b35bb..3289e88`, fixes `f3e2601..bd9f1bf` | 7 findings: 6 fixed, 1 kept |
 | M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | done | `bd9f1bf..1152282`, fixes `1152282..83f890e` | 9 findings: all fixed |
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | done | `83f890e..bf0ef72`, fixes `d284031..8420f50` | 7 findings: all fixed |
-| M3 macOS | Pull request | open; squash-merged once all checks pass | | |
-| M4 Windows | | | | |
+| M3 macOS | Pull request | merged as [#13](https://github.com/cuong-tran/FreeFileSync/pull/13) (squash, `5b2dbe1`) after all checks passed | | no review threads |
+| M4 Windows | | not started: paused by the owner for testing on a real Mac | | |
+
+## Paused
+
+Paused on 2026-11-25 at the owner's request, after M3 was merged and before M4 (Windows). The owner tests the Mac apps on a real Mac first, with a local Claude Code session that writes its findings to `docs/MAC_TEST_REPORT.md` on a branch `mac-test-report`.
+
+To resume: read that report (or what the owner relays), fix what it found on `dev` with a coder session (review, record, PR, squash-merge as usual), then start M4 step 1 (toolchain and dependency cross builds with llvm-mingw, wxMSW) per `docs/PORTING_PLAN.md`.
 
 ## How the work runs
 
@@ -67,6 +73,7 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | 2026-11-24 | macOS builds of this fork do not use upstream's online update check | It would report this fork's builds to upstream's server with values it does not expect and point users at upstream's package. Linux keeps upstream's behavior. |
 | 2026-11-25 | Work resumed after the pause of 2026-11-24 23:00 UTC | Owner said continue. |
 | 2026-11-25 | macOS crash reports while reporting is off: uploads are disabled and stored dumps are deleted at start and when "send" is given later | sentry-native has no hook on macOS to discard a crash; a dump made while the user had opted out must never be uploaded. |
+| 2026-11-25 | Pause before M4 so the owner can test the Mac apps on a real Mac | Asked by the owner. |
 
 ## Needed from the repository owner
 
