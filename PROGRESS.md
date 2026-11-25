@@ -18,19 +18,9 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M3 macOS | 2. `zen` features: FSEvents watcher, recycle bin, shutdown, network | done | `50065e4..292907c`, fixes `292907c..f5c9b53` | 8 findings: all fixed |
 | M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | done | `b4b35bb..3289e88`, fixes `f3e2601..bd9f1bf` | 7 findings: 6 fixed, 1 kept |
 | M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | done | `bd9f1bf..1152282`, fixes `1152282..83f890e` | 9 findings: all fixed |
-| M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | coded; one Sentry test red on macOS arm64 on purpose (consent gap, see Paused); **paused before its review** | `8b20c04..bf0ef72` | not reviewed yet |
+| M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | done, review fixes in progress | `83f890e..bf0ef72` | 7 findings, see below |
 | M3 macOS | Pull request | not opened | | |
 | M4 Windows | | | | |
-
-## Paused
-
-Paused on 2026-11-24 at 23:00 UTC (06:00 UTC+7 on 2026-11-25) at the owner's request, after M3 step 5 was coded. `dev` head: `bf0ef72` plus this file. To resume:
-
-1. Fix the macOS crash-report consent gap (red CI step "Sentry tests" of Libraries (arm64), scenarios `c-setting-FreeFileSync` and `c-setting-RealTimeSync`). sentry-native 0.17.6 installs Crashpad's first-chance handler only on Linux and Windows, so on macOS a crash while reporting is turned off cannot be discarded: nothing is uploaded, but the dump stays in `pending/` and could be sent if the user later chooses "send". Planned fix: on macOS, while consent is revoked, set Crashpad uploads to disabled (not paused) and delete the database's reports at start and at the moment "send" is given after a revoked period; adjust the test's expectation for macOS (exit code of the crash) without weakening "nothing arrives, nothing is kept".
-2. Run `/code-review medium 8b20c04..bf0ef72` (step 5: DMG job and script, Sentry in the Mac apps, `Tests/sentry` on macOS), send the findings to a coder session, record the outcomes here.
-3. When all workflows are green: open the M3 pull request `dev` -> `main`, watch it, fix what CI and reviews turn up, squash-merge once all checks pass, recreate `dev` from `main`, and start M4 (Windows).
-
-Coder session at the pause: "FFS port: coder (M3 macOS, apps)", stopped and waiting.
 
 ## How the work runs
 
@@ -75,6 +65,8 @@ Coder session at the pause: "FFS port: coder (M3 macOS, apps)", stopped and wait
 | 2026-11-24 | `Resources/Animal.dat` is an own image (a drawn cartoon cat, `.github/build/resources`), used by the Mac bundles and the Linux packages | It is missing from the source zip; upstream's artwork is not copied. |
 | 2026-11-24 | macOS: a `.ffs_batch` opened from Finder while the app runs starts a new process that runs the job | macOS runs one instance per bundle; loading the job into the open window would not run it. |
 | 2026-11-24 | macOS builds of this fork do not use upstream's online update check | It would report this fork's builds to upstream's server with values it does not expect and point users at upstream's package. Linux keeps upstream's behavior. |
+| 2026-11-25 | Work resumed after the pause of 2026-11-24 23:00 UTC | Owner said continue. |
+| 2026-11-25 | macOS crash reports while reporting is off: uploads are disabled and stored dumps are deleted at start and when "send" is given later | sentry-native has no hook on macOS to discard a crash; a dump made while the user had opted out must never be uploaded. |
 
 ## Needed from the repository owner
 
@@ -237,3 +229,17 @@ Result of the step: `FreeFileSync.app` and `RealTimeSync.app` build for arm64 an
 | 7 | The bundle makefile rule misses inputs (own image, deployment target, crash handler) | nit | fixed in `b3f0612` |
 | 8 | `mac_bundle.sh` and its recipes break with spaces in paths | nit | fixed in `b3f0612` |
 | 9 | The Mac build posts unexpected values to upstream's update server | nit | fixed in `d84514f`: no update check on macOS; the menu item shows a notice pointing to this repository's releases |
+
+### M3 step 5 (`83f890e..bf0ef72`, `/code-review medium`)
+
+Result of the step: a `DMG` job wraps both apps into `FreeFileSync-<version>-macos-<arch>.dmg` with `.github/build/wrap-mac-dmg.sh` (create-dmg, signatures verified inside the mounted image); the Mac apps build with `FFS_SENTRY=1` with `crashpad_handler` in each bundle, and `Tests/sentry/run.sh` runs on macOS.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | macOS keeps crash dumps made while reporting is off; a later "send" could upload them (two test scenarios red) | important | sent for fixing |
+| 2 | The build path for shipped Mac apps with the real Sentry secret has never run | important | sent for fixing |
+| 3 | Sentry Mac executables ship their debug map with build paths | nit | sent for fixing |
+| 4 | `wrap-mac-dmg.sh` force-detaches a same-named volume the user may have open | nit | sent for fixing |
+| 5 | Crash capture for x86_64 is never tested (skipped under Rosetta) | nit | sent for fixing |
+| 6 | `Tests/sentry/run.sh` accepts bash older than 4.4 on macOS | nit | sent for fixing |
+| 7 | The "sentry-native not found" message gives Linux advice on macOS | nit | sent for fixing |
