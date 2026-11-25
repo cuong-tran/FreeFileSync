@@ -65,6 +65,16 @@ jobs:
       run:
         shell: bash
     steps:
+      #self-hosted: the user, host and computer names are masked in the log before anything prints a path (actions/checkout
+      #prints the work folder, which is in the home folder); a copy of mac-runner.sh's list, which can't run before the checkout
+      - name: Mask private names (self-hosted)
+        if: runner.environment == 'self-hosted'
+        shell: /bin/bash --noprofile --norc -eo pipefail {0}
+        run: |
+          for v in "$(id -un)" "$(id -F 2>/dev/null || true)" "$(hostname -s 2>/dev/null || true)" "$(hostname 2>/dev/null || true)" \
+                   "$(scutil --get ComputerName 2>/dev/null || true)" "$(scutil --get LocalHostName 2>/dev/null || true)"; do
+            if [ "${#v}" -ge 3 ]; then echo "::add-mask::$v"; fi
+          done
       - uses: actions/checkout@v4
 
       - name: Prepare the runner
@@ -128,6 +138,16 @@ jobs:
       CC: clang
       CXX: clang++
     steps:
+      #self-hosted: the user, host and computer names are masked in the log before anything prints a path (actions/checkout
+      #prints the work folder, which is in the home folder); a copy of mac-runner.sh's list, which can't run before the checkout
+      - name: Mask private names (self-hosted)
+        if: runner.environment == 'self-hosted'
+        shell: /bin/bash --noprofile --norc -eo pipefail {0}
+        run: |
+          for v in "$(id -un)" "$(id -F 2>/dev/null || true)" "$(hostname -s 2>/dev/null || true)" "$(hostname 2>/dev/null || true)" \
+                   "$(scutil --get ComputerName 2>/dev/null || true)" "$(scutil --get LocalHostName 2>/dev/null || true)"; do
+            if [ "${#v}" -ge 3 ]; then echo "::add-mask::$v"; fi
+          done
       - uses: actions/checkout@v4
 
       # self-hosted: masks private names, checks tools and disk space (installs nothing), TMPDIR into $RUNNER_TEMP
@@ -690,6 +710,16 @@ jobs:
       run:
         shell: bash
     steps:
+      #self-hosted: the user, host and computer names are masked in the log before anything prints a path (actions/checkout
+      #prints the work folder, which is in the home folder); a copy of mac-runner.sh's list, which can't run before the checkout
+      - name: Mask private names (self-hosted)
+        if: runner.environment == 'self-hosted'
+        shell: /bin/bash --noprofile --norc -eo pipefail {0}
+        run: |
+          for v in "$(id -un)" "$(id -F 2>/dev/null || true)" "$(hostname -s 2>/dev/null || true)" "$(hostname 2>/dev/null || true)" \
+                   "$(scutil --get ComputerName 2>/dev/null || true)" "$(scutil --get LocalHostName 2>/dev/null || true)"; do
+            if [ "${#v}" -ge 3 ]; then echo "::add-mask::$v"; fi
+          done
       - uses: actions/checkout@v4
 
       - name: Prepare the runner
