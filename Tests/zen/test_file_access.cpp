@@ -615,9 +615,11 @@ TEST_CASE(fileAccessMacSecondVolume)
     CHECK_NO_THROW(copyDirectoryAttributes(sourceDir, appendPath(mountPath, "dir")));
     CHECK_NO_THROW((void)copyNewFile(source, appendPath(mountPath, nativeRelPath("dir/copy2.txt")), nullptr));
 
-    //macOS gives every item a provenance-tracked process creates com.apple.provenance (e.g. a process started by Homebrew's bash,
-    //or by a downloaded app), which FAT keeps only as an AppleDouble file: zen drops it on such volumes (dropProvenanceOnNonNativeVolume),
-    //for each way of creating an item. Whether this run exercises that: a file made on the test folder's own volume shows it
+    //macOS (seen on 27.2) gives every item a provenance-tracked process creates the attribute com.apple.provenance (tracked: started
+    //by a tagged program, e.g. Homebrew's bash or a downloaded app, or by a tracked process), at open(O_CREAT)/mkdir already, which a
+    //volume without native extended attributes keeps only as an AppleDouble "._" file; such a process can't remove it (removexattr()
+    //succeeds and changes nothing). Each way of creating an item is checked; whether this run is tracked: a file on the test
+    //folder's own volume shows it
     writeFile(appendPath(testDir, "tracked probe.txt"), "x");
     std::cout << "   process provenance-tracked: " <<
               (contains(runShell("xattr " + escapeCommandArg(appendPath(testDir, "tracked probe.txt"))), "com.apple.provenance") ? "yes" : "no (the provenance case is not exercised)") << std::endl;

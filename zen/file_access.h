@@ -92,14 +92,4 @@ struct FileCopyResult
 FileCopyResult copyNewFile(const Zstring& sourceFile, const Zstring& targetFile, //throw FileError, ErrorTargetExisting, ErrorFileLocked, X
                            //accummulated delta != file size! consider ADS, sparse, compressed files
                            const IoCallback& notifyUnbufferedIO /*throw X*/);
-
-#if defined ZEN_MAC
-namespace impl
-{
-//macOS: a newly created item on a volume without native extended attributes loses the com.apple.provenance attribute macOS gives
-//it, which such a volume can keep only as an AppleDouble "._" file (see file_access.cpp); for code that creates items itself
-void dropProvenanceOnNonNativeVolume(int fd, const Zstring& itemPath); //nothrow
-void dropProvenanceOnNonNativeVolume(const Zstring& itemPath); //nothrow; a symlink: the link itself
-}
-#endif
 }
