@@ -110,6 +110,17 @@ jobs:
             'screen recording (CGPreflightScreenCaptureAccess): ' + \$.CGPreflightScreenCaptureAccess() +
             ', accessibility (AXIsProcessTrusted): ' + \$.AXIsProcessTrusted() +
             ', on-screen windows: ' + list.length + ', of them with a readable title: ' + list.filter(function (w) { return w.kCGWindowName !== undefined; }).length" 2>&1 || echo "osascript failed"
+          # the window server session of this process: NULL when it has none (e.g. a launchd job with SessionCreate), else
+          # whether it is the console session and whether the screen is locked
+          osascript -l JavaScript -e "ObjC.import('CoreGraphics');
+            var d = ObjC.deepUnwrap(ObjC.castRefToObject(\$.CGSessionCopyCurrentDictionary()));
+            d ? 'window server session: on console ' + d.kCGSSessionOnConsoleKey + ', screen locked ' + (d.CGSSessionScreenIsLocked ? true : false) +
+                ', login done ' + d.kCGSessionLoginDoneKey : 'window server session: none'" 2>&1 || echo "osascript failed"
+          echo "runner launch agents (SessionCreate, ProcessType):"
+          for plist in "$HOME"/Library/LaunchAgents/actions.runner.*.plist; do
+            [ -f "$plist" ] || { echo "    none (started by hand, e.g. ./run.sh in a terminal)"; continue; }
+            echo "    SessionCreate=$(plutil -extract SessionCreate raw "$plist" 2>/dev/null || echo unset), ProcessType=$(plutil -extract ProcessType raw "$plist" 2>/dev/null || echo unset)"
+          done
           echo "process chain of this step (names only):"
           pid=$$
           for _ in 1 2 3 4 5 6 7 8; do
