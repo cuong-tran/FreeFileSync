@@ -29,6 +29,14 @@ Paused on 2026-11-25 at the owner's request, after M3 was merged and before M4 (
 
 To resume: read that report (or what the owner relays), fix what it found on `dev` with a coder session (review, record, PR, squash-merge as usual), then start M4 step 1 (toolchain and dependency cross builds with llvm-mingw, wxMSW) per `docs/PORTING_PLAN.md`.
 
+## Mac test report (2026-11-25/26)
+
+`docs/MAC_TEST_REPORT.md` and 47 screenshots are on branch `mac-test-report` (`89bf541`), from a manual test of `main` (`5b2dbe1`) on the owner's Mac (macOS 27.2, Xcode 27.2). Most of the checklist passed (batch from Finder, modal-dialog guards, Dock progress, real syncs, exFAT, RealTimeSync, Sentry tests). Findings F1 to F18; another session of the owner's is fixing some of them, so check with the owner before touching app behavior.
+
+- Blocker with Xcode 27: F1 `base/db_file.cpp` needs `<sys/types.h>` (fixed in the self-hosted runner work, since CI on the Mac needs it).
+- Major: F2 RealTimeSync cannot find FreeFileSync when macOS runs it translocated; F3 Gatekeeper (ad-hoc signing: "Open Anyway" in System Settings, right-click Open no longer works); F4 message boxes drop wrapped detail paragraphs (update notice, crash-report notice); F5 stale colors after a live light/dark switch; F6 no Edit menu, Cmd+V fails in dialogs.
+- Minor and cosmetic: F7 default exclude filter lacks macOS entries (`.DS_Store`); F8 Windows/Linux texts; F9 untranslated standard menu items; F10 small default window; F11 dark-mode details; F12 libidn2 mirror with an expired certificate (fixed with the runner work); F13 icon; F14 unsaved config lost after a language change; F15 to F18 tooling, release name, accessibility.
+
 ## How the work runs
 
 - The coordinator plans, writes task instructions and reviews. Coding is done by sub-agents (Opus, high effort).
