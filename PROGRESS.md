@@ -18,8 +18,8 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M3 macOS | 2. `zen` features: FSEvents watcher, recycle bin, shutdown, network | done | `50065e4..292907c`, fixes `292907c..f5c9b53` | 8 findings: all fixed |
 | M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | done | `b4b35bb..3289e88`, fixes `f3e2601..bd9f1bf` | 7 findings: 6 fixed, 1 kept |
 | M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | done | `bd9f1bf..1152282`, fixes `1152282..83f890e` | 9 findings: all fixed |
-| M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | done, review fixes in progress | `83f890e..bf0ef72` | 7 findings, see below |
-| M3 macOS | Pull request | not opened | | |
+| M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | done | `83f890e..bf0ef72`, fixes `d284031..8420f50` | 7 findings: all fixed |
+| M3 macOS | Pull request | open; squash-merged once all checks pass | | |
 | M4 Windows | | | | |
 
 ## How the work runs
@@ -91,8 +91,10 @@ Marked `KNOWN_ISSUE` in `Tests/zen`, not fixed (upstream code):
 - Network file systems (FTP, SFTP, Google Drive) are only compiled on macOS, not run.
 - `afs/gdrive.cpp` (upstream): the OAuth login loop never closes the accepted client socket. Left as is.
 - The Mac UI has only been seen through CI screenshots. To check on a real Mac: main window layout (fonts and sizes were set for GTK), dark mode, Dock icon, tray item, the application menu, opening files from Finder, drag and drop, folder picker, sounds, "Show in Finder". Dock progress (`wx+/taskbar_mac.cpp`, `dock_tile_mac.mm`) is implemented but has never been seen. Not testable in CI: Finder opens, the modal-dialog guards, starting a batch process from a running app. The app icon is upscaled from a 128 px image.
-- Crash capture for x86_64 could not be tested: under Rosetta 2 on the arm64 runners Crashpad catches no crashes at all. It needs a real Intel Mac. Those test scenarios are skipped there with a printed reason.
-- The dSYM upload path for the Mac apps has never run with real Sentry secrets.
+- Crash capture for x86_64 is tested on a real Intel runner only on manual dispatch (`sentry_dry_run`); under Rosetta 2 on the arm64 runners Crashpad catches no crashes, so those scenarios are skipped there with a printed reason.
+- The first-start crash-report notice may not render its explanatory text on macOS (a blank area in the CI screenshot). To check on a real Mac.
+- `f-kept-then-deleted` once found two dumps instead of one in a dry run; not reproduced since, and the test now prints the first run's log if it recurs.
+- The dSYM path for the Mac apps is exercised by the dry run, but a real upload to Sentry has never happened (no secrets).
 - The DMGs (`FreeFileSync-14.13-macos-<arch>.dmg`, about 19 MB, both apps plus an Applications link) have no background picture; their window layout has only been checked by the script, not by eye.
 
 ## Review findings
@@ -236,10 +238,10 @@ Result of the step: a `DMG` job wraps both apps into `FreeFileSync-<version>-mac
 
 | # | Finding | Severity | Outcome |
 |---|---|---|---|
-| 1 | macOS keeps crash dumps made while reporting is off; a later "send" could upload them (two test scenarios red) | important | sent for fixing |
-| 2 | The build path for shipped Mac apps with the real Sentry secret has never run | important | sent for fixing |
-| 3 | Sentry Mac executables ship their debug map with build paths | nit | sent for fixing |
-| 4 | `wrap-mac-dmg.sh` force-detaches a same-named volume the user may have open | nit | sent for fixing |
-| 5 | Crash capture for x86_64 is never tested (skipped under Rosetta) | nit | sent for fixing |
-| 6 | `Tests/sentry/run.sh` accepts bash older than 4.4 on macOS | nit | sent for fixing |
-| 7 | The "sentry-native not found" message gives Linux advice on macOS | nit | sent for fixing |
+| 1 | macOS keeps crash dumps made while reporting is off; a later "send" could upload them (two test scenarios red) | important | fixed in `06a16f9`, `e4c17e5`: a revoked-period marker in the report database; all reports are deleted at start with "don't send" and before "send" applies again; new scenario `c-revoked-then-send` |
+| 2 | The build path for shipped Mac apps with the real Sentry secret has never run | important | fixed in `be9d11c`, `838a356`: `workflow_dispatch` input `sentry_dry_run` runs the same path with a fake DSN; the first dry run exposed two breakages, both fixed |
+| 3 | Sentry Mac executables ship their debug map with build paths | nit | fixed in `be9d11c`: executables are stripped after `dsymutil` and re-signed; UUIDs match and `sentry-cli` reports them usable |
+| 4 | `wrap-mac-dmg.sh` force-detaches a same-named volume the user may have open | nit | fixed in `73ba448`: the script stops with a message instead |
+| 5 | Crash capture for x86_64 is never tested (skipped under Rosetta) | nit | fixed in `be9d11c`, `8420f50`: a "Sentry tests (Intel)" job on `macos-15-intel` (on dispatch); every scenario passes there, crash capture included |
+| 6 | `Tests/sentry/run.sh` accepts bash older than 4.4 on macOS | nit | fixed in `e4c17e5` |
+| 7 | The "sentry-native not found" message gives Linux advice on macOS | nit | fixed in `94b5392` |
