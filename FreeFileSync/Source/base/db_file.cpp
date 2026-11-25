@@ -7,6 +7,7 @@
 #include "db_file.h"
 #include <array>
 #include <bit> //std::endian
+#include <sys/types.h> //ino_t, dev_t (stream version 3 migration)
 #include <zen/guid.h>
 #include <zen/crc.h>
 #include <zen/perf.h>
