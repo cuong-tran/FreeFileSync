@@ -7,7 +7,10 @@ set -euo pipefail
 out="$1"
 dsn="${SENTRY_DSN:-}"
 environment="${SENTRY_ENVIRONMENT:-dev}"
+# FFS_GIT_SHA empty (crash_report.mk exports it empty when not set): the short hash of this checkout's HEAD, or none outside a git
+# checkout (release name "+dev")
 sha="${FFS_GIT_SHA:-}"
+[ -n "$sha" ] || sha="$(git -C "$(dirname "$0")" rev-parse --short=12 HEAD 2>/dev/null || true)"
 
 # the values end up in C string literals: no quotes, backslashes, spaces or control characters, and a DSN-like URL;
 # never print the DSN itself
