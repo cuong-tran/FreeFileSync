@@ -10,6 +10,8 @@
 # - create-dmg (brew install create-dmg) lays out the Finder window. On a machine where Finder cannot be scripted (CI runners
 #   sometimes can't), it runs again with --skip-jenkins (no window layout), and without create-dmg at all, plain
 #   "hdiutil create -format UDZO" makes the image. The path taken is printed ("[wrap-mac-dmg] made with ...").
+#   WRAP_DMG_NO_FINDER=1 skips the Finder-scripted attempt (straight to --skip-jenkins): on a person's Mac, scripting Finder
+#   asks them for the Automation permission in a dialog that would hold up the job (the self-hosted CI runner sets it).
 # - Afterwards the image is mounted read-only: its content is listed and both apps must pass codesign --verify --strict.
 set -euo pipefail
 [ $# -eq 2 ] || { echo "usage: $0 <folder with FreeFileSync.app and RealTimeSync.app> <output.dmg>" >&2; exit 2; }
@@ -53,7 +55,9 @@ mountedLikeImage()
     done
 }
 if [ -n "$(mountedLikeImage)" ]; then
-    echo "a volume named like the image is mounted: $(mountedLikeImage | tr '\n' ' ')- eject it first" >&2
+    # not ours to detach: e.g. a FreeFileSync image of the same version the user has open in Finder
+    msg="a volume named like the image (\"$volName\") is already mounted: $(mountedLikeImage | tr '\n' ' ')- it is left alone; eject it in Finder, then run this again"
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::error::$msg"; else echo "$msg" >&2; fi
     exit 1
 fi
 detachOurs()
@@ -71,7 +75,10 @@ createDmg() # extra create-dmg options...
 }
 method=""
 if command -v create-dmg >/dev/null; then
-    if createDmg; then
+    if [ "${WRAP_DMG_NO_FINDER:-0}" = 1 ]; then
+        echo "[wrap-mac-dmg] WRAP_DMG_NO_FINDER=1: without the Finder window layout (--skip-jenkins)" >&2
+        if createDmg --skip-jenkins; then method="create-dmg --skip-jenkins"; fi
+    elif createDmg; then
         method="create-dmg"
     else
         echo "[wrap-mac-dmg] create-dmg failed (Finder not scriptable?): again without the window layout (--skip-jenkins)" >&2
