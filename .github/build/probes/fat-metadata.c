@@ -52,34 +52,43 @@ int main(int argc, char** argv)
     snprintf(forced, sizeof(forced), "%s/forced.txt", g_dir);
     show("start", NULL);
 
-    // copyNewFile(): source opened read-only with F_RDAHEAD, target created with the source's mode | S_IWUSR
+    // copyNewFile(): source opened read-only with F_RDAHEAD, target created with the source's mode | S_IWUSR; after each call: whether
+    // removing com.apple.provenance (what zen's dropProvenanceOnNonNativeVolume() does) works, and whether a later call adds it again
     int in = open(src, O_RDONLY | O_CLOEXEC);
     struct stat si; fstat(in, &si);
     fcntl(in, F_RDAHEAD, 1);
     int out = open(dst, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, (si.st_mode & 0777) | S_IWUSR);
     show("open(O_CREAT|O_EXCL)", dst);
+    int rv = fremovexattr(out, "com.apple.provenance", 0);
+    printf("  fremovexattr(fd, com.apple.provenance): %d%s%s\n", rv, rv ? ", " : "", rv ? strerror(errno) : "");
+    show("fremovexattr", dst);
     char buf[65536]; ssize_t r;
     while ((r = read(in, buf, sizeof(buf))) > 0) write(out, buf, (size_t)r);
     show("write", dst);
     struct statfs st; fstatfs(out, &st);
     gate("fstatfs of the target descriptor", &st);
-    show("fstatfs + getattrlist", dst);
     struct stat so; fstat(out, &so);
-    show("fstat", dst);
     close(out); close(in);
     show("close", dst);
     struct timespec t[2] = { { .tv_sec = time(NULL) }, si.st_mtimespec };
     utimensat(AT_FDCWD, dst, t, 0);
     show("utimensat", dst);
+    rv = removexattr(dst, "com.apple.provenance", XATTR_NOFOLLOW);
+    printf("  removexattr(path, com.apple.provenance) after close: %d%s%s\n", rv, rv ? ", " : "", rv ? strerror(errno) : "");
+    show("removexattr after close", dst);
 
-    // createDirectory() + copyDirectoryAttributes()
+    // createDirectory() + copyDirectoryAttributes(), then a file created inside
     mkdir(dir, 0777); // zen::createDirectory(): 0777, umask applies
     show("mkdir", dir);
+    rv = removexattr(dir, "com.apple.provenance", XATTR_NOFOLLOW);
+    printf("  removexattr(folder, com.apple.provenance): %d%s%s\n", rv, rv ? ", " : "", rv ? strerror(errno) : "");
+    show("removexattr of the folder", dir);
     struct statfs sd; statfs(dir, &sd);
     gate("statfs of the target folder", &sd);
-    int fs = open(argv[2], O_RDONLY | O_DIRECTORY | O_CLOEXEC), fd = open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-    show("open folders", dir);
-    close(fs); close(fd);
+    char inner[2100]; snprintf(inner, sizeof(inner), "%s/inner.txt", dir);
+    int fi = open(inner, O_CREAT | O_EXCL | O_WRONLY, 0644); write(fi, "x", 1); close(fi);
+    show("a file created in the folder", dir);
+    printf("  attributes of the inner file: "); fflush(stdout); { char l[1024] = ""; ssize_t n = listxattr(inner, l, sizeof(l) - 1, 0); for (ssize_t i = 0; i < n; ++i) if (!l[i]) l[i] = ' '; printf("[%s]\n", n > 0 ? l : ""); }
 
     // what fcopyfile(COPYFILE_XATTR) does there, which the gate is meant to prevent (on a separate file)
     int a = open(src, O_RDONLY), b = open(forced, O_CREAT | O_EXCL | O_WRONLY, 0644);
