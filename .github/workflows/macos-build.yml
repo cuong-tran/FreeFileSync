@@ -346,7 +346,7 @@ jobs:
             got="$(dwarfdump --uuid "dsyms/$app.dSYM" | awk '{ print $2 }')"
             echo "$app: binary $want, dSYM $got"
             [ -n "$want" ] && [ "$want" = "$got" ] || { echo "::error::$app: the dSYM's UUID does not match the binary's"; exit 1; }
-            "$cli" debug-files check "dsyms/$app.dSYM"
+            "$cli" debug-files check "dsyms/$app.dSYM/Contents/Resources/DWARF/$app" # the debug file inside the bundle
             "$cli" debug-files check "$exe"
           done
           if [ "$UPLOAD" = 1 ]; then
@@ -419,6 +419,7 @@ jobs:
         if: ${{ !cancelled() && steps.helper.outcome == 'success' }}
         env:
           SCREENSHOT_TO_LOG: 1 # a small copy of each screenshot in the log as well (see check-mac-app-starts.sh)
+          SENTRY_BUILD: ${{ steps.sentry.outputs.enabled }}
         run: |
           if [ "${{ matrix.arch }}" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
             echo "::warning::Rosetta 2 not available: x86_64 apps not started"; exit 0
@@ -437,6 +438,13 @@ jobs:
           "$RUNNER_TEMP/sync-bin/sync_test" --write-global "$work/GlobalSettings.xml"
           .github/build/check-mac-app-starts.sh "$bin/FreeFileSync.app" '(^| )FreeFileSync [0-9.]+' "screenshots/FreeFileSync-main-${{ matrix.arch }}.png" \
             "$work/job.ffs_gui" "$work/GlobalSettings.xml"
+
+          # a crash reporting build (secret or dry run): with the welcome dialog seen but no answer stored, the first-start notice shows
+          if [ "$SENTRY_BUILD" = 1 ]; then
+            "$RUNNER_TEMP/sync-bin/sync_test" --write-global-unanswered "$work/GlobalSettings-unanswered.xml"
+            .github/build/check-mac-app-starts.sh "$bin/FreeFileSync.app" '^Crash reports$' "screenshots/FreeFileSync-crash-notice-${{ matrix.arch }}.png" \
+              "$work/GlobalSettings-unanswered.xml"
+          fi
 
           .github/build/check-mac-app-starts.sh "$bin/RealTimeSync.app" '^RealTimeSync [0-9.]+' "screenshots/RealTimeSync-${{ matrix.arch }}.png"
 
@@ -656,6 +664,11 @@ jobs:
           path: sentry-zip
           skip-decompress: true
 
+      - name: Install bash 4.4+
+        run: | # the Intel image's PATH has the system's bash 3.2
+          brew list bash >/dev/null 2>&1 || brew install bash
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+
       - name: Sentry tests
         env:
           SENTRY_TEST_DSN: http://testkey@127.0.0.1:38917/1
@@ -665,4 +678,4 @@ jobs:
         run: |
           uname -m; sw_vers; bash --version | head -1
           ditto -x -k sentry-zip/sentry-test-build-macos-x86_64-NOT-FOR-RELEASE.zip "$RUNNER_TEMP/apps"
-          Tests/sentry/run.sh "$RUNNER_TEMP/apps/sentry-test-build-macos-x86_64"
+          "$(brew --prefix)/bin/bash" Tests/sentry/run.sh "$RUNNER_TEMP/apps/sentry-test-build-macos-x86_64"

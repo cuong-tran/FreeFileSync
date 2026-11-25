@@ -6,6 +6,7 @@
 //        sync_test --write-batch <file.ffs_batch> <left folder> <right folder> <log folder>
 //        sync_test --write-gui <file.ffs_gui> <left folder> <right folder>
 //        sync_test --write-global <GlobalSettings.xml>
+//        sync_test --write-global-unanswered <GlobalSettings.xml>
 //   --root: parent folder for the per-test temporary folders (default: the system temp folder); must exist
 //   names:  run only these tests (default: all)
 //   --write-batch: writes a batch job that mirrors <left folder> to <right folder> through the engine's own config writer
@@ -14,7 +15,9 @@
 //   --write-gui:    writes a GUI configuration with <left folder> and <right folder> as the folder pair (FreeFileSync compares at
 //                   once when started with it and both folders exist)
 //   --write-global: writes default global settings that skip the first-start dialogs (welcome dialog of this version done, update
-//                   check just done), for starting the app's main window in CI: FreeFileSync <file.ffs_gui> <GlobalSettings.xml>
+//                   check just done, the crash report notice answered with "don't send"), for starting the app's main window in
+//                   CI: FreeFileSync <file.ffs_gui> <GlobalSettings.xml>
+//   --write-global-unanswered: the same without an answer to the crash report notice, which a crash reporting build then shows
 //
 // Each test runs in a new folder "<root>/sync_test-<random>/<test name>", removed afterwards with everything in it.
 // SANDBOX_TEST_CASE tests (recycle bin) run only if ZEN_TEST_SANDBOX is set, as Tests/sync/run.sh does after pointing HOME and
@@ -69,12 +72,14 @@ int main(int argc, char* argv[])
             return 1;
         }
 
-    if (argc == 3 && std::string(argv[1]) == "--write-global")
+    if (argc == 3 && (std::string(argv[1]) == "--write-global" || std::string(argv[1]) == "--write-global-unanswered"))
         try
         {
             fff::GlobalConfig cfg;
             cfg.welcomeDialogLastVersion = fff::ffsVersion;
             cfg.lastUpdateCheck = std::time(nullptr);
+            if (std::string(argv[1]) == "--write-global")
+                cfg.crashReports = false; //no first-start notice in a crash reporting build, and nothing sent
             fff::writeConfig(cfg, argv[2]); //throw FileError
             return 0;
         }
