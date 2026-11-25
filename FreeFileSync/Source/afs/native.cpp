@@ -14,6 +14,7 @@
 #include <zen/thread.h>
 #include <zen/guid.h>
 #include <zen/crc.h>
+#include <set> //hideAppleDoubleCompanions()
 #include "abstract_impl.h"
 #include "../base/icon_loader.h"
 
@@ -105,6 +106,40 @@ struct FsItem
 {
     Zstring itemName;
 };
+
+
+#if defined ZEN_MAC
+/*  AppleDouble companions: a volume without native extended attributes (FAT, exFAT, many SMB/NFS shares) keeps the attributes of
+    an item "X" in a file "._X" next to it. Such a "._X" is not an item but part of "X": the kernel shows its content as X's
+    attributes and renames, moves and removes it together with X (measured on macOS 27.2 for files, folders and symlinks on FAT
+    and exFAT, also rmdir of a folder whose only entries are companions). So it is not reported where X exists in the same folder
+    (names compared byte-wise), like Finder does. Without X ("._X" orphans, "._" alone) it stays a normal item, visible and
+    deletable; volumes with native extended attributes (APFS, HFS+) or unknown capabilities show everything.
+    Why it matters: macOS 13+ gives every item a provenance-tracked process creates (one started by a tagged program, e.g. a
+    downloaded app the user opened, or Homebrew's programs) the attribute com.apple.provenance; on such a volume that is a "._X"
+    file for each file and folder FreeFileSync creates there, which the next comparison would show as target-only items. The
+    process can't remove the attribute (removexattr() succeeds and changes nothing, macOS 27.2). A consequence by design: a real
+    file named "._X" next to an "X" is hidden as well (Finder does the same), and can't even be created while X has a companion. */
+void hideAppleDoubleCompanions(std::vector<FsItem>& items, int dirFd) //nothrow
+{
+    if (std::none_of(items.begin(), items.end(), [](const FsItem& item) { return item.itemName.size() > 2 && startsWith(item.itemName, Zstr("._")); }))
+        return;
+    if (storesExtendedAttributesNatively(dirFd)) //nothrow
+        return;
+
+    std::set<Zstring> names;
+    for (const FsItem& item : items)
+        names.insert(item.itemName);
+
+    std::erase_if(items, [&](const FsItem& item)
+    {
+        return item.itemName.size() > 2 && startsWith(item.itemName, Zstr("._")) &&
+               names.contains(Zstring(item.itemName.c_str() + 2, item.itemName.size() - 2));
+    });
+}
+#endif
+
+
 std::vector<FsItem> getDirContentFlat(const Zstring& dirPath) //throw FileError
 {
     //no need to check for endless recursion:
@@ -130,7 +165,12 @@ std::vector<FsItem> getDirContentFlat(const Zstring& dirPath) //throw FileError
         if (!dirEntry)
         {
             if (errno == 0) //errno left unchanged => no more items
+            {
+#if defined ZEN_MAC
+                hideAppleDoubleCompanions(output, ::dirfd(folder)); //nothrow
+#endif
                 return output;
+            }
 
             THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot read directory %x."), L"%x", fmtPath(dirPath)), "readdir");
             //don't retry but restart dir traversal on error! https://devblogs.microsoft.com/oldnewthing/20140612-00/?p=753

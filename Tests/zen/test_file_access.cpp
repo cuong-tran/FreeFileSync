@@ -1,5 +1,6 @@
 // zen/file_access.h, zen/symlink_target.h
 
+#include <set>
 #include <zen/file_access.h>
 #include <zen/file_traverser.h>
 #include <zen/file_io.h>
@@ -617,12 +618,14 @@ TEST_CASE(fileAccessMacSecondVolume)
 
     //macOS (seen on 27.2) gives every item a provenance-tracked process creates the attribute com.apple.provenance (tracked: started
     //by a tagged program, e.g. Homebrew's bash or a downloaded app, or by a tracked process), at open(O_CREAT)/mkdir already, which a
-    //volume without native extended attributes keeps only as an AppleDouble "._" file; such a process can't remove it (removexattr()
-    //succeeds and changes nothing). Each way of creating an item is checked; whether this run is tracked: a file on the test
+    //volume without native extended attributes keeps only as an AppleDouble companion "._<name>"; such a process can't remove it
+    //(removexattr() succeeds and changes nothing). That is the system's, not the copy's: the copies must carry no other attribute,
+    //and "._" files may exist only as companions of existing items and only for a tracked process (the native AFS doesn't list
+    //them: Tests/sync syncMacFatVolume). Each way of creating an item is checked; whether this run is tracked: a file on the test
     //folder's own volume shows it
     writeFile(appendPath(testDir, "tracked probe.txt"), "x");
-    std::cout << "   process provenance-tracked: " <<
-              (contains(runShell("xattr " + escapeCommandArg(appendPath(testDir, "tracked probe.txt"))), "com.apple.provenance") ? "yes" : "no (the provenance case is not exercised)") << std::endl;
+    const bool tracked = contains(runShell("xattr " + escapeCommandArg(appendPath(testDir, "tracked probe.txt"))), "com.apple.provenance");
+    std::cout << "   process provenance-tracked: " << (tracked ? "yes" : "no (no companions expected at all)") << std::endl;
     CHECK_NO_THROW({ FileOutputPlain out(appendPath(mountPath, "written.txt")); out.close(); }); //openHandleForWrite()
     const Zstring linkSource = appendPath(testDir, "link");
     std::filesystem::create_symlink("copy.txt", toPath(linkSource));
@@ -632,14 +635,24 @@ TEST_CASE(fileAccessMacSecondVolume)
     for (const Zstring& item : {target, appendPath(mountPath, "dir")})
     {
         const std::string xattrNames = trimCpy(runShell("xattr " + escapeCommandArg(item)));
-        CHECK(xattrNames.empty());
+        CHECK(xattrNames.empty() || (tracked && xattrNames == "com.apple.provenance"));
         if (!xattrNames.empty()) //which ones tells who wrote them: the copy (com.freefilesync.*) or the system
             std::cerr << "   extended attributes on " << toPrintable(item) << ": " << xattrNames << '\n';
     }
     for (const Zstring& folder : {mountPath, appendPath(mountPath, "dir")})
-        traverseFolder(folder,
-        [&](const FileInfo& fi) { CHECK(!startsWith(fi.itemName, "._")); if (startsWith(fi.itemName, "._")) std::cerr << "   AppleDouble file: " << toPrintable(fi.fullPath) << '\n'; },
-        [&](const FolderInfo& fi) { CHECK(!startsWith(fi.itemName, "._")); }, nullptr);
+    {
+        std::set<Zstring> names;
+        traverseFolder(folder, [&](const FileInfo& fi) { names.insert(fi.itemName); }, [&](const FolderInfo& fi) { names.insert(fi.itemName); },
+                       [&](const SymlinkInfo& si) { names.insert(si.itemName); }); //symlinks too: "._link" is the companion of one
+        for (const Zstring& name : names)
+            if (startsWith(name, Zstr("._")))
+            {
+                const bool companion = tracked && name.size() > 2 && names.contains(Zstring(name.c_str() + 2, name.size() - 2));
+                CHECK(companion);
+                if (!companion)
+                    std::cerr << "   AppleDouble file " << toPrintable(appendPath(folder, name)) << (tracked ? " without its item" : " for an untracked process") << '\n';
+            }
+    }
     for (const LogEntry& entry : fetchExtraLog())
         reportFailure(__FILE__, __LINE__, "logged: " + std::string(entry.message.begin(), entry.message.end()));
 

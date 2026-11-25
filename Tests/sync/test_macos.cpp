@@ -1,5 +1,7 @@
-// macOS only: extended attributes are synchronized on APFS; a FAT volume (disk image, attached without admin rights) gets no
-// AppleDouble "._name" files, which the next comparison would see as extra items, and compares equal after the sync;
+// macOS only: extended attributes are synchronized on APFS; on FAT and exFAT volumes (disk images, attached without admin rights)
+// the sync writes no attributes, AppleDouble "._name" companions that macOS itself adds there (com.apple.provenance, for a
+// provenance-tracked process) are not reported as items, and the volume compares equal after mirror, versioning, deletion and
+// two-way runs;
 // the icon loader (base/icon_loader_mac.*) renders file icons and thumbnails off the main thread
 
 #include <thread>
@@ -58,65 +60,182 @@ TEST_CASE(syncMacXattrApfs)
 }
 
 
-TEST_CASE(syncMacFatVolume)
+namespace
 {
-    const time_t t0 = timeBase();
-    const Zstring left = appendPath(testDir, "left");
-    makeTree(left,
+//AppleDouble companions "._X" of existing items: what a volume without native extended attributes holds on disk for X (macOS
+//gives every item a provenance-tracked process creates com.apple.provenance, which such a volume keeps only so). Returns the tree
+//without them, and in hasCompanions whether there were any; "._X" without an X (an orphan) stays in the tree
+Tree withoutCompanions(const Tree& tree, bool& hasCompanions)
+{
+    Tree out;
+    hasCompanions = false;
+    for (const auto& [relPath, entry] : tree)
     {
-        {"tagged.txt",       {Entry::Type::file, "with xattrs", t0}},
-        {"Mixed Case",       {Entry::Type::folder}},
-        {"Mixed Case/b.txt", {Entry::Type::file, "b", t0 + 1}}, //odd second: FAT stores times in 2-second steps
-    });
-    runShell("xattr -w com.freefilesync.synctest 'file value' " + escapeCommandArg(itemPath(left, "tagged.txt"))); //throw SysError
-    runShell("xattr -w com.apple.metadata:kMDItemWhereFroms 'somewhere' " + escapeCommandArg(itemPath(left, "Mixed Case")));
-
-    const Zstring imagePath = appendPath(testDir, "fat.dmg");
-    const Zstring mountPath = appendPath(testDir, "mnt");
-    makeFolder(mountPath, "");
-    runShell("hdiutil create -quiet -size 32m -fs MS-DOS -volname SYNCTEST " + escapeCommandArg(imagePath));
-    runShell("hdiutil attach -quiet -nobrowse -noverify -noautoopen -mountpoint " + escapeCommandArg(mountPath) + ' ' + escapeCommandArg(imagePath));
-    ZEN_ON_SCOPE_EXIT(try { runShell("hdiutil detach -quiet -force " + escapeCommandArg(mountPath)); }
-                      catch (const SysError& e) { reportFailure(__FILE__, __LINE__, "hdiutil detach: " + utfTo<std::string>(e.toString())); });
-
-    const Zstring right = appendPath(mountPath, "target");
-    makeFolder(right, "");
-    const SyncCfg cfg{.left = left, .right = right};
-    const RunResult res = runSync(cfg);
-    CHECK_NO_ERRORS(res); //attributes FAT cannot store are skipped silently, the data copy stands
-
-    //no "._tagged.txt" etc.: exactly the left items, times within FAT's 2 seconds
-    CHECK_TREES_EQUAL(readTree(right), readTree(left), 2);
-    const RunResult again = compareOnly(cfg);
-    CHECK_NO_ERRORS(again);
-    CHECK(again.allEqual);
-    if (!again.allEqual)
-        std::cerr << again.toString();
-
-    //a name that is no valid UTF-8, if this file system takes one (APFS doesn't): loading its icon or moving it to the trash fails
-    //with an error instead of ending the process with an Objective-C exception
-    {
-        const Zstring brokenPath = appendPath(mountPath, Zstring("broken \xff name.txt"));
-        std::error_code ec;
-        bool created = false;
-        try { writeFile(brokenPath, "x"); created = pathExists(brokenPath); }
-        catch (const std::exception&) {}
-        std::cout << "   a name with broken UTF-8 on FAT: " << (created ? "created" : "rejected by the file system") << std::endl;
-        if (created)
-        {
-            try { (void)getFileIcon(brokenPath, 32); } //throw SysError
-            catch (const SysError& e) { std::cout << "   its icon: " << utfTo<std::string>(e.toString()) << std::endl; }
-            std::filesystem::remove(toPath(brokenPath), ec);
-        }
-        CHECK_THROWS(FileError, moveToRecycleBin(Zstring("/private/tmp/broken \xff name, not existing"))); //nil NSString: FileError
+        const size_t pos = relPath.rfind('/');
+        const std::string folder = pos == std::string::npos ? "" : relPath.substr(0, pos + 1);
+        const std::string name   = pos == std::string::npos ? relPath : relPath.substr(pos + 1);
+        if (name.size() > 2 && name.starts_with("._") && tree.contains(folder + name.substr(2)))
+            hasCompanions = true;
+        else
+            out.emplace(relPath, entry);
     }
+    return out;
+}
 
-    //FAT is case-insensitive: a case-only rename on the left becomes a rename on the volume
-    std::filesystem::rename(toPath(itemPath(left, "Mixed Case")), toPath(itemPath(left, "MIXED case")));
-    const RunResult renamed = runSync(cfg);
-    CHECK_NO_ERRORS(renamed);
-    CHECK_EQUAL(renamed.opCount(SO_RENAME_RIGHT), 1);
-    CHECK_TREES_EQUAL(readTree(right), readTree(left), 2);
+
+//whether this process is provenance-tracked (see withoutCompanions()): a file it makes on the test folder's own volume shows it
+bool provenanceTracked(const Zstring& testDir)
+{
+    const Zstring probe = appendPath(testDir, "tracked probe.txt");
+    writeFile(probe, "x");
+    const bool tracked = contains(runShell("xattr " + escapeCommandArg(probe)), "com.apple.provenance"); //throw SysError
+    std::filesystem::remove(toPath(probe));
+    return tracked;
+}
+}
+
+
+TEST_CASE(syncMacFatVolume) //FAT and exFAT
+{
+    //a process macOS tracks gets AppleDouble companions for each item it creates on these volumes (com.apple.provenance, which it
+    //can't remove); the native AFS doesn't report them, and they must never show up as items. Untracked, there are none at all
+    const bool tracked = provenanceTracked(testDir);
+    std::cout << "   process provenance-tracked: " << (tracked ? "yes" : "no") << std::endl;
+    //the folder on the volume as the user sees it, and as it is on disk: exactly the expected items, plus companions only when tracked
+    const auto checkVolumeTree = [&](const char* file, int line, const Zstring& root, const Tree& expected)
+    {
+        bool hasCompanions = false;
+        //(the database and the lock are left out, as readTree() does, and their companions with them)
+        const Tree onDisk = readTree(root, {".sync.ffs_db", "sync.ffs_lock", "._.sync.ffs_db", "._sync.ffs_lock"});
+        checkTreesEqual(file, line, withoutCompanions(onDisk, hasCompanions), expected, 2 /*FAT: 2-second steps*/);
+        ++checkCount;
+        if (hasCompanions && !tracked)
+            reportFailure(file, line, "AppleDouble files on the volume, but this process is not provenance-tracked: the sync wrote them");
+    };
+
+    for (const std::string fsType : {"MS-DOS", "ExFAT"})
+    {
+        std::cout << "   " << fsType << std::endl;
+        const Zstring base = appendPath(testDir, utfTo<Zstring>(fsType));
+        const time_t t0 = timeBase();
+        const Zstring left = appendPath(base, "left");
+        makeTree(left,
+        {
+            {"tagged.txt",                {Entry::Type::file, "with xattrs", t0}},
+            {"Mixed Case",                {Entry::Type::folder}},
+            {"Mixed Case/b.txt",          {Entry::Type::file, "b", t0 + 1}}, //odd second: FAT stores times in 2-second steps
+            {"gone later.txt",            {Entry::Type::file, "deleted with versioning", t0}},
+            {"gone folder",               {Entry::Type::folder}},
+            {"gone folder/inner.txt",     {Entry::Type::file, "inner", t0}},
+        });
+        runShell("xattr -w com.freefilesync.synctest 'file value' " + escapeCommandArg(itemPath(left, "tagged.txt"))); //throw SysError
+        runShell("xattr -w com.apple.metadata:kMDItemWhereFroms 'somewhere' " + escapeCommandArg(itemPath(left, "Mixed Case")));
+
+        const Zstring imagePath = appendPath(base, "volume.dmg");
+        const Zstring mountPath = appendPath(base, "mnt");
+        makeFolder(mountPath, "");
+        runShell("hdiutil create -quiet -size 32m -fs " + utfTo<Zstring>(fsType) + " -volname SYNCTEST " + escapeCommandArg(imagePath));
+        runShell("hdiutil attach -quiet -nobrowse -noverify -noautoopen -mountpoint " + escapeCommandArg(mountPath) + ' ' + escapeCommandArg(imagePath));
+        ZEN_ON_SCOPE_EXIT(try { runShell("hdiutil detach -quiet -force " + escapeCommandArg(mountPath)); }
+                          catch (const SysError& e) { reportFailure(__FILE__, __LINE__, "hdiutil detach: " + utfTo<std::string>(e.toString())); });
+
+        const Zstring right    = appendPath(mountPath, "target");
+        const Zstring versions = appendPath(mountPath, "versions"); //on the same volume: deleted items are moved there
+        makeFolder(right, "");
+        SyncCfg cfg{.left = left, .right = right};
+
+        //mirror: the attributes FAT can't store are skipped silently, the data copy stands; the second comparison finds nothing to do
+        const RunResult res = runSync(cfg);
+        CHECK_NO_ERRORS(res);
+        checkVolumeTree(__FILE__, __LINE__, right, readTree(left));
+        const RunResult again = compareOnly(cfg);
+        CHECK_NO_ERRORS(again);
+        CHECK(again.allEqual);
+        if (!again.allEqual)
+            std::cerr << again.toString();
+
+        //deletions with versioning on the same volume: items and their companions move together, no orphan stays behind
+        std::filesystem::remove(toPath(itemPath(left, "gone later.txt")));
+        std::filesystem::remove_all(toPath(itemPath(left, "gone folder")));
+        cfg.deletion = DeletionVariant::versioning;
+        cfg.versioningFolder = versions;
+        const RunResult versioned = runSync(cfg);
+        CHECK_NO_ERRORS(versioned);
+        checkVolumeTree(__FILE__, __LINE__, right, readTree(left));
+        checkVolumeTree(__FILE__, __LINE__, versions,
+        {
+            {"gone later.txt",        {Entry::Type::file, "deleted with versioning", t0}},
+            {"gone folder",           {Entry::Type::folder}},
+            {"gone folder/inner.txt", {Entry::Type::file, "inner", t0}},
+        });
+
+        //permanent deletion of a folder with content: no "directory not empty" because of companions
+        std::filesystem::remove_all(toPath(itemPath(left, "Mixed Case")));
+        cfg.deletion = DeletionVariant::permanent;
+        const RunResult removed = runSync(cfg);
+        CHECK_NO_ERRORS(removed);
+        checkVolumeTree(__FILE__, __LINE__, right, readTree(left));
+
+        //two-way with the database on the volume (its companion and the lock's are not items either), then an update
+        cfg.syncVar = SyncVariant::twoWay;
+        const RunResult twoWay = runSync(cfg);
+        CHECK_NO_ERRORS(twoWay);
+        makeFile(left, "tagged.txt", "changed on the left", t0 + 4 * TIME_STEP);
+        const RunResult update = runSync(cfg);
+        CHECK_NO_ERRORS(update);
+        CHECK_EQUAL(update.opCount(SO_OVERWRITE_RIGHT), 1);
+        checkVolumeTree(__FILE__, __LINE__, right, readTree(left));
+        const RunResult twoWayAgain = compareOnly(cfg);
+        CHECK_NO_ERRORS(twoWayAgain);
+        CHECK(twoWayAgain.allEqual);
+        if (!twoWayAgain.allEqual)
+            std::cerr << twoWayAgain.toString();
+        cfg.syncVar = SyncVariant::mirror;
+
+        //content comparison reads every file the volume lists: companions are no files to it either
+        cfg.compareVar = CompareVariant::content;
+        const RunResult byContent = compareOnly(cfg);
+        CHECK_NO_ERRORS(byContent);
+        CHECK(byContent.allEqual);
+        cfg.compareVar = CompareVariant::timeSize;
+
+        //an orphan "._X" (no X) is an ordinary item: listed, and deleted by a mirror like any other target-only file
+        writeFile(appendPath(right, "._orphan"), "not a companion");
+        const RunResult orphan = compareOnly(cfg);
+        CHECK_NO_ERRORS(orphan);
+        CHECK_EQUAL(orphan.opCount(SO_DELETE_RIGHT), 1);
+        const RunResult orphanRemoved = runSync(cfg);
+        CHECK_NO_ERRORS(orphanRemoved);
+        checkVolumeTree(__FILE__, __LINE__, right, readTree(left));
+
+        if (fsType == "MS-DOS")
+        {
+            //a name that is no valid UTF-8, if this file system takes one (APFS doesn't): loading its icon or moving it to the trash
+            //fails with an error instead of ending the process with an Objective-C exception
+            const Zstring brokenPath = appendPath(mountPath, Zstring("broken \xff name.txt"));
+            std::error_code ec;
+            bool created = false;
+            try { writeFile(brokenPath, "x"); created = pathExists(brokenPath); }
+            catch (const std::exception&) {}
+            std::cout << "   a name with broken UTF-8 on FAT: " << (created ? "created" : "rejected by the file system") << std::endl;
+            if (created)
+            {
+                try { (void)getFileIcon(brokenPath, 32); } //throw SysError
+                catch (const SysError& e) { std::cout << "   its icon: " << utfTo<std::string>(e.toString()) << std::endl; }
+                std::filesystem::remove(toPath(brokenPath), ec);
+            }
+            CHECK_THROWS(FileError, moveToRecycleBin(Zstring("/private/tmp/broken \xff name, not existing"))); //nil NSString: FileError
+        }
+
+        //FAT and exFAT are case-insensitive: a case-only rename on the left becomes a rename on the volume
+        makeTree(left, {{"Case Only", {Entry::Type::folder}}});
+        CHECK_NO_ERRORS(runSync(cfg));
+        std::filesystem::rename(toPath(itemPath(left, "Case Only")), toPath(itemPath(left, "CASE only")));
+        const RunResult renamed = runSync(cfg);
+        CHECK_NO_ERRORS(renamed);
+        CHECK_EQUAL(renamed.opCount(SO_RENAME_RIGHT), 1);
+        checkVolumeTree(__FILE__, __LINE__, right, readTree(left));
+    }
 }
 
 
