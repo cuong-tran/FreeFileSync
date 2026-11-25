@@ -532,6 +532,14 @@ jobs:
           fi
           Tests/sentry/run.sh "FreeFileSync/Build/Bin/macos-${{ matrix.arch }}"
 
+      # informational: the apps are built with the newest Xcode 26.x; an Xcode newer than that on the runner image gets a syntax-only
+      # compile of both apps, so an SDK change that breaks the build (as Xcode 27's did: docs/MAC_TEST_REPORT.md, F1) shows up as
+      # warnings before users hit it
+      - name: Newest Xcode (syntax check)
+        if: ${{ !cancelled() && matrix.arch == 'arm64' && steps.apps.outcome == 'success' }}
+        continue-on-error: true
+        run: .github/build/check-newest-xcode.sh
+
       - name: Upload screenshots
         if: always()
         continue-on-error: true
