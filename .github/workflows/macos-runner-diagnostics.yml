@@ -39,7 +39,7 @@ jobs:
           echo "CPU cores: $(sysctl -n hw.ncpu), memory: $(( $(sysctl -n hw.memsize) / 1073741824 )) GB"
           echo "runner: os $RUNNER_OS, arch $RUNNER_ARCH, environment ${{ runner.environment }}"
           echo "uid: $(id -u), admin group: $(id -Gn | tr ' ' '\n' | grep -cx admin || true)"
-          echo "work folder inside the home folder: $(case "$GITHUB_WORKSPACE" in "$HOME"/*) echo yes;; *) echo no;; esac)"
+          inHome=no; case "$GITHUB_WORKSPACE" in ("$HOME"/*) inHome=yes;; esac; echo "work folder inside the home folder: $inHome"
           echo "free disk space where the work folder is:"
           df -h "$GITHUB_WORKSPACE" | awk 'NR == 1 || NR == 2 { print "    " $2 " size, " $4 " free, " $5 " used" }'
           echo "file system of the work folder: $(diskutil info "$(df "$GITHUB_WORKSPACE" | awk 'NR == 2 { print $1 }')" 2>/dev/null | awk -F': *' '/File System Personality|Type \(Bundle\)/ { print $2 }' | tr '\n' ' ')"
@@ -64,6 +64,7 @@ jobs:
             libcxx="$(echo '#include <version>' | DEVELOPER_DIR="$dev" xcrun clang++ -std=c++2c -x c++ -dM -E - 2>/dev/null | awk '$2 == "_LIBCPP_VERSION" { print $3 }' || true)"
             echo "    $(basename "$app"): ${ver:-xcodebuild failed (license not accepted, first launch not done?)}; $clang; SDK $sdk; -std=c++26: $cxx26; libc++ $libcxx"
           done
+          echo "command line tools clang -std=c++26: $(echo 'int main() {}' | /Library/Developer/CommandLineTools/usr/bin/clang++ -std=c++26 -x c++ -fsyntax-only - 2>/dev/null && echo accepted || echo rejected)"
           echo "default toolchain: $(xcrun clang++ --version 2>/dev/null | sed -n 1p || echo none)"
           xcodebuild -version 2>&1 || true
 
@@ -104,6 +105,7 @@ jobs:
           echo "screen locked or asleep cannot be read without private APIs; display count: $(system_profiler SPDisplaysDataType 2>/dev/null | grep -c 'Resolution:' || true)"
           # no prompt: Preflight only reads the state; AXIsProcessTrusted likewise
           osascript -l JavaScript -e "ObjC.import('CoreGraphics'); ObjC.import('ApplicationServices');
+            ObjC.bindFunction('CGPreflightScreenCaptureAccess', ['bool', []]); ObjC.bindFunction('AXIsProcessTrusted', ['bool', []]);
             var list = ObjC.deepUnwrap(ObjC.castRefToObject(\$.CGWindowListCopyWindowInfo(\$.kCGWindowListOptionOnScreenOnly, 0))) || [];
             'screen recording (CGPreflightScreenCaptureAccess): ' + \$.CGPreflightScreenCaptureAccess() +
             ', accessibility (AXIsProcessTrusted): ' + \$.AXIsProcessTrusted() +
