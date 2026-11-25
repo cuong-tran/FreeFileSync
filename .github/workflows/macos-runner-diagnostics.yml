@@ -171,6 +171,13 @@ jobs:
           echo "attributes a new file in \$RUNNER_TEMP gets: $(xattr "$w/src.txt" | tr '\n' ' ')"
           cat "$w/src.txt" > "$w/mnt/catcopy.txt"
           echo "after cat to the volume: $(ls -A "$w/mnt" | tr '\n' ' '); attributes: $(xattr "$w/mnt/catcopy.txt" | tr '\n' ' ')"
+          # the same writes by a program built here (ad-hoc signed by the linker, like zen_test and sync_test), not by a system tool
+          printf '#include <stdio.h>\nint main(int c, char** v) { for (int i = 1; i < c; ++i) { FILE* f = fopen(v[i], "w"); if (!f) return 1; fputs("x\\n", f); fclose(f); } return 0; }\n' > "$w/writer.c"
+          xcrun clang -o "$w/writer" "$w/writer.c"
+          "$w/writer" "$w/mnt/by-built-program.txt" "$w/by-built-program.txt"
+          echo "file written by a program built here, on the volume: attributes: $(xattr "$w/mnt/by-built-program.txt" | tr '\n' ' '); now on the volume: $(ls -A "$w/mnt" | tr '\n' ' ')"
+          echo "file written by a program built here, on APFS: attributes: $(xattr "$w/by-built-program.txt" | tr '\n' ' ')"
+          echo "attributes of the program itself: $(xattr "$w/writer" | tr '\n' ' ')"
 
       # finding of the review of the runner change: an app started by a relative path must still be found by cleanup (it matches
       # the resolved executable path from lsof, and the command path from ps). Last but one: it runs cleanup, which removes
