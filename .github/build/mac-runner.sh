@@ -8,7 +8,8 @@
 #                                      gui (yes/no: a window server session, so apps can start), ccache (yes/no).
 #                                      Self-hosted only: masks the user, host and computer names in the log; checks the tools of
 #                                      each <need> and fails with one "brew install ..." line for everything missing (installs
-#                                      nothing); fails below $FFS_CI_MIN_FREE_GB (default 10) GB of free disk space; points
+#                                      nothing); fails below $FFS_CI_MIN_FREE_GB GB of free disk space (default 10 with the
+#                                      "build" need, which may build the libraries, else 3); points
 #                                      TMPDIR into $RUNNER_TEMP; sets the trash log the tests write (FFS_TEST_TRASH_LOG); saves
 #                                      what "cleanup" restores.
 #                                      Needs: bash (bash 4.4+), build (coreutils, flock, pkg-config, GNU make, cmake), timeout
@@ -119,8 +120,10 @@ cmd_setup()
         exit 1
     fi
 
-    # disk space: the library builds alone take several GB
-    local freeGb minGb="${FFS_CI_MIN_FREE_GB:-10}"
+    # disk space: a library build takes several GB (jobs with the "build" need), the tests and the DMG well under one
+    local freeGb minGb=3
+    case " $* " in (*" build "*) minGb=10 ;; esac
+    minGb="${FFS_CI_MIN_FREE_GB:-$minGb}"
     freeGb="$(df -k "${GITHUB_WORKSPACE:-$PWD}" | awk 'NR == 2 { print int($4 / 1048576) }')"
     echo "free disk space: $freeGb GB"
     if [ "$freeGb" -lt "$minGb" ]; then
@@ -343,14 +346,15 @@ cmd_cleanup()
     if [ -f "$STATE_DIR/trash.log" ]; then
         while IFS= read -r item; do
             [ -n "$item" ] || continue
+            # the tests note every place an item may end up at (e.g. also the trash of a volume that has none): only what is
+            # there is checked and deleted
+            [ -e "$item" ] || [ -L "$item" ] || continue
             if ! trashItemOk "$item"; then refused=$((refused + 1)); continue; fi
-            if [ -e "$item" ] || [ -L "$item" ]; then
-                rm -rf -- "$item" && n=$((n + 1)) || echo "::warning::cleanup: could not delete a test item from the trash"
-            fi
+            rm -rf -- "$item" && n=$((n + 1)) || echo "::warning::cleanup: could not delete a test item from the trash"
         done < "$STATE_DIR/trash.log"
     fi
     echo "cleanup: $n test item(s) deleted from the trash"
-    [ "$refused" -eq 0 ] || echo "::warning::cleanup: $refused path(s) in the trash log refused (not a test item directly in a trash folder)"
+    [ "$refused" -eq 0 ] || echo "::warning::cleanup: $refused existing path(s) in the trash log refused (not a test item directly in a trash folder): left alone"
 
     # 4. crash reports of our binaries written during this job (not uploaded, not printed: they hold machine details)
     local report n=0 r patterns
