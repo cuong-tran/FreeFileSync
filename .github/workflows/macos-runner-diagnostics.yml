@@ -1,0 +1,121 @@
+# What the self-hosted macOS runner (the owner's own Mac, label "self-hosted") offers the macOS jobs: architecture, macOS and
+# Xcode versions, the tools the build scripts need, Rosetta 2, the GUI session and the permissions the start checks use, free
+# disk space. Read only: it installs nothing, changes no setting and prints nothing private (no directory listing of the home
+# folder or of /Applications beyond the Xcode bundles, no environment dump, no user, host or computer name: those are masked).
+# Run by hand (workflow_dispatch) or by a push that changes this file; never for pull requests.
+name: macOS runner diagnostics
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - ".github/workflows/macos-runner-diagnostics.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostics:
+    name: Self-hosted macOS runner
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: /bin/bash --noprofile --norc -eo pipefail {0} # the system's bash 3.2: Homebrew's may not be there
+    steps:
+      - name: Mask user, host and computer names
+        run: |
+          for value in "$(id -un)" "$(id -F 2>/dev/null || true)" "$(hostname -s 2>/dev/null || true)" "$(hostname 2>/dev/null || true)" \
+                       "$(scutil --get ComputerName 2>/dev/null || true)" "$(scutil --get LocalHostName 2>/dev/null || true)"; do
+            if [ "${#value}" -ge 3 ]; then echo "::add-mask::$value"; fi
+          done
+
+      - name: System
+        run: |
+          echo "uname -m: $(uname -m), sysctl.proc_translated: $(sysctl -n sysctl.proc_translated 2>/dev/null || echo n/a)"
+          echo "hw.optional.arm64: $(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)"
+          sw_vers
+          echo "CPU cores: $(sysctl -n hw.ncpu), memory: $(( $(sysctl -n hw.memsize) / 1073741824 )) GB"
+          echo "runner: os $RUNNER_OS, arch $RUNNER_ARCH, environment ${{ runner.environment }}"
+          echo "uid: $(id -u), admin group: $(id -Gn | tr ' ' '\n' | grep -cx admin || true)"
+          echo "work folder inside the home folder: $(case "$GITHUB_WORKSPACE" in "$HOME"/*) echo yes;; *) echo no;; esac)"
+          echo "free disk space where the work folder is:"
+          df -h "$GITHUB_WORKSPACE" | awk 'NR == 1 || NR == 2 { print "    " $2 " size, " $4 " free, " $5 " used" }'
+          echo "file system of the work folder: $(diskutil info "$(df "$GITHUB_WORKSPACE" | awk 'NR == 2 { print $1 }')" 2>/dev/null | awk -F': *' '/File System Personality|Type \(Bundle\)/ { print $2 }' | tr '\n' ' ')"
+          probe="$RUNNER_TEMP/CaseProbe"; rm -f "$probe" "$RUNNER_TEMP/caseprobe"; touch "$probe"
+          if [ -e "$RUNNER_TEMP/caseprobe" ]; then echo "case-insensitive file system"; else echo "case-SENSITIVE file system"; fi
+          rm -f "$probe"
+          echo "FileVault: $(fdesetup status 2>/dev/null | head -n 1 || true)"
+          echo "SIP: $(csrutil status 2>/dev/null || true)"
+
+      - name: Xcode
+        run: |
+          echo "xcode-select -p: $(xcode-select -p 2>/dev/null || echo none)"
+          echo "Xcode bundles in /Applications:"
+          for app in /Applications/Xcode*.app; do
+            [ -d "$app" ] || continue
+            dev="$app/Contents/Developer"
+            ver="$(DEVELOPER_DIR="$dev" xcodebuild -version 2>/dev/null | tr '\n' ' ' || true)"
+            clang="$(DEVELOPER_DIR="$dev" xcrun clang++ --version 2>/dev/null | sed -n 1p || true)"
+            sdk="$(DEVELOPER_DIR="$dev" xcrun --show-sdk-version 2>/dev/null || true)"
+            cxx26=no
+            if echo 'int main() {}' | DEVELOPER_DIR="$dev" xcrun clang++ -std=c++26 -x c++ -fsyntax-only - 2>/dev/null; then cxx26=yes; fi
+            libcxx="$(echo '#include <version>' | DEVELOPER_DIR="$dev" xcrun clang++ -std=c++2c -x c++ -dM -E - 2>/dev/null | awk '$2 == "_LIBCPP_VERSION" { print $3 }' || true)"
+            echo "    $(basename "$app"): ${ver:-xcodebuild failed (license not accepted, first launch not done?)}; $clang; SDK $sdk; -std=c++26: $cxx26; libc++ $libcxx"
+          done
+          echo "default toolchain: $(xcrun clang++ --version 2>/dev/null | sed -n 1p || echo none)"
+          xcodebuild -version 2>&1 || true
+
+      - name: Tools
+        run: |
+          echo "PATH entries: $(echo "$PATH" | tr ':' '\n' | sed "s#^$HOME#~#" | tr '\n' ' ')"
+          if command -v brew >/dev/null; then
+            echo "brew: $(brew --version | sed -n 1p), prefix $(brew --prefix)"
+            prefix="$(brew --prefix)"
+          else
+            echo "brew: not found"; prefix=/opt/homebrew
+          fi
+          echo "bash on PATH: $(bash --version | sed -n 1p)"
+          for b in "$prefix/bin/bash" /usr/local/bin/bash /opt/homebrew/bin/bash; do [ -x "$b" ] && echo "    $b: $("$b" --version | sed -n 1p)"; done
+          echo "coreutils gnubin: $([ -d "$prefix/opt/coreutils/libexec/gnubin" ] && echo yes || echo no)"
+          for tool in gmake flock pkg-config pkgconf ccache create-dmg python3 zip unzip gtimeout gsha256sum grealpath git curl perl cmake ninja xz bzip2 patch sentry-cli; do
+            path="$(command -v "$tool" 2>/dev/null || true)"
+            if [ -z "$path" ]; then echo "    $tool: MISSING"; continue; fi
+            case "$tool" in
+              python3) v="$("$path" --version 2>&1 || true)" ;;
+              create-dmg) v="$("$path" --version 2>&1 | sed -n 1p || true)" ;;
+              zip|unzip) v="$("$path" -v 2>&1 | sed -n 2p || true)" ;;
+              *) v="$("$path" --version 2>&1 | sed -n 1p || true)" ;;
+            esac
+            echo "    $tool: $(echo "$path" | sed "s#^$HOME#~#") ($v)"
+          done
+          echo "/usr/bin/python3 usable: $(/usr/bin/python3 -c 'print("yes")' 2>/dev/null || echo no)"
+
+      - name: Rosetta 2
+        run: |
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then echo "x86_64 runs (Rosetta 2 or Intel)"; else echo "x86_64 does NOT run"; fi
+          if arch -arm64 /usr/bin/true 2>/dev/null; then echo "arm64 runs"; else echo "arm64 does NOT run"; fi
+
+      - name: GUI session and permissions
+        run: |
+          echo "launchctl managername: $(launchctl managername 2>/dev/null || true)"
+          echo "console user is the runner user: $([ "$(stat -f %Su /dev/console)" = "$(id -un)" ] && echo yes || echo no)"
+          echo "screen locked or asleep cannot be read without private APIs; display count: $(system_profiler SPDisplaysDataType 2>/dev/null | grep -c 'Resolution:' || true)"
+          # no prompt: Preflight only reads the state; AXIsProcessTrusted likewise
+          osascript -l JavaScript -e "ObjC.import('CoreGraphics'); ObjC.import('ApplicationServices');
+            var list = ObjC.deepUnwrap(ObjC.castRefToObject(\$.CGWindowListCopyWindowInfo(\$.kCGWindowListOptionOnScreenOnly, 0))) || [];
+            'screen recording (CGPreflightScreenCaptureAccess): ' + \$.CGPreflightScreenCaptureAccess() +
+            ', accessibility (AXIsProcessTrusted): ' + \$.AXIsProcessTrusted() +
+            ', on-screen windows: ' + list.length + ', of them with a readable title: ' + list.filter(function (w) { return w.kCGWindowName !== undefined; }).length" 2>&1 || echo "osascript failed"
+          echo "process chain of this step (names only):"
+          pid=$$
+          for _ in 1 2 3 4 5 6 7 8; do
+            [ "$pid" -gt 1 ] || break
+            echo "    $(ps -o comm= -p "$pid" | sed "s#^$HOME#~#")"
+            pid="$(ps -o ppid= -p "$pid" | tr -d ' ')"
+          done
+          echo "~/.Trash readable: $(ls "$HOME/.Trash" >/dev/null 2>&1 && echo yes || echo 'no (no Full Disk Access)')"
+          echo "~/Library/Logs/DiagnosticReports readable: $(ls "$HOME/Library/Logs/DiagnosticReports" >/dev/null 2>&1 && echo yes || echo no)"
+          echo "mounted disk images: $(hdiutil info 2>/dev/null | grep -c '^image-path' || true)"
+          echo "volumes named FreeFileSync*: $(ls -d /Volumes/FreeFileSync* 2>/dev/null | wc -l | tr -d ' ')"
