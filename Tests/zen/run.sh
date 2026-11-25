@@ -130,8 +130,9 @@ echo "== test"
 SANDBOX="$WORK/sandbox"
 mkdir -p "$SANDBOX/home/.local/share" "$SANDBOX/tests"
 # ZEN_TEST_SANDBOX: tells zen_test that HOME etc. point into a sandbox, see main.cpp; ZEN_TEST_*: expected by test_paths.cpp
-# (zen reads the environment once at startup, so the tests can't set them themselves)
-HOME="$SANDBOX/home" XDG_DATA_HOME="$SANDBOX/home/.local/share" XDG_CONFIG_HOME="$SANDBOX/home/.config" \
+# (zen reads the environment once at startup, so the tests can't set them themselves); ZEN_TEST_REAL_HOME: the macOS trash is
+# in the real home (test_recycler.cpp)
+ZEN_TEST_REAL_HOME="${HOME:-}" HOME="$SANDBOX/home" XDG_DATA_HOME="$SANDBOX/home/.local/share" XDG_CONFIG_HOME="$SANDBOX/home/.config" \
 ZEN_TEST_SANDBOX="$SANDBOX" ZEN_TEST_VAR="zen test value" ZEN_TEST_EMPTY="" \
     "$BIN/zen_test" --root "$SANDBOX/tests" "$@"
 
