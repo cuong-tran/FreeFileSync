@@ -29,6 +29,7 @@
 #include <wx+/window_tools.h>
 #include <wx+/popup_dlg.h>
 #include <wx+/image_resources.h>
+#include <wx+/darkmode.h>
 #include "cfg_grid.h"
 #include "folder_selector.h"
 #include "tree_grid.h"
@@ -735,16 +736,20 @@ imgFileManagerSmall_([]
     m_textCtrlSearchTxt->SetMinSize({dipToWxsize(220), -1});
 
     //----------------------------------------------------------------------------------------
-    wxImage labelImage = createImageFromText(_("Select view:"), m_bpButtonViewType->GetFont(), wxSystemSettings::GetColour(wxSYS_COLOUR_BTNTEXT));
-
-    labelImage = resizeCanvas(labelImage, labelImage.GetSize() + wxSize(dipToScreen(10), 0), wxALIGN_CENTER); //add border space
-
-    auto generateViewTypeImage = [&](const char* imgName)
+    const auto setViewTypeButtonImages = [this] //text drawn in the system's text color: again after a light/dark switch (macOS)
     {
-        return stackImages(labelImage, mirrorIfRtl(loadImage(imgName)), ImageStackLayout::vertical, ImageStackAlignment::center);
+        wxImage labelImage = createImageFromText(_("Select view:"), m_bpButtonViewType->GetFont(), wxSystemSettings::GetColour(wxSYS_COLOUR_BTNTEXT));
+
+        labelImage = resizeCanvas(labelImage, labelImage.GetSize() + wxSize(dipToScreen(10), 0), wxALIGN_CENTER); //add border space
+
+        auto generateViewTypeImage = [&](const char* imgName)
+        {
+            return stackImages(labelImage, mirrorIfRtl(loadImage(imgName)), ImageStackLayout::vertical, ImageStackAlignment::center);
+        };
+        m_bpButtonViewType->init(generateViewTypeImage("viewtype_sync_action"),
+                                 generateViewTypeImage("viewtype_cmp_result"), dipToWxsize(1) /*pad*/);
     };
-    m_bpButtonViewType->init(generateViewTypeImage("viewtype_sync_action"),
-                             generateViewTypeImage("viewtype_cmp_result"), dipToWxsize(1) /*pad*/);
+    setViewTypeButtonImages();
     //tooltip is updated dynamically in setViewTypeSyncAction()
     //----------------------------------------------------------------------------------------
     m_bpButtonShowExcluded  ->SetToolTip(_("Show filtered or temporarily excluded files"));
@@ -896,6 +901,14 @@ imgFileManagerSmall_([]
                     wxAuiPaneInfo().Name(L"OverviewPanel").Layer(3).Left().Position(2).Caption(_("Overview")).
                     MinSize (dipToWxsize(100), dipToWxsize(100)).
                     BestSize(dipToWxsize(300), -1));
+    const auto setAuiCaptionColors = [this]
+    {
+        wxAuiDockArt* artProvider = auiMgr_.GetArtProvider();
+        //- fix wxWidgets 3.1.0 insane color scheme
+        artProvider->SetColor(wxAUI_DOCKART_INACTIVE_CAPTION_TEXT_COLOUR,     getColorAuiPanelCaptionText()); //accessibility: always set both foreground AND background colors!
+        artProvider->SetColor(wxAUI_DOCKART_INACTIVE_CAPTION_COLOUR,          getColorAuiPanelCaptionBack());
+        artProvider->SetColor(wxAUI_DOCKART_INACTIVE_CAPTION_GRADIENT_COLOUR, getColorAuiPanelCaptionBackGradient());
+    };
     {
         wxAuiDockArt* artProvider = auiMgr_.GetArtProvider();
 
@@ -905,11 +918,33 @@ imgFileManagerSmall_([]
         artProvider->SetFont(wxAUI_DOCKART_CAPTION_FONT, font);
         artProvider->SetMetric(wxAUI_DOCKART_CAPTION_SIZE, font.GetPixelSize().GetHeight() + dipToWxsize(2 + 2));
 
-        //- fix wxWidgets 3.1.0 insane color scheme
-        artProvider->SetColor(wxAUI_DOCKART_INACTIVE_CAPTION_TEXT_COLOUR,     getColorAuiPanelCaptionText()); //accessibility: always set both foreground AND background colors!
-        artProvider->SetColor(wxAUI_DOCKART_INACTIVE_CAPTION_COLOUR,          getColorAuiPanelCaptionBack());
-        artProvider->SetColor(wxAUI_DOCKART_INACTIVE_CAPTION_GRADIENT_COLOUR, getColorAuiPanelCaptionBackGradient());
+        setAuiCaptionColors();
     }
+#if defined ZEN_MAC
+    /*  light/dark switch while the app runs (e.g. Appearance "Auto" in the evening, docs/MAC_TEST_REPORT.md, F5): native controls follow
+        by themselves, but not the images with text drawn in the old colors (Compare/Synchronize, "Select view:", item counts), and
+        wxAuiManager's own handler resets the panel captions to the system colors => redo them after all handlers of the event ran  */
+    Bind(wxEVT_SYS_COLOUR_CHANGED, [this, setViewTypeButtonImages, setAuiCaptionColors, pending = std::make_shared<bool>(false)](wxSysColourChangedEvent& event)
+    {
+        event.Skip(); //wxAuiManager::OnSysColourChanged()
+        if (!*pending) //sent to each window: once is enough
+        {
+            *pending = true;
+            CallAfter([this, setViewTypeButtonImages, setAuiCaptionColors, pending]
+            {
+                *pending = false;
+                updateDerivedSystemColors(); //wxSYS_COLOUR_GRAYTEXT with enhanced contrast
+                setAuiCaptionColors();
+                setViewTypeButtonImages();
+                buttonLabelItemCount_.clear(); //regenerate the item count images of the view filter buttons
+                if (!operationInProgress_) //else: updateGui() follows when the comparison or synchronization ends
+                    updateGui(); //Compare/Synchronize buttons, item counts of the view filter buttons
+                auiMgr_.Update();
+                Refresh();
+            });
+        }
+    });
+#endif
     //auiMgr_.Update(); -> redundant; called by setGlobalCfgOnInit() below
 
     defaultPerspective_ = auiMgr_.SavePerspective(); //does not need wxAuiManager::Update()!

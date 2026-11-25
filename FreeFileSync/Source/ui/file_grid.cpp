@@ -395,14 +395,29 @@ public:
     //improve readability (while lacking cell borders)
     const wxColor& getDefaultBackgroundColorAlternating(bool wantStandardColor)
     {
+#if defined ZEN_MAC //light/dark switch while the app runs (docs/MAC_TEST_REPORT.md, F5): the colors of the current appearance
+        if (const bool dark = wxSystemSettings::GetAppearance().IsDark();
+            dark != gridColorsDark_)
+        {
+            gridColorsDark_         = dark;
+            gridBackgroundColor_    = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
+            gridBackgroundColorAlt_ = getGridAlternateBackgroundColor();
+        }
+#endif
         return wantStandardColor ? gridBackgroundColor_ : gridBackgroundColorAlt_;
     }
 
 private:
     size_t getRowCount() const override { return getDataView().rowsOnView(); }
 
+#if defined ZEN_MAC
+    bool    gridColorsDark_         = wxSystemSettings::GetAppearance().IsDark();
+    wxColor gridBackgroundColor_    = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
+    wxColor gridBackgroundColorAlt_ = getGridAlternateBackgroundColor();
+#else
     const wxColor gridBackgroundColor_    = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
     const wxColor gridBackgroundColorAlt_ = getGridAlternateBackgroundColor();
+#endif
 
     Grid& grid_;
     SharedRef<SharedComponents> sharedComp_;

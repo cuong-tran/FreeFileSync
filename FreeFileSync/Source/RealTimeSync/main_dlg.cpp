@@ -123,6 +123,19 @@ MainDialog::MainDialog(const Zstring& cfgFilePath) :
     setButtonLabel(*m_bpButtonRemoveTopFolder, loadImage("item_remove"), 0 /*pad*/);
     setButtonLabel(*m_buttonStart,             loadImage("start_rts"), m_buttonStart->GetLabelText());
 
+#if defined ZEN_MAC
+    //light/dark switch while the app runs (docs/MAC_TEST_REPORT.md, F5): the Start label is an image drawn in the old text color
+    Bind(wxEVT_SYS_COLOUR_CHANGED, [this](wxSysColourChangedEvent& event)
+    {
+        event.Skip();
+        CallAfter([this] //after wxWidgets' own handlers
+        {
+            setButtonLabel(*m_buttonStart, loadImage("start_rts"), m_buttonStart->GetLabelText());
+            m_buttonStart->Refresh();
+        });
+    });
+#endif
+
     Bind(wxEVT_CHAR_HOOK, [this](wxKeyEvent& event) { onLocalKeyEvent(event); });
 
 #if defined ZEN_MAC

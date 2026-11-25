@@ -93,6 +93,13 @@ void zen::colorThemeCleanup()
 }
 
 
+void zen::updateDerivedSystemColors()
+{
+    if (refGlobalColorHook()) //SysColorsHook keeps the enhanced gray text color of the appearance it was created for
+        refGlobalColorHook() = std::make_unique<SysColorsHook>();
+}
+
+
 bool zen::equalAppearance(ColorTheme colTheme1, ColorTheme colTheme2)
 {
     if (colTheme1 == ColorTheme::System) colTheme1 = *globalDefaultThemeIsDark ? ColorTheme::Dark : ColorTheme::Light;
