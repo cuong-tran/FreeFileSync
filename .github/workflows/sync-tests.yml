@@ -29,6 +29,11 @@ on:
   pull_request:
     paths: *test-paths
   workflow_dispatch:
+    inputs:
+      hosted:
+        description: "Run the macOS jobs on GitHub's macos-15 instead of the self-hosted Mac (like the repository variable MACOS_RUNNER=hosted, for this run)"
+        type: boolean
+        default: false
 
 concurrency: #like the other workflows: a newer push cancels the run it supersedes
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -73,7 +78,7 @@ jobs:
     #macOS entries: the owner's self-hosted Mac for trusted events (push, manual run, pull request from this repository) unless the
     #repository variable MACOS_RUNNER is "hosted"; GitHub's macos-15 (matrix.runner) for pull requests from forks. See
     #"Self-hosted macOS runner" in CONTRIBUTING.md
-    runs-on: ${{ matrix.platform == 'macos' && ((vars.MACOS_RUNNER != 'hosted' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))) && fromJSON('["self-hosted","macOS"]') || matrix.runner) || matrix.runner }}
+    runs-on: ${{ matrix.platform == 'macos' && ((vars.MACOS_RUNNER != 'hosted' && !inputs.hosted && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))) && fromJSON('["self-hosted","macOS"]') || matrix.runner) || matrix.runner }}
     timeout-minutes: 90
     defaults:
       run:

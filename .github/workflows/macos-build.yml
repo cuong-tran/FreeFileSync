@@ -42,6 +42,10 @@ on:
     paths: *build-paths
   workflow_dispatch:
     inputs:
+      hosted:
+        description: "Run the macOS jobs on GitHub's macos-15 instead of the self-hosted Mac (like the repository variable MACOS_RUNNER=hosted, for this run)"
+        type: boolean
+        default: false
       sentry_dry_run:
         description: "Build the shipped apps as a crash reporting build against a fake DSN (no upload), to test that path without the SENTRY_DSN secret; its artifacts are named sentry-dry-run-...-NOT-FOR-RELEASE and get no DMG"
         type: boolean
@@ -59,7 +63,7 @@ jobs:
     name: Toolchain report
     # self-hosted for trusted events (push, manual run, pull request from this repository), unless MACOS_RUNNER=hosted;
     # GitHub's macos-15 for pull requests from forks
-    runs-on: &macos-runner ${{ (vars.MACOS_RUNNER != 'hosted' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))) && fromJSON('["self-hosted","macOS"]') || 'macos-15' }}
+    runs-on: &macos-runner ${{ (vars.MACOS_RUNNER != 'hosted' && !inputs.hosted && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))) && fromJSON('["self-hosted","macOS"]') || 'macos-15' }}
     timeout-minutes: 30
     defaults:
       run:

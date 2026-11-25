@@ -23,6 +23,11 @@ on:
       - '.github/build/mac-runner.sh' #macOS runner setup and cleanup
       - '.github/build/select-xcode.sh'
   workflow_dispatch:
+    inputs:
+      hosted:
+        description: "Run the macOS jobs on GitHub's macos-15 instead of the self-hosted Mac (like the repository variable MACOS_RUNNER=hosted, for this run)"
+        type: boolean
+        default: false
 
 concurrency: #like the other workflows: a newer push cancels the run it supersedes
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -67,7 +72,7 @@ jobs:
     #macOS entries: the owner's self-hosted Mac for trusted events (push, manual run, pull request from this repository) unless the
     #repository variable MACOS_RUNNER is "hosted"; GitHub's macos-15 (matrix.runner) for pull requests from forks. See
     #"Self-hosted macOS runner" in CONTRIBUTING.md
-    runs-on: ${{ matrix.platform == 'macos' && ((vars.MACOS_RUNNER != 'hosted' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))) && fromJSON('["self-hosted","macOS"]') || matrix.runner) || matrix.runner }}
+    runs-on: ${{ matrix.platform == 'macos' && ((vars.MACOS_RUNNER != 'hosted' && !inputs.hosted && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))) && fromJSON('["self-hosted","macOS"]') || matrix.runner) || matrix.runner }}
     #entries without a container run directly on the runner; the g++ entry runs as root in its container, the clang entry as the
     #unprivileged runner user, which covers both code paths where zen treats root differently (e.g. sys_info.cpp)
     container: ${{ matrix.container }}
