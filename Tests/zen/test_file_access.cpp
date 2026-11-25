@@ -614,8 +614,13 @@ TEST_CASE(fileAccessMacSecondVolume)
     CHECK_NO_THROW(copyDirectoryAttributes(sourceDir, appendPath(mountPath, "dir")));
     CHECK_NO_THROW((void)copyNewFile(source, appendPath(mountPath, nativeRelPath("dir/copy2.txt")), nullptr));
 
-    CHECK(trimCpy(runShell("xattr " + escapeCommandArg(target))).empty());
-    CHECK(trimCpy(runShell("xattr " + escapeCommandArg(appendPath(mountPath, "dir")))).empty());
+    for (const Zstring& item : {target, appendPath(mountPath, "dir")})
+    {
+        const std::string xattrNames = trimCpy(runShell("xattr " + escapeCommandArg(item)));
+        CHECK(xattrNames.empty());
+        if (!xattrNames.empty()) //which ones tells who wrote them: the copy (com.freefilesync.*) or the system
+            std::cerr << "   extended attributes on " << toPrintable(item) << ": " << xattrNames << '\n';
+    }
     for (const Zstring& folder : {mountPath, appendPath(mountPath, "dir")})
         traverseFolder(folder,
         [&](const FileInfo& fi) { CHECK(!startsWith(fi.itemName, "._")); if (startsWith(fi.itemName, "._")) std::cerr << "   AppleDouble file: " << toPrintable(fi.fullPath) << '\n'; },
