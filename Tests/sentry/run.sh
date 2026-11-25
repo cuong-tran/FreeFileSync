@@ -72,7 +72,7 @@ fi
 OS="$(uname -s)"
 ARCH="${ARCH:-$(uname -m)}"
 if [ "$OS" = Darwin ]; then
-    ((BASH_VERSINFO[0] >= 4)) || { echo "error: needs bash 4 or later (macOS: brew install bash)" >&2; exit 2; }
+    ((BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4))) || { echo "error: needs bash 4.4 or later (macOS: brew install bash)" >&2; exit 2; }
     BIN_DIR="$(realpath "${1:-$ROOT/FreeFileSync/Build/Bin/macos-$ARCH}")"
     FFS="$BIN_DIR/FreeFileSync.app/Contents/MacOS/FreeFileSync"
     RTS="$BIN_DIR/RealTimeSync.app/Contents/MacOS/RealTimeSync"
@@ -329,7 +329,11 @@ fi
 wait_handler_done "$name"
 stop_server
 
-# (c) turned off in GlobalSettings.xml: a real crash, nothing arrives, and the dump is not kept for later
+# (c) turned off in GlobalSettings.xml: a real crash, nothing arrives, and the dump is not kept for later.
+# macOS: sentry-native has no first-chance handler there, so the crash is not discarded in the process: the app dies by the
+# signal (exit code 139) and Crashpad writes a dump, which the next start with "don't send" deletes (crash_report_sentry.cpp,
+# markRevokedPeriod()): "nothing is kept" is checked after that start.
+dump_count() { find "$(database "$1" "$2")" -name '*.dmp' 2>/dev/null | wc -l | tr -d ' '; } # <name> <app>
 skipped c-setting-FreeFileSync c-setting-RealTimeSync ||
 for app in FreeFileSync RealTimeSync; do
     name="c-setting-$app"
@@ -339,19 +343,56 @@ for app in FreeFileSync RealTimeSync; do
     wait_handler_done "$name"
     sleep 1 # the handler is gone, but let a request that is already in flight land
     rc="$(cat "$WORK/$name/exit" 2>/dev/null || echo none)"
-    dumps="$(find "$(database "$name" "$app")" -name '*.dmp' 2>/dev/null | wc -l)"
-    if [ "$rc" != 1 ]; then # the crash handler discards the crash and ends the process with EXIT_FAILURE
+    expectRc=1 # the crash handler discards the crash and ends the process with EXIT_FAILURE
+    if [ "$OS" = Darwin ]; then
+        expectRc=139 # SIGSEGV
+        no_dumps() { [ "$(dump_count "$1" "$app")" -eq 0 ]; }
+        STOP_WHEN=no_dumps run_app "$name" "$bin" # the next start, still "don't send": deletes the dump
+        wait_handler_done "$name"
+        sleep 1
+    fi
+    dumps="$(dump_count "$name" "$app")"
+    if [ "$rc" != "$expectRc" ]; then
         show_logs "$name"
-        fail "$name: the app did not crash, or its crash was not discarded (exit code $rc)"
+        fail "$name: the app did not crash, or its crash was not discarded (exit code $rc, expected $expectRc)"
     elif [ "$dumps" -ne 0 ]; then
+        show_logs "$name"
         fail "$name: turned off, but a crash dump was kept ($dumps)"
     elif [ -n "$(ls "$WORK/$name/received")" ]; then
         fail "$name: turned off, but a report arrived: $(ls "$WORK/$name/received")"
     else
-        pass "$name: turned off: crashed, no dump kept, nothing arrived"
+        pass "$name: turned off: crashed (exit code $rc), no dump kept, nothing arrived"
     fi
     stop_server
 done
+
+# (c) macOS: crash while turned off, then the answer changes to "send" before the next start: the dump of the revoked period is
+# deleted before uploads are enabled, so nothing arrives, the database holds no report and the revoked period is over
+if [ "$OS" = Darwin ]; then
+    skipped c-revoked-then-send || {
+    name=c-revoked-then-send
+    start_server "$name"; new_home "$name" >/dev/null; settings "$name" false
+    run_app "$name" "$FFS" FFS_TEST_CRASH=segv
+    wait_handler_done "$name"
+    crashDumps="$(dump_count "$name" FreeFileSync)"
+    settings "$name" true
+    period_over() { [ "$(dump_count "$1" FreeFileSync)" -eq 0 ] && [ ! -e "$(database "$1" FreeFileSync)/revoked-period" ]; }
+    STOP_WHEN=period_over run_app "$name" "$FFS"
+    wait_handler_done "$name"
+    sleep 2 # an upload, if one had been started, lands now
+    reports="$(find "$(database "$name" FreeFileSync)" \( -name '*.dmp' -o -name '*.envelope' \) 2>/dev/null | wc -l | tr -d ' ')"
+    if [ "$crashDumps" -eq 0 ]; then
+        show_logs "$name"; fail "$name: the crash while turned off left no dump to test with"
+    elif [ -n "$(ls "$WORK/$name/received")" ]; then
+        fail "$name: a report of the revoked period arrived after \"send\": $(ls "$WORK/$name/received")"
+    elif [ "$reports" -ne 0 ] || [ -e "$(database "$name" FreeFileSync)/revoked-period" ]; then
+        show_logs "$name"; fail "$name: after \"send\": $reports reports left, or the revoked period still marked"
+    else
+        pass "$name: dump of the revoked period deleted before \"send\" applied, nothing arrived"
+    fi
+    stop_server
+    }
+fi
 
 # (c) FFS_NO_CRASH_REPORT=1: no reporter at all, so FFS_TEST_CRASH is ignored: the app starts normally, nothing arrives
 name=c-env
