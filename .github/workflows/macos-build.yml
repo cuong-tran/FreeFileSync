@@ -676,6 +676,6 @@ jobs:
           FFS_CRASH_REPORT_DEBUG: 1
           ARCH: x86_64
         run: |
-          uname -m; sw_vers; bash --version | head -1
+          uname -m; sw_vers; bash --version | head -1; python3 --version
           ditto -x -k sentry-zip/sentry-test-build-macos-x86_64-NOT-FOR-RELEASE.zip "$RUNNER_TEMP/apps"
           "$(brew --prefix)/bin/bash" Tests/sentry/run.sh "$RUNNER_TEMP/apps/sentry-test-build-macos-x86_64"

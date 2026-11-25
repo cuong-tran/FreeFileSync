@@ -152,7 +152,7 @@ start_server()
     python3 -I "$HERE/fake_sentry.py" "$WORK/$1/received" "$PORT" > "$WORK/$1/server.log" 2>&1 &
     SERVER_PID=$!
     local i
-    for (( i = 0; i < 100; ++i )); do
+    for (( i = 0; i < WAIT_SECONDS * 10; ++i )); do # a cold python3 can take seconds to start (seen on an Intel runner)
         grep -q '^port ' "$WORK/$1/server.log" 2>/dev/null && return 0
         kill -0 "$SERVER_PID" 2>/dev/null || break
         sleep 0.1
@@ -269,6 +269,7 @@ wait_handler_done()
 
 show_logs()
 {
+    [ ! -f "$WORK/$1/app-first-run.log" ] || sed 's/^/    first run: /' "$WORK/$1/app-first-run.log" | tail -40 >&2 || true
     sed 's/^/    app: /' "$WORK/$1/app.log" | tail -40 >&2 || true
     if [ "$OS" = Darwin ]; then # where the reports went (or didn't): the report databases
         find "$(cfg_dir "$WORK/$1/home")/CrashReports" -maxdepth 3 2>/dev/null | sed 's/^/    db: /' >&2 || true
@@ -424,6 +425,7 @@ kept_test() # <name> <answer: true|false>
     new_home "$name" >/dev/null
     has_kept_envelope() { [ -n "$(find "$(database "$1" FreeFileSync)/cache" -name '*.envelope' 2>/dev/null)" ]; }
     STOP_WHEN=has_kept_envelope run_app "$name" "$FFS" FFS_TEST_CRASH=internal-error
+    cp "$WORK/$name/app.log" "$WORK/$name/app-first-run.log" 2>/dev/null || true # for show_logs: the run before the crash
     run_app "$name" "$FFS" FFS_TEST_CRASH=segv
     wait_handler_done "$name"
     local kept; kept="$(kept_reports "$name" FreeFileSync)"
