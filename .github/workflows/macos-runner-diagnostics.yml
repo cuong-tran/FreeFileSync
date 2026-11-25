@@ -195,11 +195,11 @@ jobs:
           echo "under the per-user temp folder, on the volume: $(ls -A "$v/mnt" | tr '\n' ' '); attributes: $(xattr "$v/mnt/by-built-program.txt" "$v/mnt/cp-X.txt" 2>&1 | tr '\n' ' ')"
 
       # bisection of the AppleDouble files the FAT tests of Tests/zen and Tests/sync find on macOS 27: zen's copy calls one at a
-      # time (.github/build/probes/fat-metadata.c) on FAT and exFAT images, then the real zen test, which prints the attribute names
+      # time (.github/probes/fat-metadata.c) on FAT and exFAT images, then the real zen test, which prints the attribute names
       - name: Which copy call leaves AppleDouble files on FAT
         run: |
           w="$(mktemp -d "$TMPDIR/fat-bisect.XXXXXX")"
-          xcrun clang -o "$w/probe" .github/build/probes/fat-metadata.c
+          xcrun clang -o "$w/probe" .github/probes/fat-metadata.c
           printf 'content' > "$w/source.txt"
           xattr -w com.freefilesync.small 'zen value' "$w/source.txt"
           xattr -w com.freefilesync.big "$(head -c 200000 /dev/zero | tr '\0' a)" "$w/source.txt"

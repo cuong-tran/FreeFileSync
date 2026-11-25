@@ -4,6 +4,7 @@
 //   fat-metadata <source file> <source folder> <folder on the volume>
 // Changes nothing outside <folder on the volume>.
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
