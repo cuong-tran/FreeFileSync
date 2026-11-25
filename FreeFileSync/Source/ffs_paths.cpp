@@ -8,6 +8,9 @@
 #include <zen/file_access.h>
 #include <zen/sys_info.h>
 #include <zen/build_info.h>
+#if defined ZEN_MAC
+    #include "ffs_paths_mac.h"
+#endif
 
     #include <iostream> //std::cerr
 
@@ -100,8 +103,37 @@ Zstring fff::getFreeFileSyncLauncherPath() //throw FileError
     const Zstring installDirPath = getInstallDirPath(); //bundle: <folder>/RealTimeSync.app/Contents
     if (endsWith(installDirPath, Zstr(".app/Contents")))
         if (const std::optional<Zstring> bundlePath = getParentFolderPath(installDirPath))
-            if (const std::optional<Zstring> folderPath = getParentFolderPath(*bundlePath))
-                return appendPath(*folderPath, Zstr("FreeFileSync.app/Contents/MacOS/FreeFileSync"));
+        {
+            auto launcherNextTo = [](const Zstring& bundle) -> std::optional<Zstring>
+            {
+                if (const std::optional<Zstring> folderPath = getParentFolderPath(bundle))
+                    return appendPath(*folderPath, Zstr("FreeFileSync.app/Contents/MacOS/FreeFileSync"));
+                return std::nullopt;
+            };
+            auto launcherExists = [](const Zstring& launcherPath)
+            {
+                try { return itemExists(launcherPath); } /*throw FileError*/ catch (FileError&) { return false; }
+            };
+
+            const std::optional<Zstring> siblingPath = launcherNextTo(*bundlePath);
+            if (siblingPath && launcherExists(*siblingPath))
+                return *siblingPath;
+
+            //App Translocation (quarantined bundle run from a read-only mount without its sibling): next to the original bundle
+            if (const std::optional<Zstring> originalBundlePath = getUntranslocatedBundlePath(*bundlePath))
+                if (const std::optional<Zstring> launcherPath = launcherNextTo(*originalBundlePath);
+                    launcherPath && launcherExists(*launcherPath))
+                    return *launcherPath;
+
+            //the bundles were installed apart: FreeFileSync.app wherever LaunchServices knows it (bundle id from the Makefile)
+            for (const Zstring& ffsBundlePath : getAppBundlePathsById("io.github.cuong-tran.freefilesync"))
+                if (const Zstring launcherPath = appendPath(ffsBundlePath, Zstr("Contents/MacOS/FreeFileSync"));
+                    launcherExists(launcherPath))
+                    return launcherPath;
+
+            if (siblingPath)
+                return *siblingPath; //not found anywhere: the expected place, for the error message when it is started
+        }
     return appendPath(installDirPath, Zstr("FreeFileSync")); //unbundled: as on Linux
 #else
     return appendPath(getInstallDirPath(), Zstr("FreeFileSync"));

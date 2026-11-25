@@ -117,7 +117,7 @@ endif
 CXXFLAGS += $(shell $(macPkgConfig) --cflags openssl libcurl libidn2 libssh2)
 LDFLAGS  += $(shell $(macPkgConfig) --static --libs libcurl libssh2 libidn2 openssl)
 
-#CoreServices: FSEvents; Foundation: NSFileManager, NSError; AppKit, ImageIO, UniformTypeIdentifiers: file icons and thumbnails
+#CoreServices: FSEvents, LaunchServices (ffs_paths_mac.cpp); Foundation: NSFileManager, NSError; AppKit, ImageIO, UniformTypeIdentifiers: file icons and thumbnails
 #(base/icon_loader_mac.mm); Security, SystemConfiguration: libcurl (macOS trust store, proxy settings)
 LDFLAGS  += -framework CoreFoundation -framework CoreServices -framework Foundation -framework AppKit -framework ImageIO \
             -framework UniformTypeIdentifiers -framework Security -framework SystemConfiguration
@@ -241,6 +241,7 @@ cppFiles += base/icon_loader_mac.cpp
 cppFiles += base/icon_loader_mac.mm
 cppFiles += ../../wx+/taskbar_mac.cpp
 cppFiles += ../../wx+/dock_tile_mac.mm
+cppFiles += ffs_paths_mac.cpp
 endif
 
 objFiles := $(cppFiles:%=$(objPath)/ffs/src/%.o)
