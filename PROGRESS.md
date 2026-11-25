@@ -20,6 +20,7 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | done | `bd9f1bf..1152282`, fixes `1152282..83f890e` | 9 findings: all fixed |
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | done | `83f890e..bf0ef72`, fixes `d284031..8420f50` | 7 findings: all fixed |
 | M3 macOS | Pull request | merged as [#13](https://github.com/cuong-tran/FreeFileSync/pull/13) (squash, `5b2dbe1`) after all checks passed | | no review threads |
+| CI | macOS jobs on the owner's self-hosted runner (label `self-hosted`) | in progress | | |
 | M4 Windows | | not started: paused by the owner for testing on a real Mac | | |
 
 ## Paused
@@ -74,6 +75,7 @@ To resume: read that report (or what the owner relays), fix what it found on `de
 | 2026-11-25 | Work resumed after the pause of 2026-11-24 23:00 UTC | Owner said continue. |
 | 2026-11-25 | macOS crash reports while reporting is off: uploads are disabled and stored dumps are deleted at start and when "send" is given later | sentry-native has no hook on macOS to discard a crash; a dump made while the user had opted out must never be uploaded. |
 | 2026-11-25 | Pause before M4 so the owner can test the Mac apps on a real Mac | Asked by the owner. |
+| 2026-11-25 | The macOS CI jobs run on the owner's self-hosted runner (their own Mac, label `self-hosted`); hosted runners stay as fallback and for pull requests from forks | Asked by the owner; hosted macOS runners were short of capacity. Rules for that machine: no fork code, nothing from the screen or home folder in logs or artifacts, no software installs or `sudo`, tests clean up after themselves. |
 
 ## Needed from the repository owner
 
