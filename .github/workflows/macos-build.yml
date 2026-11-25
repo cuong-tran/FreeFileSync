@@ -34,6 +34,11 @@ on:
   pull_request:
     paths: *build-paths
   workflow_dispatch:
+    inputs:
+      sentry_dry_run:
+        description: "Build the shipped apps as a crash reporting build against a fake DSN (no upload), to test that path without the SENTRY_DSN secret; its artifacts are named sentry-dry-run-...-NOT-FOR-RELEASE and get no DMG"
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -225,7 +230,6 @@ jobs:
         env:
           SENTRY_DSN: https://public@127.0.0.1/1 # placeholder: nothing is sent, the object is not linked
         run: |
-          export PKG_CONFIG_PATH="$PWD/.build/sentry/macos-${{ matrix.arch }}/lib/pkgconfig:$PWD/.build/deps/macos-${{ matrix.arch }}/lib/pkgconfig:$PWD/.github/build/pkgconfig-macos"
           obj="$RUNNER_TEMP/sentry-obj"
           gmake -C FreeFileSync/Source FFS_SENTRY=1 ARCH=${{ matrix.arch }} objPath="$obj" "$obj/ffs/src/../../zen/crash_report_sentry.cpp.o"
           lipo -archs "$obj/zen/crash_report_sentry.cpp.o"
@@ -251,8 +255,13 @@ jobs:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          DRY_RUN: ${{ inputs.sentry_dry_run && '1' || '' }}
         run: |
-          if [ -n "$SENTRY_DSN" ]; then
+          if [ "$DRY_RUN" = 1 ]; then # the same path as with the secret, against a fake DSN, without upload
+            echo "enabled=1" >> "$GITHUB_OUTPUT"
+            echo "dry=1" >> "$GITHUB_OUTPUT"
+            msg="DRY RUN (workflow_dispatch input sentry_dry_run): the apps are built with FFS_SENTRY=1 against a fake DSN on 127.0.0.1, dSYMs made and checked, nothing uploaded; the artifacts are named sentry-dry-run-...-NOT-FOR-RELEASE and no DMG is made"
+          elif [ -n "$SENTRY_DSN" ]; then
             echo "enabled=1" >> "$GITHUB_OUTPUT"
             msg="on: the apps are built with FFS_SENTRY=1 against the SENTRY_DSN secret; dSYMs made with dsymutil"
             if [ -n "$SENTRY_AUTH_TOKEN" ] && [ -n "$SENTRY_ORG" ] && [ -n "$SENTRY_PROJECT" ]; then
@@ -275,8 +284,8 @@ jobs:
         if: ${{ !cancelled() && steps.libcheck.outcome == 'success' }}
         env:
           FFS_SENTRY: ${{ steps.sentry.outputs.enabled == '1' && '1' || '' }}
-          SENTRY_DSN: ${{ steps.sentry.outputs.enabled == '1' && secrets.SENTRY_DSN || '' }}
-          SENTRY_ENVIRONMENT: ${{ github.ref == 'refs/heads/main' && 'release' || 'ci' }}
+          SENTRY_DSN: ${{ steps.sentry.outputs.dry == '1' && 'http://testkey@127.0.0.1:38917/1' || (steps.sentry.outputs.enabled == '1' && secrets.SENTRY_DSN || '') }}
+          SENTRY_ENVIRONMENT: ${{ github.ref == 'refs/heads/main' && steps.sentry.outputs.dry != '1' && 'release' || 'ci' }}
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -o pipefail
@@ -285,7 +294,6 @@ jobs:
           sentryArgs=()
           if [ "$FFS_SENTRY" = 1 ]; then
             export FFS_GIT_SHA="${SOURCE_SHA:0:12}"
-            export PKG_CONFIG_PATH="$PWD/.build/sentry/macos-${{ matrix.arch }}/lib/pkgconfig:$PWD/.build/deps/macos-${{ matrix.arch }}/lib/pkgconfig:$PWD/.github/build/pkgconfig-macos"
             sentryArgs=(FFS_SENTRY=1)
             ffsObj="$RUNNER_TEMP/release-sentry-obj" rtsObj="$RUNNER_TEMP/release-sentry-rts-obj"
           fi
@@ -305,9 +313,11 @@ jobs:
             [ ! -e "$bin/$app.app/Contents/MacOS/crashpad_handler" ] || { echo "::error::$app.app ships crashpad_handler"; exit 1; }
           done
 
-      # debug symbols of a crash reporting build: one dSYM per executable (dsymutil, from the objects; the shipped executables are
-      # not stripped further), its UUID must equal the shipped binary's; sentry-cli reads token, organization and project from the
-      # environment, so nothing secret is on its command line
+      # debug symbols of a crash reporting build: one dSYM per executable (dsymutil, from the objects), then the executables (and
+      # crashpad_handler) are stripped of their debug map (strip -S: no absolute build paths of every object in the shipped app)
+      # and signed again like mac_bundle.sh does (inner executables first, then the bundle); the dSYM's UUID must equal the
+      # shipped binary's, and sentry-cli must find both usable (also in a dry run, which uploads nothing). sentry-cli reads
+      # token, organization and project from the environment, so nothing secret is on its command line
       - name: dSYMs
         if: ${{ !cancelled() && steps.apps.outcome == 'success' && steps.sentry.outputs.enabled == '1' }}
         env:
@@ -318,20 +328,40 @@ jobs:
         run: |
           bin="FreeFileSync/Build/Bin/macos-${{ matrix.arch }}"
           mkdir -p dsyms
+          cli="$(.github/build/fetch-sentry-cli.sh)"
+          "$cli" --version
           for app in FreeFileSync RealTimeSync; do
-            exe="$bin/$app.app/Contents/MacOS/$app"
+            bundle="$bin/$app.app"
+            exe="$bundle/Contents/MacOS/$app"
             dsymutil "$exe" -o "dsyms/$app.dSYM"
+            echo "$app: $(otool -l "$exe" | grep -c LC_SYMTAB) symbol table(s), debug map entries before strip: $(nm -ap "$exe" | grep -c ' OSO ' || true)"
+            for f in "$bundle"/Contents/MacOS/*; do strip -S "$f"; done
+            [ "$(nm -ap "$exe" | grep -c ' OSO ' || true)" = 0 ] || { echo "::error::$app: debug map left after strip -S"; exit 1; }
+            for f in "$bundle"/Contents/MacOS/*; do
+              [ "$f" = "$exe" ] || codesign --force --sign - --timestamp=none "$f"
+            done
+            codesign --force --sign - --timestamp=none "$bundle"
+            codesign --verify --strict --verbose=2 "$bundle"
             want="$(dwarfdump --uuid "$exe" | awk '{ print $2 }')"
             got="$(dwarfdump --uuid "dsyms/$app.dSYM" | awk '{ print $2 }')"
             echo "$app: binary $want, dSYM $got"
             [ -n "$want" ] && [ "$want" = "$got" ] || { echo "::error::$app: the dSYM's UUID does not match the binary's"; exit 1; }
+            "$cli" debug-files check "dsyms/$app.dSYM"
+            "$cli" debug-files check "$exe"
           done
           if [ "$UPLOAD" = 1 ]; then
-            cli="$(.github/build/fetch-sentry-cli.sh)"
-            "$cli" --version
-            for d in dsyms/*.dSYM; do "$cli" debug-files check "$d"; done
             "$cli" debug-files upload dsyms
+          else
+            echo "dSYMs not uploaded (dry run, or no SENTRY_AUTH_TOKEN/SENTRY_ORG/SENTRY_PROJECT)"
           fi
+
+      - name: Upload the dSYMs
+        if: ${{ !cancelled() && steps.apps.outcome == 'success' && steps.sentry.outputs.enabled == '1' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.sentry.outputs.dry == '1' && 'sentry-dry-run-' || '' }}dsyms-macos-${{ matrix.arch }}${{ steps.sentry.outputs.dry == '1' && '-NOT-FOR-RELEASE' || '' }}
+          path: dsyms/
+          if-no-files-found: error
 
       # signatures, architecture, deployment target, and no library outside the system: the bundles run on any Mac of the architecture
       - name: Check the apps
@@ -357,12 +387,16 @@ jobs:
         if: ${{ !cancelled() && steps.apps.outcome == 'success' }}
         run: |
           version="$(sed -nE 's/.*ffsVersion\[\] = "([0-9.]+)".*/\1/p' FreeFileSync/Source/version/version.h)"
-          dir="$RUNNER_TEMP/FreeFileSync-$version-macos-${{ matrix.arch }}"
+          name="FreeFileSync-$version-macos-${{ matrix.arch }}"
+          # a dry run's crash reporting build points at a fake DSN: named so that nobody takes it for a release build (and the DMG
+          # job, which takes FreeFileSync-*.zip, leaves it alone)
+          [ "${{ steps.sentry.outputs.dry }}" != 1 ] || name="sentry-dry-run-$name-NOT-FOR-RELEASE"
+          dir="$RUNNER_TEMP/$name"
           mkdir -p "$dir"
           cp -R FreeFileSync/Build/Bin/macos-${{ matrix.arch }}/{FreeFileSync,RealTimeSync}.app "$dir/"
           # ditto keeps signatures, extended attributes and symlinks
-          ditto -c -k --keepParent "$dir" "FreeFileSync-$version-macos-${{ matrix.arch }}.zip"
-          echo "APP_ZIP=FreeFileSync-$version-macos-${{ matrix.arch }}.zip" >> "$GITHUB_ENV"
+          ditto -c -k --keepParent "$dir" "$name.zip"
+          echo "APP_ZIP=$name.zip" >> "$GITHUB_ENV"
 
       - name: Upload the apps
         if: ${{ !cancelled() && steps.apps.outcome == 'success' }}
@@ -441,7 +475,6 @@ jobs:
         run: |
           set -o pipefail
           export FFS_GIT_SHA="${SOURCE_SHA:0:12}"
-          export PKG_CONFIG_PATH="$PWD/.build/sentry/macos-${{ matrix.arch }}/lib/pkgconfig:$PWD/.build/deps/macos-${{ matrix.arch }}/lib/pkgconfig:$PWD/.github/build/pkgconfig-macos"
           jobs="$(sysctl -n hw.ncpu)"
           {
             gmake -C FreeFileSync/Source -j"$jobs" ARCH=${{ matrix.arch }} FFS_SENTRY=1 objPath="$RUNNER_TEMP/sentry-ffs-obj"
@@ -453,6 +486,25 @@ jobs:
             codesign --verify --strict --verbose=2 "$bin/$app.app"
             [ "$(lipo -archs "$bin/$app.app/Contents/MacOS/crashpad_handler")" = "${{ matrix.arch }}" ] || { echo "::error::$app.app: crashpad_handler is not ${{ matrix.arch }}"; exit 1; }
           done
+
+      # x86_64 crash capture can't be tested under Rosetta 2 (see below): on workflow_dispatch the build goes to the "Sentry tests
+      # (Intel)" job, which runs on an Intel runner
+      - name: Zip the Sentry build for the Intel runner
+        if: ${{ !cancelled() && steps.sentrybuild.outcome == 'success' && matrix.arch == 'x86_64' && github.event_name == 'workflow_dispatch' }}
+        run: |
+          dir="$RUNNER_TEMP/sentry-test-build-macos-x86_64"
+          mkdir -p "$dir"
+          cp -R FreeFileSync/Build/Bin/macos-x86_64/{FreeFileSync,RealTimeSync}.app "$dir/"
+          ditto -c -k --keepParent "$dir" sentry-test-build-macos-x86_64-NOT-FOR-RELEASE.zip
+
+      - name: Upload the Sentry build for the Intel runner
+        if: ${{ !cancelled() && steps.sentrybuild.outcome == 'success' && matrix.arch == 'x86_64' && github.event_name == 'workflow_dispatch' }}
+        uses: actions/upload-artifact@v7
+        with:
+          path: sentry-test-build-macos-x86_64-NOT-FOR-RELEASE.zip
+          archive: false
+          retention-days: 3
+          if-no-files-found: error
 
       - name: Sentry tests
         if: ${{ !cancelled() && steps.sentrybuild.outcome == 'success' }}
@@ -529,7 +581,8 @@ jobs:
   dmg:
     name: DMG
     needs: libraries
-    if: ${{ !cancelled() }} # also when a later check in the app jobs (e.g. the Sentry tests) failed: the zips are uploaded before
+    # also when a later check in the app jobs (e.g. the Sentry tests) failed: the zips are uploaded before; never for a Sentry dry run
+    if: ${{ !cancelled() && !inputs.sentry_dry_run }}
     runs-on: macos-15
     timeout-minutes: 30
     defaults:
@@ -581,3 +634,35 @@ jobs:
           path: dist/*-macos-x86_64.dmg
           archive: false
           if-no-files-found: error
+
+  # crash capture of the x86_64 apps on a real Intel Mac (under Rosetta 2 Crashpad catches nothing): the x86_64 Sentry build of the
+  # app job, Tests/sentry/run.sh without skips; on workflow_dispatch only (Intel runners are scarce)
+  sentry-intel:
+    name: Sentry tests (Intel)
+    needs: libraries
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the x86_64 Sentry build
+        uses: actions/download-artifact@v8
+        with:
+          name: sentry-test-build-macos-x86_64-NOT-FOR-RELEASE.zip
+          path: sentry-zip
+          skip-decompress: true
+
+      - name: Sentry tests
+        env:
+          SENTRY_TEST_DSN: http://testkey@127.0.0.1:38917/1
+          SENTRY_TEST_ENVIRONMENT: ci
+          FFS_CRASH_REPORT_DEBUG: 1
+          ARCH: x86_64
+        run: |
+          uname -m; sw_vers; bash --version | head -1
+          ditto -x -k sentry-zip/sentry-test-build-macos-x86_64-NOT-FOR-RELEASE.zip "$RUNNER_TEMP/apps"
+          Tests/sentry/run.sh "$RUNNER_TEMP/apps/sentry-test-build-macos-x86_64"
