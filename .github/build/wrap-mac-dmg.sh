@@ -23,7 +23,7 @@ version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$src/
 volName="FreeFileSync $version"
 volIcon="$src/FreeFileSync.app/Contents/Resources/FreeFileSync.icns"
 
-work="$(mktemp -d "${TMPDIR:-/tmp}/wrap-mac-dmg.XXXXXX")" # explicit template: macOS 27's mktemp -d ignores TMPDIR
+work="$(mktemp -d "$(t="${TMPDIR:-/tmp}"; echo "${t%/}")/wrap-mac-dmg.XXXXXX")" # explicit template (TMPDIR without its trailing slash): macOS 27's mktemp -d ignores TMPDIR
 mountPoint=""
 cleanup()
 {

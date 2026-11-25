@@ -327,7 +327,7 @@ cmd_cleanup()
     # 2. disk images attached from the checkout or $RUNNER_TEMP (the tests' FAT/APFS images, the DMG checks); a list that can't
     #    be read is a warning, not "0 detached"
     local dev n=0 info devs
-    info="$(mktemp "${TMPDIR:-/tmp}/hdiutil-info.XXXXXX")"
+    info="$(mktemp "$(t="${TMPDIR:-/tmp}"; echo "${t%/}")/hdiutil-info.XXXXXX")"
     if ! hdiutil info -plist > "$info" 2>/dev/null; then
         echo "::warning::cleanup: hdiutil info failed: disk images of this job not checked"
     elif ! devs="$(attachedImages "$info")"; then
@@ -446,7 +446,7 @@ cmd_check_binaries()
 cmd_self_test()
 {
     local fails=0 base uid
-    base="$(cd -P -- "$(mktemp -d "${TMPDIR:-/tmp}/mac-runner-self-test.XXXXXX")" && pwd -P)"
+    base="$(cd -P -- "$(mktemp -d "$(t="${TMPDIR:-/tmp}"; echo "${t%/}")/mac-runner-self-test.XXXXXX")" && pwd -P)"
     SELF_TEST_DIR="$base"
     trap 'rm -rf "$SELF_TEST_DIR"' EXIT
     uid="$(id -u)"

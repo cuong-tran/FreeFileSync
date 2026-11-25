@@ -782,7 +782,7 @@ jobs:
           mkdir -p dist
           for zip in "${zips[@]}"; do
             base="$(basename "$zip" .zip)" # FreeFileSync-<version>-macos-<arch>
-            work="$(mktemp -d "${TMPDIR:-/tmp}/dmg.XXXXXX")" # explicit template: macOS 27's mktemp -d ignores TMPDIR
+            work="$(mktemp -d "$(t="${TMPDIR:-/tmp}"; echo "${t%/}")/dmg.XXXXXX")" # explicit template (TMPDIR without its trailing slash): macOS 27's mktemp -d ignores TMPDIR
             ditto -x -k "$zip" "$work"
             .github/build/wrap-mac-dmg.sh "$work/$base" "dist/$base.dmg" 2>&1 | tee -a dmg.log
             method="$(sed -nE 's/^\[wrap-mac-dmg\] made with (.*): .*/\1/p' dmg.log | tail -1)"

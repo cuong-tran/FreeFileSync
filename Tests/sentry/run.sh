@@ -102,7 +102,7 @@ ffsStrings="$(strings -a "$FFS")" # captured first: "grep -q" on a pipe ends str
 grep -qF -- "$DSN" <<<"$ffsStrings" || { echo "error: $FFS was not built with SENTRY_DSN=$DSN" >&2; exit 2; }
 unset ffsStrings
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/sentry-test.XXXXXX")" # explicit template: macOS 27's mktemp -d ignores TMPDIR
+WORK="$(mktemp -d "$(t="${TMPDIR:-/tmp}"; echo "${t%/}")/sentry-test.XXXXXX")" # explicit template (TMPDIR without its trailing slash): macOS 27's mktemp -d ignores TMPDIR
 SERVER_PID=""
 cleanup()
 {

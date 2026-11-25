@@ -28,7 +28,7 @@ if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4) ))
 fi
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/sync-test.XXXXXX")" # explicit template: macOS 27's mktemp -d ignores TMPDIR
+WORK="$(mktemp -d "$(t="${TMPDIR:-/tmp}"; echo "${t%/}")/sync-test.XXXXXX")" # explicit template (TMPDIR without its trailing slash): macOS 27's mktemp -d ignores TMPDIR
 trap 'wait; rm -rf "$WORK"' EXIT
 BIN="${SYNC_TEST_BIN:-$WORK/bin}"
 OBJ="${SYNC_TEST_OBJ:-$WORK/obj}"

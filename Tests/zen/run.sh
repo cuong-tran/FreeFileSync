@@ -23,7 +23,7 @@ if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4) ))
 fi
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/zen-test.XXXXXX")" # explicit template: macOS 27's mktemp -d ignores TMPDIR
+WORK="$(mktemp -d "$(t="${TMPDIR:-/tmp}"; echo "${t%/}")/zen-test.XXXXXX")" # explicit template (TMPDIR without its trailing slash): macOS 27's mktemp -d ignores TMPDIR
 trap 'wait; rm -rf "$WORK"' EXIT # wait: compile jobs still running after a failed one
 BIN="${ZEN_TEST_BIN:-$WORK/bin}"
 mkdir -p "$BIN"
