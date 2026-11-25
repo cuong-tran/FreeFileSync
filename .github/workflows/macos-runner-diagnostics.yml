@@ -214,6 +214,18 @@ jobs:
             echo "== $fs"
             "$w/probe" "$w/source.txt" "$w/sourceDir" "$w/mnt-$fs"
           done
+          # com.apple.provenance: macOS tags items made by a process it tracks (launched from a tagged executable, e.g. from
+          # Homebrew); the same calls under Homebrew's bash, which runs the tests, and whether the tag can be removed again
+          echo "== attributes of the shells: /bin/bash [$(xattr /bin/bash | tr '\n' ' ')], bash on PATH [$(xattr "$(command -v bash)" | tr '\n' ' ')]"
+          for fs in MS-DOS; do
+            rm -rf "$w/mnt-$fs"/* "$w/mnt-$fs"/._* 2>/dev/null || true
+            echo "== $fs, probe started by the bash on PATH"
+            "$(command -v bash)" -c '"$0" "$1" "$2" "$3"' "$w/probe" "$w/source.txt" "$w/sourceDir" "$w/mnt-$fs"
+            xattr -d com.apple.provenance "$w/mnt-$fs/copy.txt" 2>&1 | sed 's/^/  xattr -d on the copy: /' || true
+            echo "  after xattr -d com.apple.provenance: $(ls -A "$w/mnt-$fs" | tr '\n' ' ')"
+          done
+          "$(command -v bash)" -c 'printf x > "$0"' "$w/tracked-apfs.txt"
+          echo "== a file made by the bash on PATH on APFS: [$(xattr "$w/tracked-apfs.txt" | tr '\n' ' ')]"
           echo "== Tests/zen fileAccessMacSecondVolume"
           bash Tests/zen/run.sh fileAccessMacSecondVolume 2>&1 | grep -E 'extended attributes on|AppleDouble|FAILED|== |failure' | sed "s#$RUNNER_TEMP#<runner temp>#g" || true
 
