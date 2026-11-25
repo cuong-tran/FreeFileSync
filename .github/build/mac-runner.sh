@@ -54,7 +54,9 @@ privateNames()
 windowServer()
 {
     local r
-    r="$(osascript -l JavaScript -e "ObjC.import('CoreGraphics'); \$.CGSessionCopyCurrentDictionary() ? 'yes' : 'no'" 2>/dev/null || echo no)"
+    # (unwrapped first: the bridged NULL pointer itself is a truthy object)
+    r="$(osascript -l JavaScript -e "ObjC.import('CoreGraphics');
+        ObjC.deepUnwrap(ObjC.castRefToObject(\$.CGSessionCopyCurrentDictionary())) ? 'yes' : 'no'" 2>/dev/null || echo no)"
     [ "$r" = yes ] && echo yes || echo no
 }
 
