@@ -33,7 +33,7 @@ name="$(basename "$app" .app)"
 exe="$app/Contents/MacOS/$name"
 [ -x "$exe" ] || { echo "::error::no executable $exe"; exit 1; }
 
-work="$(mktemp -d)"
+work="$(mktemp -d "${TMPDIR:-/tmp}/start-check.XXXXXX")" # explicit template: macOS 27's mktemp -d ignores TMPDIR
 pid=""
 cleanup()
 {

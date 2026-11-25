@@ -131,9 +131,10 @@ cmd_setup()
         exit 1
     fi
 
-    # everything temporary inside $RUNNER_TEMP (mktemp, the tests' folders and disk images), so that cleanup finds it
+    # everything temporary inside $RUNNER_TEMP (the tests' folders and disk images), so that cleanup finds it. The scripts pass
+    # mktemp a template under $TMPDIR: macOS 27's "mktemp -d" without one ignores TMPDIR (seen on the owner's Mac)
     mkdir -p "$RUNNER_TEMP/tmp" "$STATE_DIR"
-    setenv TMPDIR "$RUNNER_TEMP/tmp/"
+    setenv TMPDIR "$RUNNER_TEMP/tmp"
     setenv FFS_TEST_TRASH_LOG "$STATE_DIR/trash.log"
     touch "$STATE_DIR/job-start"
 
@@ -326,7 +327,7 @@ cmd_cleanup()
     # 2. disk images attached from the checkout or $RUNNER_TEMP (the tests' FAT/APFS images, the DMG checks); a list that can't
     #    be read is a warning, not "0 detached"
     local dev n=0 info devs
-    info="$(mktemp)"
+    info="$(mktemp "${TMPDIR:-/tmp}/hdiutil-info.XXXXXX")"
     if ! hdiutil info -plist > "$info" 2>/dev/null; then
         echo "::warning::cleanup: hdiutil info failed: disk images of this job not checked"
     elif ! devs="$(attachedImages "$info")"; then
@@ -445,7 +446,7 @@ cmd_check_binaries()
 cmd_self_test()
 {
     local fails=0 base uid
-    base="$(cd -P -- "$(mktemp -d)" && pwd -P)"
+    base="$(cd -P -- "$(mktemp -d "${TMPDIR:-/tmp}/mac-runner-self-test.XXXXXX")" && pwd -P)"
     SELF_TEST_DIR="$base"
     trap 'rm -rf "$SELF_TEST_DIR"' EXIT
     uid="$(id -u)"

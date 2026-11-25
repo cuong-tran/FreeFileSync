@@ -12,7 +12,7 @@ if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4) ))
 fi
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/zip-test.XXXXXX")" # explicit template: macOS 27's mktemp -d ignores TMPDIR
 trap 'rm -rf "$WORK"' EXIT
 
 #zen sources the ZIP AFS needs, plus the platform's own files and libraries
