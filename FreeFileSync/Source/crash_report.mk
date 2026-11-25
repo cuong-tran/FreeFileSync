@@ -19,7 +19,11 @@ else
 endif
 
 ifneq ($(shell $(sentryPkgConfig) --exists sentry-native && echo YES),YES)
-    $(error FFS_SENTRY=1: sentry-native not found by pkg-config. Build it with .github/build/build-sentry-native.sh and add its lib/pkgconfig folder to PKG_CONFIG_PATH)
+    ifeq ($(TARGET_OS),mac)
+        $(error FFS_SENTRY=1: sentry-native not found in $(FFS_SENTRY_PREFIX) (FFS_SENTRY_PREFIX). Build it with FFS_TARGET=macos-$(ARCH) .github/build/build-sentry-native.sh)
+    else
+        $(error FFS_SENTRY=1: sentry-native not found by pkg-config. Build it with .github/build/build-sentry-native.sh and add its lib/pkgconfig folder to PKG_CONFIG_PATH)
+    endif
 endif
 
 #debug info for symbolicating crash reports: .github/build/package.sh splits it off into separate files for the upload with
