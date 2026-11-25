@@ -20,7 +20,7 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | done | `bd9f1bf..1152282`, fixes `1152282..83f890e` | 9 findings: all fixed |
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | done | `83f890e..bf0ef72`, fixes `d284031..8420f50` | 7 findings: all fixed |
 | M3 macOS | Pull request | merged as [#13](https://github.com/cuong-tran/FreeFileSync/pull/13) (squash, `5b2dbe1`) after all checks passed | | no review threads |
-| CI | macOS jobs on the owner's self-hosted runner (label `self-hosted`) | workflows switched (`79879b9..074c8df`); blocked on the Mac's setup, see "Needed from the repository owner"; not reviewed yet | | |
+| CI | macOS jobs on the owner's self-hosted runner (label `self-hosted`) | workflows switched (`79879b9..074c8df`); blocked on the Mac's setup, see "Needed from the repository owner"; review fixes in progress | `79879b9..074c8df` | 9 findings, see below |
 | M4 Windows | | not started: paused by the owner for testing on a real Mac | | |
 
 ## Paused
@@ -261,3 +261,19 @@ Result of the step: a `DMG` job wraps both apps into `FreeFileSync-<version>-mac
 | 5 | Crash capture for x86_64 is never tested (skipped under Rosetta) | nit | fixed in `be9d11c`, `8420f50`: a "Sentry tests (Intel)" job on `macos-15-intel` (on dispatch); every scenario passes there, crash capture included |
 | 6 | `Tests/sentry/run.sh` accepts bash older than 4.4 on macOS | nit | fixed in `e4c17e5` |
 | 7 | The "sentry-native not found" message gives Linux advice on macOS | nit | fixed in `94b5392` |
+
+### Self-hosted macOS runner (`79879b9..074c8df`, `/code-review medium`)
+
+Result so far: the macOS jobs of all four workflows choose the owner's Mac for pushes, manual runs and same-repository pull requests, and `macos-15` for fork pull requests, with `MACOS_RUNNER=hosted` or the `hosted` input; `.github/build/mac-runner.sh` checks tools without installing, masks private names, keeps a local cache and cleans up; screenshots are window-only there. Nothing has been built on the Mac yet (tools missing, no window session).
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | The toolchain report can be uploaded unscrubbed when its step fails | important | sent for fixing |
+| 2 | Window screenshots from the Mac can show the owner's login and are uploaded | important | sent for fixing (no screenshots on self-hosted) |
+| 3 | Cleanup misses leftover apps that were started by relative path | important | sent for fixing |
+| 4 | Crash-report filter misses reports when the bundle path contains a symlink | important | sent for fixing |
+| 5 | Title and error-popup checks may silently turn off on hosted runners | important | sent for fixing |
+| 6 | Disk-image cleanup silently does nothing without a usable python3 | important | sent for fixing |
+| 7 | The local cache is never trimmed when the work folder path contains a blank | nit | sent for fixing |
+| 8 | The trash cleanup's path check can be bypassed with `..` | nit | sent for fixing |
+| 9 | The diagnostics job skips setup/cleanup and prints FileVault, SIP and admin status | nit | sent for fixing |
