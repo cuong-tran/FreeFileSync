@@ -237,7 +237,7 @@ cmd_cleanup()
     done < <(hdiutil info -plist | python3 -I -c '
 import plistlib, sys
 roots = tuple(r.rstrip("/") + "/" for r in sys.argv[1:])
-for image in plistlib.load(sys.stdin.buffer).get("images", []):
+for image in plistlib.loads(sys.stdin.buffer.read()).get("images", []):
     if image.get("image-path", "").startswith(roots):
         devs = sorted(e.get("dev-entry", "") for e in image.get("system-entities", []) if e.get("dev-entry"))
         if devs: print(devs[0])
