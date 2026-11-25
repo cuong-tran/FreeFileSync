@@ -224,6 +224,13 @@ jobs:
             xattr -d com.apple.provenance "$w/mnt-$fs/copy.txt" 2>&1 | sed 's/^/  xattr -d on the copy: /' || true
             echo "  after xattr -d com.apple.provenance: $(ls -A "$w/mnt-$fs" | tr '\n' ' ')"
           done
+          # does the kernel rename, move and remove companions together with their items? (for the engine: traversal hides them)
+          xcrun clang -o "$w/companions" .github/probes/fat-companions.c
+          for fs in MS-DOS ExFAT; do
+            rm -rf "$w/mnt-$fs"/* "$w/mnt-$fs"/._* 2>/dev/null || true
+            echo "== $fs: companions, started by the bash on PATH (tracked)"
+            "$(command -v bash)" -c '"$0" "$1"' "$w/companions" "$w/mnt-$fs"
+          done
           "$(command -v bash)" -c 'printf x > "$0"' "$w/tracked-apfs.txt"
           echo "== a file made by the bash on PATH on APFS: [$(xattr "$w/tracked-apfs.txt" | tr '\n' ' ')]"
           echo "== Tests/zen fileAccessMacSecondVolume"
