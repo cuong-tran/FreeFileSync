@@ -12,6 +12,13 @@
 # Later stages slot in after "Libraries": a job per architecture that builds FreeFileSync.app and RealTimeSync.app
 # against the cached libraries (needs: libraries), and a "wrap-mac-dmg" job that turns each .app into a .dmg and uploads
 # one artifact per architecture with archive: false (the shape of Musikku's desktop-package.yml).
+#
+# Runner: the macOS jobs run on the owner's self-hosted Mac (labels self-hosted, macOS) for pushes, manual runs and pull requests
+# from this repository, and on GitHub's macos-15 for pull requests from forks (their code never runs on that Mac) or when the
+# repository variable MACOS_RUNNER is "hosted" (the expression in runs-on of "toolchain", anchored as macos-runner and reused).
+# On the self-hosted Mac the jobs install nothing and use no sudo (.github/build/mac-runner.sh setup checks the tools), keep
+# libraries in a local cache instead of actions/cache, take no full-screen screenshots, and clean up in their last step
+# (mac-runner.sh cleanup). See "Self-hosted macOS runner" in CONTRIBUTING.md.
 name: macOS build
 
 on:
@@ -50,7 +57,9 @@ permissions:
 jobs:
   toolchain:
     name: Toolchain report
-    runs-on: macos-15
+    # self-hosted for trusted events (push, manual run, pull request from this repository), unless MACOS_RUNNER=hosted;
+    # GitHub's macos-15 for pull requests from forks
+    runs-on: &macos-runner ${{ (vars.MACOS_RUNNER != 'hosted' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))) && fromJSON('["self-hosted","macOS"]') || 'macos-15' }}
     timeout-minutes: 30
     defaults:
       run:
@@ -58,8 +67,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # informational only: a missing Homebrew LLVM just leaves its part of the report empty
+      - name: Prepare the runner
+        run: .github/build/mac-runner.sh setup
+
+      # self-hosted: the Xcode the builds use (GitHub's runners: the image's default, as before)
+      - name: Select Xcode
+        if: runner.environment == 'self-hosted'
+        continue-on-error: true
+        run: .github/build/select-xcode.sh --github-env
+
+      # informational only: a missing Homebrew LLVM just leaves its part of the report empty; never installed on the self-hosted Mac
       - name: Install Homebrew LLVM
+        if: runner.environment == 'github-hosted'
         continue-on-error: true
         run: brew install llvm
 
@@ -71,6 +90,7 @@ jobs:
             echo "selected: $(xcode-select -p)"
             .github/build/macos-report.sh toolchain
           } 2>&1 | tee toolchain-report.txt
+          .github/build/mac-runner.sh scrub toolchain-report.txt # self-hosted: no home folder or private names in the artifact
           { echo '```'; cat toolchain-report.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload report
@@ -82,14 +102,20 @@ jobs:
           archive: false
           if-no-files-found: ignore
 
+      - name: Clean up the self-hosted Mac
+        if: always() && runner.environment == 'self-hosted'
+        run: .github/build/mac-runner.sh cleanup
+
   libraries:
     name: Libraries (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
-        arch: [arm64, x86_64] # x86_64 is cross-compiled on the arm64 runner
-    runs-on: macos-15
-    timeout-minutes: 90
+        arch: [arm64, x86_64] # x86_64 is cross-compiled on the arm64 runner (and arm64 on an Intel one, without running it)
+    runs-on: *macos-runner
+    timeout-minutes: 120 # a cold library build on the self-hosted Mac, one job after the other
+    outputs:
+      host_arch: ${{ steps.runner.outputs.host_arch }} # the same for both entries: one kind of Mac per run
     defaults:
       run:
         shell: bash
@@ -104,21 +130,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: |
-          xcode="$(ls -d /Applications/Xcode_26.*.app 2>/dev/null | sort -V | tail -n 1)"
-          if [ -z "$xcode" ]; then
-            echo "::error::no Xcode 26.x on this runner image; installed: $(ls -d /Applications/Xcode*.app | tr '\n' ' ')"
-            exit 1
-          fi
-          echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
-          echo "using $xcode"
+      # self-hosted: masks private names, checks tools and disk space (installs nothing), TMPDIR into $RUNNER_TEMP
+      - name: Prepare the runner
+        id: runner
+        run: .github/build/mac-runner.sh setup bash build timeout python3
 
-      # the build scripts need bash 4+ and GNU coreutils/flock (macOS has bash 3.2 and BSD tools)
+      # the newest Xcode 26.x (or later) that accepts -std=c++26 with libc++ 20; DEVELOPER_DIR for this job only. Also after a
+      # failed setup, so that one run lists everything the owner has to install
+      - name: Select Xcode
+        if: ${{ !cancelled() }}
+        run: .github/build/select-xcode.sh --github-env
+
+      # the build scripts need bash 4+ and GNU coreutils/flock (macOS has bash 3.2 and BSD tools); on the self-hosted Mac the
+      # owner installs them (checked above)
       - name: Install build tools
+        if: runner.environment == 'github-hosted'
+        run: brew install bash coreutils flock pkgconf make # make: GNU make 4 ("gmake") for the makefiles; macOS has 3.81
+
+      - name: Build tools
         run: |
-          brew install bash coreutils flock pkgconf make # make: GNU make 4 ("gmake") for the makefiles; macOS has 3.81
           bash --version | sed -n 1p
+          gmake --version | sed -n 1p
           echo "MACOSX_DEPLOYMENT_TARGET in common.sh: $(sed -nE 's/^FFS_MACOS_DEPLOYMENT_TARGET=([0-9.]+).*/\1/p' .github/build/common.sh)"
 
       - name: Identify the compiler
@@ -128,45 +160,76 @@ jobs:
           clang++ --version
           echo "id=$(clang++ --version | sed -n 1p | tr -c 'A-Za-z0-9.\n' '-')-sdk$(xcrun --show-sdk-version)" >> "$GITHUB_OUTPUT"
 
+      # the cache keys: the compiler, SDK and every script and patch that decides how the libraries are built; sentry-native
+      # (its own prefix, .build/sentry/<target>) also its script, because it is built against the libcurl in the deps prefix.
+      # Self-hosted entries are built with -ffile-prefix-map (mac-runner.sh setup) and kept in a local folder: "-fpm" marks them
+      - name: Cache keys
+        id: keys
+        env:
+          DEPS_KEY: deps-macos-${{ matrix.arch }}-${{ steps.compiler.outputs.id }}-${{ hashFiles('.github/build/common.sh', '.github/build/build.sh', '.github/build/build-openssl.sh', '.github/build/build-libssh2.sh', '.github/build/build-libidn2.sh', '.github/build/build-curl.sh', '.github/build/build-wxwidgets.sh', '.github/build/patches/**') }}
+          SENTRY_KEY: sentry-macos-${{ matrix.arch }}-${{ steps.compiler.outputs.id }}-${{ hashFiles('.github/build/common.sh', '.github/build/build.sh', '.github/build/build-openssl.sh', '.github/build/build-libssh2.sh', '.github/build/build-libidn2.sh', '.github/build/build-curl.sh', '.github/build/build-wxwidgets.sh', '.github/build/build-sentry-native.sh', '.github/build/patches/**') }}
+        run: |
+          echo "deps=$DEPS_KEY" >> "$GITHUB_OUTPUT"
+          echo "sentry=$SENTRY_KEY" >> "$GITHUB_OUTPUT"
+
       # restore and save are separate steps so the libraries are kept even when a later step fails
       - name: Restore libraries
         id: cache
+        if: runner.environment == 'github-hosted'
         uses: actions/cache/restore@v4
         with:
           path: .build/deps/macos-${{ matrix.arch }}
-          # the compiler, SDK and every script and patch that decides how the libraries are built
-          key: deps-macos-${{ matrix.arch }}-${{ steps.compiler.outputs.id }}-${{ hashFiles('.github/build/common.sh', '.github/build/build.sh', '.github/build/build-openssl.sh', '.github/build/build-libssh2.sh', '.github/build/build-libidn2.sh', '.github/build/build-curl.sh', '.github/build/build-wxwidgets.sh', '.github/build/patches/**') }}
+          key: ${{ steps.keys.outputs.deps }}
+
+      - name: Restore libraries (local cache)
+        id: lcache
+        if: runner.environment == 'self-hosted'
+        run: .github/build/mac-runner.sh cache restore "${{ steps.keys.outputs.deps }}-fpm" .build/deps/macos-${{ matrix.arch }}
 
       - name: Build libraries
-        if: steps.cache.outputs.cache-hit != 'true'
+        if: steps.cache.outputs.cache-hit != 'true' && steps.lcache.outputs.hit != 'true'
         run: .github/build/build.sh 2>&1 | tee build.log
 
       - name: Save libraries
-        if: steps.cache.outputs.cache-hit != 'true'
+        if: runner.environment == 'github-hosted' && steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .build/deps/macos-${{ matrix.arch }}
           key: ${{ steps.cache.outputs.cache-primary-key }}
 
-      # sentry-native: its own prefix and cache (.build/sentry/<target>), keyed on everything the libraries' key has plus
-      # its script, because it is built against the libcurl in the prefix above
+      - name: Save libraries (local cache)
+        if: runner.environment == 'self-hosted' && steps.lcache.outputs.hit != 'true'
+        run: .github/build/mac-runner.sh cache save deps-macos-${{ matrix.arch }} "${{ steps.keys.outputs.deps }}-fpm" .build/deps/macos-${{ matrix.arch }}
+
       - name: Restore sentry-native
         id: sentry-cache
+        if: runner.environment == 'github-hosted'
         uses: actions/cache/restore@v4
         with:
           path: .build/sentry/macos-${{ matrix.arch }}
-          key: sentry-macos-${{ matrix.arch }}-${{ steps.compiler.outputs.id }}-${{ hashFiles('.github/build/common.sh', '.github/build/build.sh', '.github/build/build-openssl.sh', '.github/build/build-libssh2.sh', '.github/build/build-libidn2.sh', '.github/build/build-curl.sh', '.github/build/build-wxwidgets.sh', '.github/build/build-sentry-native.sh', '.github/build/patches/**') }}
+          key: ${{ steps.keys.outputs.sentry }}
+
+      - name: Restore sentry-native (local cache)
+        id: sentry-lcache
+        if: runner.environment == 'self-hosted'
+        run: .github/build/mac-runner.sh cache restore "${{ steps.keys.outputs.sentry }}-fpm" .build/sentry/macos-${{ matrix.arch }}
 
       - name: Build sentry-native
-        if: steps.sentry-cache.outputs.cache-hit != 'true'
+        if: steps.sentry-cache.outputs.cache-hit != 'true' && steps.sentry-lcache.outputs.hit != 'true'
         run: .github/build/build-sentry-native.sh 2>&1 | tee sentry-build.log
 
       - name: Save sentry-native
-        if: steps.sentry-cache.outputs.cache-hit != 'true'
+        if: runner.environment == 'github-hosted' && steps.sentry-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .build/sentry/macos-${{ matrix.arch }}
           key: ${{ steps.sentry-cache.outputs.cache-primary-key }}
+
+      - name: Save sentry-native (local cache)
+        if: runner.environment == 'self-hosted' && steps.sentry-lcache.outputs.hit != 'true'
+        run: |
+          .github/build/mac-runner.sh cache save sentry-macos-${{ matrix.arch }} "${{ steps.keys.outputs.sentry }}-fpm" .build/sentry/macos-${{ matrix.arch }}
+          rm -rf .build/src .build/tmp # the library sources and build trees (GBs) are not needed any more; the owner's disk
 
       # fails the job if a library is missing, has another architecture or another deployment target (also on a cache hit)
       - name: Check libraries and write the manifest
@@ -241,8 +304,8 @@ jobs:
           ARCH: ${{ matrix.arch }}
           ZEN_TEST_ALL_ERRORS: 1
         run: |
-          if [ "$ARCH" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
-            echo "::warning::Rosetta 2 not available: x86_64 zen tests are compiled only"
+          if ! arch -"$ARCH" /usr/bin/true 2>/dev/null; then # x86_64 without Rosetta 2, or arm64 on an Intel Mac
+            echo "::warning::$ARCH binaries do not run on this Mac ($(uname -m)${{ matrix.arch == 'x86_64' && ', no Rosetta 2' || '' }}): $ARCH zen tests are compiled only"
             export ZEN_TEST_COMPILE_ONLY=1
           fi
           bash Tests/zen/run.sh
@@ -303,6 +366,9 @@ jobs:
           } 2>&1 | tee apps-${{ matrix.arch }}.txt
           if [ -n "$SENTRY_DSN" ] && grep -qF "$SENTRY_DSN" apps-${{ matrix.arch }}.txt; then echo "::error::the DSN appears in the build log"; exit 1; fi
           ls -l FreeFileSync/Build/Bin/macos-${{ matrix.arch }}
+          # self-hosted: home folder paths left in the shipped executables (compiler paths are mapped to ~; what remains, e.g.
+          # OpenSSL's built-in directories under the deps prefix, is listed as a warning)
+          .github/build/mac-runner.sh check-binaries FreeFileSync/Build/Bin/macos-${{ matrix.arch }}/{FreeFileSync,RealTimeSync}.app/Contents/MacOS/{FreeFileSync,RealTimeSync}
 
       - name: Check the apps contain no crash reporting code
         if: ${{ !cancelled() && steps.apps.outcome == 'success' && steps.sentry.outputs.enabled != '1' }}
@@ -418,15 +484,19 @@ jobs:
       - name: Start the apps
         if: ${{ !cancelled() && steps.helper.outcome == 'success' }}
         env:
-          SCREENSHOT_TO_LOG: 1 # a small copy of each screenshot in the log as well (see check-mac-app-starts.sh)
+          # GitHub's runners: a small copy of each (full-screen) screenshot in the log as well; check-mac-app-starts.sh ignores it
+          # anywhere else and takes only the app's own windows there, if it may (see its header)
+          SCREENSHOT_TO_LOG: 1
           SENTRY_BUILD: ${{ steps.sentry.outputs.enabled }}
         run: |
-          if [ "${{ matrix.arch }}" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
-            echo "::warning::Rosetta 2 not available: x86_64 apps not started"; exit 0
+          if ! arch -${{ matrix.arch }} /usr/bin/true 2>/dev/null; then
+            echo "::warning::${{ matrix.arch }} binaries do not run on this Mac ($(uname -m)${{ matrix.arch == 'x86_64' && ', no Rosetta 2' || '' }}): ${{ matrix.arch }} apps not started"; exit 0
           fi
+          .github/build/mac-runner.sh require-gui
           bin="FreeFileSync/Build/Bin/macos-${{ matrix.arch }}"
           mkdir -p screenshots
-          .github/build/check-mac-app-starts.sh "$bin/FreeFileSync.app" '^About' "screenshots/FreeFileSync-first-start-${{ matrix.arch }}.png"
+          # the window counts (EXPECT_WINDOWS) as GitHub's runners show them: they replace the titles where those can't be read
+          EXPECT_WINDOWS=2 .github/build/check-mac-app-starts.sh "$bin/FreeFileSync.app" '^About' "screenshots/FreeFileSync-first-start-${{ matrix.arch }}.png"
 
           work="$RUNNER_TEMP/start-check"
           mkdir -p "$work/left/sub" "$work/right"
@@ -436,26 +506,27 @@ jobs:
           echo "only right" > "$work/right/only-right.txt"
           "$RUNNER_TEMP/sync-bin/sync_test" --write-gui "$work/job.ffs_gui" "$work/left" "$work/right"
           "$RUNNER_TEMP/sync-bin/sync_test" --write-global "$work/GlobalSettings.xml"
-          .github/build/check-mac-app-starts.sh "$bin/FreeFileSync.app" '(^| )FreeFileSync [0-9.]+' "screenshots/FreeFileSync-main-${{ matrix.arch }}.png" \
+          EXPECT_WINDOWS=1 .github/build/check-mac-app-starts.sh "$bin/FreeFileSync.app" '(^| )FreeFileSync [0-9.]+' "screenshots/FreeFileSync-main-${{ matrix.arch }}.png" \
             "$work/job.ffs_gui" "$work/GlobalSettings.xml"
 
           # a crash reporting build (secret or dry run): with the welcome dialog seen but no answer stored, the first-start notice shows
           if [ "$SENTRY_BUILD" = 1 ]; then
             "$RUNNER_TEMP/sync-bin/sync_test" --write-global-unanswered "$work/GlobalSettings-unanswered.xml"
-            .github/build/check-mac-app-starts.sh "$bin/FreeFileSync.app" '^Crash reports$' "screenshots/FreeFileSync-crash-notice-${{ matrix.arch }}.png" \
+            EXPECT_WINDOWS=2 .github/build/check-mac-app-starts.sh "$bin/FreeFileSync.app" '^Crash reports$' "screenshots/FreeFileSync-crash-notice-${{ matrix.arch }}.png" \
               "$work/GlobalSettings-unanswered.xml"
           fi
 
-          .github/build/check-mac-app-starts.sh "$bin/RealTimeSync.app" '^RealTimeSync [0-9.]+' "screenshots/RealTimeSync-${{ matrix.arch }}.png"
+          EXPECT_WINDOWS=1 .github/build/check-mac-app-starts.sh "$bin/RealTimeSync.app" '^RealTimeSync [0-9.]+' "screenshots/RealTimeSync-${{ matrix.arch }}.png"
 
       # FreeFileSync in batch mode: a mirror job (written by the engine's config writer through Tests/sync's sync_test --write-batch)
       # must end with exit code 0 and leave the right folder equal to the left one
       - name: Batch run
         if: ${{ !cancelled() && steps.helper.outcome == 'success' }}
         run: |
-          if [ "${{ matrix.arch }}" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
-            echo "::warning::Rosetta 2 not available: x86_64 batch run skipped"; exit 0
+          if ! arch -${{ matrix.arch }} /usr/bin/true 2>/dev/null; then
+            echo "::warning::${{ matrix.arch }} binaries do not run on this Mac ($(uname -m)${{ matrix.arch == 'x86_64' && ', no Rosetta 2' || '' }}): ${{ matrix.arch }} batch run skipped"; exit 0
           fi
+          .github/build/mac-runner.sh require-gui # batch mode shows a progress window
           work="$RUNNER_TEMP/batch"
           mkdir -p "$work/left/sub dir" "$work/right" "$work/logs" "$work/home"
           echo "a" > "$work/left/a.txt"
@@ -497,16 +568,25 @@ jobs:
 
       # x86_64 crash capture can't be tested under Rosetta 2 (see below): on workflow_dispatch the build goes to the "Sentry tests
       # (Intel)" job, which runs on an Intel runner
+      # (not when this Mac is an Intel one: then the Sentry tests below run x86_64 natively, and the Intel job is skipped)
       - name: Zip the Sentry build for the Intel runner
-        if: ${{ !cancelled() && steps.sentrybuild.outcome == 'success' && matrix.arch == 'x86_64' && github.event_name == 'workflow_dispatch' }}
+        if: ${{ !cancelled() && steps.sentrybuild.outcome == 'success' && matrix.arch == 'x86_64' && github.event_name == 'workflow_dispatch' && steps.runner.outputs.host_arch != 'x86_64' }}
         run: |
           dir="$RUNNER_TEMP/sentry-test-build-macos-x86_64"
           mkdir -p "$dir"
           cp -R FreeFileSync/Build/Bin/macos-x86_64/{FreeFileSync,RealTimeSync}.app "$dir/"
+          if [ "${{ runner.environment }}" = self-hosted ]; then
+            # the debug map (absolute object paths in this Mac's home folder) out of the uploaded copy; signed again like mac_bundle.sh
+            for bundle in "$dir"/*.app; do
+              for f in "$bundle"/Contents/MacOS/*; do strip -S "$f"; done
+              for f in "$bundle"/Contents/MacOS/*; do [ "$f" = "$bundle/Contents/MacOS/$(basename "$bundle" .app)" ] || codesign --force --sign - --timestamp=none "$f"; done
+              codesign --force --sign - --timestamp=none "$bundle"
+            done
+          fi
           ditto -c -k --keepParent "$dir" sentry-test-build-macos-x86_64-NOT-FOR-RELEASE.zip
 
       - name: Upload the Sentry build for the Intel runner
-        if: ${{ !cancelled() && steps.sentrybuild.outcome == 'success' && matrix.arch == 'x86_64' && github.event_name == 'workflow_dispatch' }}
+        if: ${{ !cancelled() && steps.sentrybuild.outcome == 'success' && matrix.arch == 'x86_64' && github.event_name == 'workflow_dispatch' && steps.runner.outputs.host_arch != 'x86_64' }}
         uses: actions/upload-artifact@v7
         with:
           path: sentry-test-build-macos-x86_64-NOT-FOR-RELEASE.zip
@@ -522,15 +602,22 @@ jobs:
           FFS_CRASH_REPORT_DEBUG: 1 # sentry-native's log in the app output, which failed scenarios print
           ARCH: ${{ matrix.arch }}
         run: |
-          if [ "${{ matrix.arch }}" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
-            echo "::warning::Rosetta 2 not available: x86_64 Sentry tests skipped"; exit 0
+          if ! arch -${{ matrix.arch }} /usr/bin/true 2>/dev/null; then
+            echo "::warning::${{ matrix.arch }} binaries do not run on this Mac ($(uname -m)${{ matrix.arch == 'x86_64' && ', no Rosetta 2' || '' }}): ${{ matrix.arch }} Sentry tests skipped"; exit 0
           fi
+          .github/build/mac-runner.sh require-gui
           if [ "${{ matrix.arch }}" = x86_64 ] && [ "$(uname -m)" = arm64 ]; then
             # seen in CI: the x86_64 apps' crashes end them with the signal, no dump (exit code 139); arm64 natively is fine
             export SENTRY_TEST_NO_CRASH_CAPTURE="Crashpad catches no crashes of x86_64 apps under Rosetta 2 (needs an Intel Mac)"
             echo "::warning::x86_64 under Rosetta 2: the scenarios that need a captured crash are skipped ($SENTRY_TEST_NO_CRASH_CAPTURE)"
           fi
           Tests/sentry/run.sh "FreeFileSync/Build/Bin/macos-${{ matrix.arch }}"
+
+      # self-hosted: no home folder path, user, host or computer name in the uploaded logs (mac-runner.sh scrub; a no-op on
+      # GitHub's runners); the tar archive without owner names
+      - name: Scrub logs for upload
+        if: always()
+        run: .github/build/mac-runner.sh scrub build.log sentry-build.log manifest.txt apps-${{ matrix.arch }}.txt zen-compile-${{ matrix.arch }}.txt engine-${{ matrix.arch }}.txt
 
       - name: Upload screenshots
         if: always()
@@ -573,7 +660,7 @@ jobs:
         if: always()
         run: |
           touch build.log sentry-build.log manifest.txt
-          tar czf macos-libraries-${{ matrix.arch }}.tar.gz build.log sentry-build.log manifest.txt
+          tar --numeric-owner -czf macos-libraries-${{ matrix.arch }}.tar.gz build.log sentry-build.log manifest.txt
 
       - name: Upload build log and manifest
         if: always()
@@ -583,6 +670,12 @@ jobs:
           archive: false
           if-no-files-found: error
 
+      # self-hosted: processes, disk images, trash items, crash reports, Launch Services entries and app preferences of this job,
+      # build output, old cache entries (also after a failure or a cancellation)
+      - name: Clean up the self-hosted Mac
+        if: always() && runner.environment == 'self-hosted'
+        run: .github/build/mac-runner.sh cleanup
+
   # one drag-to-Applications disk image per architecture with both apps (the shape of Musikku's wrap-mac-dmg job): the app zips
   # stay zips through the artifact download (skip-decompress: the artifact action's own unpacking would lose the bundle structure),
   # ditto -x -k unpacks them with signatures and extended attributes, .github/build/wrap-mac-dmg.sh builds and checks the image
@@ -591,7 +684,7 @@ jobs:
     needs: libraries
     # also when a later check in the app jobs (e.g. the Sentry tests) failed: the zips are uploaded before; never for a Sentry dry run
     if: ${{ !cancelled() && !inputs.sentry_dry_run }}
-    runs-on: macos-15
+    runs-on: *macos-runner
     timeout-minutes: 30
     defaults:
       run:
@@ -599,7 +692,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare the runner
+        run: .github/build/mac-runner.sh setup bash create-dmg
+
+      # self-hosted: create-dmg only if the owner has it (else hdiutil alone, see wrap-mac-dmg.sh)
       - name: Install create-dmg
+        if: runner.environment == 'github-hosted'
         run: |
           brew install create-dmg || echo "::warning::create-dmg not installed: the images are made with hdiutil alone"
 
@@ -612,6 +710,10 @@ jobs:
           skip-decompress: true
 
       - name: Wrap each architecture's apps into a .dmg
+        env:
+          # self-hosted: no Finder scripting (it would ask the owner for the Automation permission on their screen), unless the
+          # owner granted it and set the repository variable MACOS_DMG_FINDER_LAYOUT=1
+          WRAP_DMG_NO_FINDER: ${{ runner.environment == 'self-hosted' && vars.MACOS_DMG_FINDER_LAYOUT != '1' && '1' || '0' }}
         run: |
           shopt -s nullglob
           zips=(mac-zips/FreeFileSync-*-macos-*.zip)
@@ -643,12 +745,17 @@ jobs:
           archive: false
           if-no-files-found: error
 
+      - name: Clean up the self-hosted Mac
+        if: always() && runner.environment == 'self-hosted'
+        run: .github/build/mac-runner.sh cleanup
+
   # crash capture of the x86_64 apps on a real Intel Mac (under Rosetta 2 Crashpad catches nothing): the x86_64 Sentry build of the
   # app job, Tests/sentry/run.sh without skips; on workflow_dispatch only (Intel runners are scarce)
   sentry-intel:
     name: Sentry tests (Intel)
     needs: libraries
-    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
+    # (not needed when the libraries ran on an Intel Mac: their Sentry tests ran x86_64 natively)
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && needs.libraries.outputs.host_arch != 'x86_64' }}
     runs-on: macos-15-intel
     timeout-minutes: 30
     defaults:
