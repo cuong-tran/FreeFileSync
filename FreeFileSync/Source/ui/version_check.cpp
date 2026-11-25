@@ -20,7 +20,9 @@
     #include <zen/symlink_target.h>
     #include <zen/build_info.h>
     #include <wx/uilocale.h>
+#if defined ZEN_LINUX
     #include <gtk/gtk.h>
+#endif
 
 
 using namespace zen;
@@ -48,6 +50,9 @@ void openBrowserForDownload(wxWindow* parent)
 
 bool fff::automaticUpdateCheckDue(time_t lastUpdateCheck)
 {
+#if defined ZEN_MAC //this fork's macOS builds: no online update check, see checkForUpdateNow()
+    return false;
+#endif
     const time_t now = std::time(nullptr);
     return numeric::dist(now, lastUpdateCheck) >= 7 * 24 * 3600; //check weekly
 }
@@ -100,7 +105,13 @@ std::vector<std::pair<std::string, std::string>> geHttpPostParameters() //throw 
     params.emplace_back("ffs_version", ffsVersion);
 
 
+#if defined ZEN_LINUX
     params.emplace_back("os_name", "Linux");
+#elif defined ZEN_MAC
+    params.emplace_back("os_name", "macOS");
+#else
+    #error "not implemented for this platform"
+#endif
 
     const OsVersionDetail verDetail = getOsVersion();
     params.emplace_back("os_version",
@@ -183,6 +194,9 @@ std::string getUnknownVersionTag()
 
 bool fff::haveNewerVersionOnline(const std::string& onlineVersion)
 {
+#if defined ZEN_MAC //no reminder of upstream's version (e.g. from settings copied from another system): see checkForUpdateNow()
+    return false;
+#endif
     auto parseVersion = [](const std::string_view version)
     {
         std::vector<size_t> output;
@@ -203,6 +217,17 @@ bool fff::haveNewerVersionOnline(const std::string& onlineVersion)
 
 void fff::checkForUpdateNow(wxWindow& parent, std::string& lastOnlineVersion)
 {
+#if defined ZEN_MAC
+    /* the macOS builds come from https://github.com/cuong-tran/FreeFileSync, not freefilesync.org: upstream's update server knows
+       neither them nor "macOS"/"arm64" as values, and a newer version there would point to upstream's package => no online check */
+    showNotificationDialog(&parent, DialogInfoType::info, PopupDialogCfg().
+                           setIcon(loadImage("update_check")).
+                           setTitle(_("Check for Software Updates")).
+                           setMainInstructions(L"FreeFileSync " + utfTo<std::wstring>(ffsVersion) + L" (macOS)").
+                           setDetailInstructions(L"This macOS build does not check online for updates. "
+                                                 L"New builds are published at https://github.com/cuong-tran/FreeFileSync/releases"));
+    return;
+#endif
     try
     {
         const std::string onlineVersion = getOnlineVersion(geHttpPostParameters()); //throw SysError

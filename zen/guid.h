@@ -8,6 +8,9 @@
     #include <fcntl.h> //open
     #include <unistd.h> //close, getentropy
     #include <zen/sys_error.h>
+#if defined ZEN_MAC
+    #include <sys/random.h> //getentropy (macOS 10.12+)
+#endif
     //#include <uuid/uuid.h> -> uuid_generate(), uuid_unparse(); avoid additional dependency for "sudo apt-get install uuid-dev"
 
 namespace zen
@@ -17,6 +20,11 @@ std::string generateGUID() //creates a 16-byte GUID
 {
     std::string guid(16, '\0');
 
+#if defined ZEN_MAC
+    if (::getentropy(guid.data(), guid.size()) != 0)  //"The maximum permitted value for the length argument is 256"
+        throw std::runtime_error(std::string(__FILE__) + '[' + numberTo<std::string>(__LINE__) + "] Failed to generate GUID." + "\n\n" +
+                                 utfTo<std::string>(formatSystemError("getentropy", errno)));
+#else
 #ifndef __GLIBC_PREREQ
 #error Where is Glibc?
 #endif
@@ -42,6 +50,7 @@ std::string generateGUID() //creates a 16-byte GUID
         offset += bytesRead;
         assert(offset <= guid.size());
     }
+#endif
 #endif
     return guid;
 

@@ -5,6 +5,8 @@
 // *****************************************************************************
 
 #include "recycler.h"
+#include "build_info.h"
+#if defined ZEN_LINUX //macOS: recycler_mac.mm
 
     #include <gio/gio.h>
     #include "scope_guard.h"
@@ -104,3 +106,4 @@ void zen::moveToRecycleBin(const Zstring& itemPath) //throw FileError, RecycleBi
                         formatGlibError("g_file_trash", error));
     }
 }
+#endif

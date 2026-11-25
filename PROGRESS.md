@@ -13,15 +13,20 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M1 Foundation | Pull request | merged as [#11](https://github.com/cuong-tran/FreeFileSync/pull/11) (squash, `9b6221a`); `dev` restarted from `main` | | bot review: 1 doc fix (`1cf3840`), 3 findings not valid |
 | M2 Sentry | 1. Interface, empty implementation, sentry-native build, Makefile switch, init | done | `cf27254^..304f86f`, fixes `7c0f9bc`, `07ce91b`, `c48509d`, `51829b2` | 10 findings: all fixed |
 | M2 Sentry | 2. Scrubbing, opt-out, first-start notice, test crash, symbol upload | done | `304f86f..51829b2`, fixes `c2b91b5^..b80eb4e` | 9 findings: all fixed |
-| M2 Sentry | Pull request | open, work paused until it is merged | | |
-| M3 macOS | | next | | |
+| M2 Sentry | Pull request | merged as [#12](https://github.com/cuong-tran/FreeFileSync/pull/12) (squash, `fea5409`) | | no review threads |
+| M3 macOS | 1. `zen` core compiles and `Tests/zen` passes on macOS | done | `a0b5c3f..50065e4`, fixes in `50065e4..292907c` | 8 findings: all fixed |
+| M3 macOS | 2. `zen` features: FSEvents watcher, recycle bin, shutdown, network | done | `50065e4..292907c`, fixes `292907c..f5c9b53` | 8 findings: all fixed |
+| M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | done | `b4b35bb..3289e88`, fixes `f3e2601..bd9f1bf` | 7 findings: 6 fixed, 1 kept |
+| M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | done | `bd9f1bf..1152282`, fixes `1152282..83f890e` | 9 findings: all fixed |
+| M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | done | `83f890e..bf0ef72`, fixes `d284031..8420f50` | 7 findings: all fixed |
+| M3 macOS | Pull request | open; squash-merged once all checks pass | | |
 | M4 Windows | | | | |
 
 ## How the work runs
 
 - The coordinator plans, writes task instructions and reviews. Coding is done by sub-agents (Opus, high effort).
 - After each coding step: `/code-review medium <range>`, findings go to a fix agent, and the findings are listed below with their outcome.
-- Commit and push to `dev` after every step. One PR from `dev` to `main` per milestone; work pauses when the PR is opened.
+- Commit and push to `dev` after every step. One PR from `dev` to `main` per milestone. The coordinator watches the PR, fixes CI failures and valid review findings, squash-merges it once all checks pass, recreates `dev` from `main` and continues with the next milestone (owner's instruction of 2026-11-24; before that, work paused at each PR).
 
 ## Decisions
 
@@ -44,6 +49,24 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | 2026-11-24 | After each merged milestone PR, `dev` is recreated from `main` | The PRs are squash-merged and the remote `dev` branch is deleted on merge. |
 | 2026-11-24 | Crash reports: nothing is uploaded until the user has answered the first-start notice; its default choice is to send. Batch runs with no stored answer send nothing. `FFS_NO_CRASH_REPORT=1` always wins | A Sentry build must not upload before the user knows; stricter than the plan's plain opt-out. |
 | 2026-11-24 | sentry-native 0.17.6, static, Crashpad backend, curl transport, in its own prefix `.build/sentry` | Cached separately from the other libraries; built only for `FFS_SENTRY=1`. |
+| 2026-11-24 | macOS path comparison is always case- and Unicode-normalization-insensitive, whatever the volume | APFS/HFS+ default and what upstream's header documents; deterministic. A case-sensitive APFS volume is treated as insensitive. |
+| 2026-11-24 | Case mapping on macOS is per code point, as on Linux ("ß" stays "ß") | Changed during the review fixes from Core Foundation's full mapping, so comparisons behave the same on both platforms. |
+| 2026-11-24 | macOS file copies use the portable read/write loop, not `clonefile`; extended attributes and ACLs are copied separately | Keeps the progress callback and byte counts identical to Linux. |
+| 2026-11-24 | Floating-point `from_chars` falls back to `strtod_l` in the C locale where libc++ lacks it (macOS before 26) | Chosen by libc++'s availability macro; matches libstdc++ and libc++ on 53 edge inputs. |
+| 2026-11-24 | Milestone PRs are squash-merged by the coordinator once all checks pass, without waiting for the owner | Asked by the owner. |
+| 2026-11-24 | Work was paused by the owner at the end of M3 step 2 and resumed the same day | |
+| 2026-11-24 | macOS: extended attributes are copied only to volumes that support them natively | Otherwise macOS writes visible `._name` sidecar files, which the next comparison would treat as extra files. |
+| 2026-11-24 | macOS: copying permissions copies the source's explicit ACL entries and keeps entries the target inherited from its folder | Replacing the whole ACL would remove access the target folder grants by inheritance. |
+| 2026-11-24 | The engine has no slot for a file's creation time, so it is not copied on macOS | The AFS interface carries only the modification time; nothing was invented. |
+| 2026-11-24 | Files that include AppKit are compiled as C++23, behind headers with standard types | The macOS 26 SDK's CoreGraphics headers are not valid C++26. |
+| 2026-11-24 | Mac bundle ids are `io.github.cuong-tran.freefilesync` and `.realtimesync` | This is a fork; upstream's ids are not used. |
+| 2026-11-24 | Scheduled pause at 23:00 UTC (06:00 UTC+7 on 2026-11-25) | Asked by the owner. |
+| 2026-11-24 | The Mac apps are two bundles side by side, `FreeFileSync.app` and `RealTimeSync.app` | Same layout as the official Mac package. |
+| 2026-11-24 | `Resources/Animal.dat` is an own image (a drawn cartoon cat, `.github/build/resources`), used by the Mac bundles and the Linux packages | It is missing from the source zip; upstream's artwork is not copied. |
+| 2026-11-24 | macOS: a `.ffs_batch` opened from Finder while the app runs starts a new process that runs the job | macOS runs one instance per bundle; loading the job into the open window would not run it. |
+| 2026-11-24 | macOS builds of this fork do not use upstream's online update check | It would report this fork's builds to upstream's server with values it does not expect and point users at upstream's package. Linux keeps upstream's behavior. |
+| 2026-11-25 | Work resumed after the pause of 2026-11-24 23:00 UTC | Owner said continue. |
+| 2026-11-25 | macOS crash reports while reporting is off: uploads are disabled and stored dumps are deleted at start and when "send" is given later | sentry-native has no hook on macOS to discard a crash; a dump made while the user had opted out must never be uploaded. |
 
 ## Needed from the repository owner
 
@@ -62,6 +85,17 @@ Marked `KNOWN_ISSUE` in `Tests/zen`, not fixed (upstream code):
 - `Resources/Animal.dat` is not in the upstream source zip, so every build from these sources (the Linux packages included) shows "Failed to load image" on first start, when the welcome dialog opens. Found by the new start check. CI uses a placeholder image for now. To do in M3 packaging: ship an own image in its place (decided over copying it from the official binaries, whose artwork license is unclear).
 - FreeFileSync sometimes does not end on SIGTERM (about 1 in 50 in the test loop): upstream's signal handler is not async-signal-safe and the main thread can block in it. Present before the Sentry work. The tests fall back to SIGKILL after 10 s; upstream's handler is left alone.
 - Not exercised yet, because the repository secrets are missing: a real upload to Sentry and `sentry-cli debug-files upload`.
+- Untested on macOS: shut down and sleep, the "no recycle bin on this volume" mapping, socket code.
+- Natural sort of 100,000 mixed names takes about 3.5 s on macOS arm64 versus 1.8 s on Linux (normalization per comparison); accepted for now.
+- GitHub's macOS arm64 runners are short of capacity: jobs wait 10 minutes or more, and some are cancelled as "not acquired by Runner". A re-run fixes it.
+- Network file systems (FTP, SFTP, Google Drive) are only compiled on macOS, not run.
+- `afs/gdrive.cpp` (upstream): the OAuth login loop never closes the accepted client socket. Left as is.
+- The Mac UI has only been seen through CI screenshots. To check on a real Mac: main window layout (fonts and sizes were set for GTK), dark mode, Dock icon, tray item, the application menu, opening files from Finder, drag and drop, folder picker, sounds, "Show in Finder". Dock progress (`wx+/taskbar_mac.cpp`, `dock_tile_mac.mm`) is implemented but has never been seen. Not testable in CI: Finder opens, the modal-dialog guards, starting a batch process from a running app. The app icon is upscaled from a 128 px image.
+- Crash capture for x86_64 is tested on a real Intel runner only on manual dispatch (`sentry_dry_run`); under Rosetta 2 on the arm64 runners Crashpad catches no crashes, so those scenarios are skipped there with a printed reason.
+- The first-start crash-report notice may not render its explanatory text on macOS (a blank area in the CI screenshot). To check on a real Mac.
+- `f-kept-then-deleted` once found two dumps instead of one in a dry run; not reproduced since, and the test now prints the first run's log if it recurs.
+- The dSYM path for the Mac apps is exercised by the dry run, but a real upload to Sentry has never happened (no secrets).
+- The DMGs (`FreeFileSync-14.13-macos-<arch>.dmg`, about 19 MB, both apps plus an Applications link) have no background picture; their window layout has only been checked by the script, not by eye.
 
 ## Review findings
 
@@ -137,3 +171,77 @@ Result of the step: `zen/crash_scrub.*` removes paths, URLs, user and host names
 | 7 | `make clean FFS_SENTRY=1` for one app removes the crash handler of the other | nit | fixed in `b80eb4e` |
 | 8 | `make clean all FFS_SENTRY=1` builds without the Sentry makefile part | nit | fixed in `b80eb4e` |
 | 9 | `FFS_SENTRY=0` skips the stale-handler cleanup | nit | fixed in `b80eb4e` |
+
+### M3 step 1 (`a0b5c3f..50065e4`, `/code-review medium`)
+
+Result of the step: all of `zen/` compiles on macOS with Apple clang, warning-free, for arm64 and x86_64; `Tests/zen` passes on both (x86_64 under Rosetta) in about a minute per job. The Linux command lines are unchanged. Directory watcher and recycle bin were marked "not ported yet" for this step only.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | Copying permissions can leave a read-only target writable (`copyfile(COPYFILE_ACL)` after `chmod`) | important | fixed in `8f7308a` and a follow-up: ACLs are copied with `acl_get_file`/`acl_set_file` before owner and mode (symlinks through a descriptor); tested with read-only files, folders and symlinks as non-root |
+| 2 | A file copy fails entirely when its extended attributes cannot be copied | important | fixed in `8f7308a`: an extended-attribute error never fails or discards a copy; unexpected errors go to the sync log. Tested against a FAT disk image; the logging branch could not be provoked |
+| 3 | Opening a file for reading fails where read-ahead cannot be set | important | fixed in `f8d316a` |
+| 4 | A new socket can leak into a child process started by another thread | important | fixed in `511d95a`: one `lockFdInheritance()` guard for `consoleExecute` and socket creation; other descriptor sites audited |
+| 5 | A failed sleep request can be reported as success | nit | fixed in `f8d316a` |
+| 6 | Natural sort and path comparison allocate on every non-ASCII comparison | nit | fixed in `5a7a838`, `292907c`: case mapping through a table built once, normalization skipped where not needed. 100k mixed names: natural sort 3.5 s on macOS arm64 versus 1.8 s on Linux |
+| 7 | `Tests/zen/run.sh` accepts bash 4.3 but needs 4.4 | nit | fixed in `4a14e9e` |
+| 8 | A deployment-target change does not re-run the zen tests | nit | fixed in `4a14e9e` |
+
+### M3 step 2 (`50065e4..292907c`, `/code-review medium`)
+
+Result of the step: FSEvents directory watcher (`zen/dir_watcher_mac.cpp`), recycle bin through `NSFileManager` (`zen/recycler_mac.mm`), shut down and sleep; every `Tests/zen` test runs on macOS arm64 and x86_64 (38 cases, 1750 checks), the watcher test 20 times in a row.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | Copying extended attributes to FAT/exFAT/SMB creates visible `._name` sidecar files | important | fixed: extended attributes are copied only to volumes that store them natively; on the FAT test image no `._*` files appear |
+| 2 | Ejecting a disk mounted inside the watched folder is reported as the watched folder being unavailable | important | fixed: only an unmount at or above the watched folder reports it unavailable. The runner showed FSEvents sends nothing when the watched folder's own volume is force-detached, so `fetchChanges()` also checks once per second that the folder exists (`4dcb578`) |
+| 3 | Watcher drops all events when the watched path and the on-disk path differ in Unicode form | important | fixed: paths are compared component by component; tested with NFC/NFD and different-case spellings |
+| 4 | ACL copy fails on volumes that reject ACL calls with anything but `ENOTSUP`, even with no ACL to copy | important | fixed: nothing is written when neither side has explicit entries; volumes without ACL support are skipped |
+| 5 | ACL copy removes entries the target inherited from its folder | important | fixed: the new ACL is the source's explicit entries followed by the target's inherited ones; tested with an inheritable entry on the parent |
+| 6 | Folder attribute copy throws when the folder cannot be opened for reading | nit | fixed: never throws on macOS; unreadable folders are skipped, other errors logged |
+| 7 | Modified files can be reported as created (FSEvents accumulates flags) | nit | fixed: the watcher remembers paths already reported as created; exactly one `create` per new file in the test |
+| 8 | An empty trash path is returned silently after a successful move | nit | fixed: falls back to the URL's path; documented in `recycler.h` |
+
+### M3 step 3 (`b4b35bb..3289e88`, `/code-review medium`)
+
+Result of the step: `make engine` builds `libffs_engine.a` (everything but the UI) on Linux and macOS through the new `FreeFileSync/Source/platform.mk`; `Tests/sync` runs real comparisons and synchronizations headlessly (19 cases on Linux, 22 on macOS) in the new `sync-tests.yml`; the ZIP test runs on macOS; `crash_report_sentry.cpp` compiles on macOS. The engine needs no wx initialization. Files outside the UI that still compile against wx: `config.*`, `localization.*`, `icon_buffer.*`, `base_tools.cpp`, the icon loader, `afs/native.cpp` (inventory in `CONTRIBUTING.md`).
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | Google Drive login on macOS holds the process-wide descriptor lock across a blocking `accept()` | important | fixed in `f3e2601`: the listening socket is non-blocking, so the lock is never held across a wait; other users of the lock audited |
+| 2 | Icon loading can crash on a file name that is not valid UTF-8 (nil path into AppKit) | important | fixed in `081a69e`: nil paths and Objective-C exceptions become errors; tested with a real invalid-UTF-8 name on the FAT image |
+| 3 | The macOS recycle bin sync test looks only in `~/.Trash` and can leave items in a real trash | important | fixed in `deff9b5`: both possible trash locations are checked and always cleaned up |
+| 4 | `sync-tests.yml` does not run for UI and `wx+` headers the engine includes | nit | fixed in `bd9f1bf` |
+| 5 | `afs/ftp.cpp` platform branches have no `#else`, so Windows would compile functions without a return | nit | fixed in `42df8c0`: `#else #error` added to every platform branch that must produce a value |
+| 6 | `Tests/zip_afs/run.sh` needs bash 4.4 on macOS but does not check | nit | fixed in `bd9f1bf` |
+| 7 | The makefiles stop on hosts other than Linux and macOS | nit | no change needed: intended, like the `#error` in `zen/build_info.h` |
+
+### M3 step 4 (`bd9f1bf..1152282`, `/code-review medium`)
+
+Result of the step: `FreeFileSync.app` and `RealTimeSync.app` build for arm64 and x86_64 in `macos-build.yml`, ad-hoc signed and linked against system libraries only; they start on the runner and show a window, and FreeFileSync runs a mirror job in batch mode. Artifacts: `FreeFileSync-14.13-macos-<arch>.zip` and screenshots. Known defect at the end of the step: buttons with icon and text draw their text twice on macOS.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | The attempted fix for doubled button text clears the label, so Compare and Synchronize lose their text after the first refresh | important | fixed in `81b5a8f`: wxOSX's `SetFont()` re-applies the stored label as the native button title; the two button classes now hide the label only during `SetFont()`. Screenshots show each text once, also after a refresh |
+| 2 | A config opened from Finder replaces the configuration underneath an open modal dialog | important | fixed in `d3d229c`: Finder opens are queued while a dialog is open or an operation runs, and loaded afterwards |
+| 3 | Quit, Preferences and About from the application menu are not blocked while a modal dialog is open (Cmd+Q can destroy the main window under it) | important | fixed in `d3d229c`: ignored with a beep while a modal dialog is open, in both apps |
+| 4 | Double-clicking a `.ffs_batch` while the app runs loads it instead of running it | important | fixed in `d3d229c`: a new process of the app runs the job; failures show an error dialog |
+| 5 | Files passed by Finder at launch skip the checks command-line arguments get | nit | fixed in `d3d229c`, `b3f0612` |
+| 6 | The start check can pass for an app that only shows an error popup | nit | fixed in `fb2797e`: expected window title required; error windows, early exits and crash reports fail the check |
+| 7 | The bundle makefile rule misses inputs (own image, deployment target, crash handler) | nit | fixed in `b3f0612` |
+| 8 | `mac_bundle.sh` and its recipes break with spaces in paths | nit | fixed in `b3f0612` |
+| 9 | The Mac build posts unexpected values to upstream's update server | nit | fixed in `d84514f`: no update check on macOS; the menu item shows a notice pointing to this repository's releases |
+
+### M3 step 5 (`83f890e..bf0ef72`, `/code-review medium`)
+
+Result of the step: a `DMG` job wraps both apps into `FreeFileSync-<version>-macos-<arch>.dmg` with `.github/build/wrap-mac-dmg.sh` (create-dmg, signatures verified inside the mounted image); the Mac apps build with `FFS_SENTRY=1` with `crashpad_handler` in each bundle, and `Tests/sentry/run.sh` runs on macOS.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | macOS keeps crash dumps made while reporting is off; a later "send" could upload them (two test scenarios red) | important | fixed in `06a16f9`, `e4c17e5`: a revoked-period marker in the report database; all reports are deleted at start with "don't send" and before "send" applies again; new scenario `c-revoked-then-send` |
+| 2 | The build path for shipped Mac apps with the real Sentry secret has never run | important | fixed in `be9d11c`, `838a356`: `workflow_dispatch` input `sentry_dry_run` runs the same path with a fake DSN; the first dry run exposed two breakages, both fixed |
+| 3 | Sentry Mac executables ship their debug map with build paths | nit | fixed in `be9d11c`: executables are stripped after `dsymutil` and re-signed; UUIDs match and `sentry-cli` reports them usable |
+| 4 | `wrap-mac-dmg.sh` force-detaches a same-named volume the user may have open | nit | fixed in `73ba448`: the script stops with a message instead |
+| 5 | Crash capture for x86_64 is never tested (skipped under Rosetta) | nit | fixed in `be9d11c`, `8420f50`: a "Sentry tests (Intel)" job on `macos-15-intel` (on dispatch); every scenario passes there, crash capture included |
+| 6 | `Tests/sentry/run.sh` accepts bash older than 4.4 on macOS | nit | fixed in `e4c17e5` |
+| 7 | The "sentry-native not found" message gives Linux advice on macOS | nit | fixed in `94b5392` |

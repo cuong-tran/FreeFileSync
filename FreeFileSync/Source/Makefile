@@ -6,6 +6,9 @@ SHELL := /bin/bash
 #-c  execute the subsequent command string passed by Make
 CXX ?= g++
 
+#TARGET_OS ("linux", "mac") and ARCH: see platform.mk
+include platform.mk
+
 #compiler family, detected positively from the compiler's predefined macros: "gcc", "clang" or empty (unknown: no family-specific flags)
 compilerMacros := $(shell $(CXX) -dM -E -x c++ /dev/null 2>/dev/null)
 compilerFamily := $(if $(findstring __clang__,$(compilerMacros)),clang,$(if $(findstring __GNUC__,$(compilerMacros)),gcc))
@@ -13,7 +16,11 @@ compilerFamily := $(if $(findstring __clang__,$(compilerMacros)),clang,$(if $(fi
 #toolchains other than the default g++ + libstdc++ get their own binary name and object folder (exeName is part of both),
 #so switching a checkout between toolchains never links objects of another C++ library or keeps another toolchain's binary
 toolchainSuffix := $(if $(filter clang,$(compilerFamily)),-clang)$(if $(STDLIB),-$(STDLIB))
+ifeq ($(TARGET_OS),linux)
 exeName := FreeFileSync_$(shell arch)$(toolchainSuffix)
+else ifeq ($(TARGET_OS),mac) #Apple clang + libc++ is the default toolchain there: no suffix for it
+exeName := FreeFileSync_$(ARCH)$(if $(STDLIB),-$(STDLIB))
+endif
 
 CXXFLAGS += -std=c++26 -pipe -I../.. -I../../zenXml -include "zen/i18n.h" \
            -DWXINTL_NO_GETTEXT_MACRO -DwxNO_IMPLICIT_WXSTRING_ENCODING -DwxNO_IMPLICIT_WXSTRING_CONV_TO_PTR \
@@ -70,6 +77,7 @@ endif
 #builds of different checkouts never mix their objects, and other users can't plant files or symlinks there
 objPath := $(buildRoot)/Obj/$(exeName)$(crashReportSuffix)
 
+ifeq ($(TARGET_OS),linux)
 CXXFLAGS += $(shell wx-config --cxxflags --debug=no)
 LDFLAGS  += $(shell wx-config --libs std, aui, richtext --debug=no)
 
@@ -92,6 +100,29 @@ CXXFLAGS += $(shell pkg-config --cflags gtk+-3.0)
 #treat as system headers so that warnings are hidden:
 CXXFLAGS += -isystem/usr/include/gtk-3.0
 
+else ifeq ($(TARGET_OS),mac)
+#static libraries from FFS_DEPS_PREFIX (platform.mk) for ARCH and the deployment target; zlib (.github/build/pkgconfig-macos) and the
+#frameworks come from the SDK
+CXXFLAGS += $(macTargetFlags)
+LDFLAGS  += $(macTargetFlags)
+
+CXXFLAGS += $(shell $(macWxConfig) --cxxflags --debug=no)
+LDFLAGS  += $(call macWxLibs,std aui richtext)
+
+#pkg-config prints nothing when a package or one it requires is missing: stop instead of building without the flags
+ifeq ($(filter-out clean,$(or $(MAKECMDGOALS),all)),)
+else ifneq ($(shell $(macPkgConfig) --exists openssl libcurl libidn2 libssh2 && echo YES),YES)
+    $(error TARGET_OS=mac: pkg-config does not find openssl, libcurl, libidn2 and libssh2 in $(FFS_DEPS_PREFIX): $(shell $(macPkgConfig) --print-errors --exists openssl libcurl libidn2 libssh2 2>&1))
+endif
+CXXFLAGS += $(shell $(macPkgConfig) --cflags openssl libcurl libidn2 libssh2)
+LDFLAGS  += $(shell $(macPkgConfig) --static --libs libcurl libssh2 libidn2 openssl)
+
+#CoreServices: FSEvents; Foundation: NSFileManager, NSError; AppKit, ImageIO, UniformTypeIdentifiers: file icons and thumbnails
+#(base/icon_loader_mac.mm); Security, SystemConfiguration: libcurl (macOS trust store, proxy settings)
+LDFLAGS  += -framework CoreFoundation -framework CoreServices -framework Foundation -framework AppKit -framework ImageIO \
+            -framework UniformTypeIdentifiers -framework Security -framework SystemConfiguration
+endif
+
 #wxWidgets without the wxColorHook patch from Bugs.txt (e.g. stock release or distro packages): let wx+/darkmode.cpp declare the hook itself
 #(YES/NO, or empty if the preprocessor run itself fails => leave it to the real compile to report the error)
 haveWxColorHook := $(shell if wxSettings=$$($(CXX) $(CXXFLAGS) -E -x c++ -include wx/settings.h /dev/null 2>/dev/null); then grep -q refGlobalColorHook <<< "$$wxSettings" && echo YES || echo NO; fi)
@@ -100,11 +131,13 @@ ifeq ($(haveWxColorHook),NO)
     CXXFLAGS += -DZEN_WX_NO_COLOR_HOOK
 endif
 
+ifeq ($(TARGET_OS),linux)
 #support for SELinux (optional)
 haveSelinux := $(shell pkg-config --exists libselinux && echo YES)
 ifeq ($(haveSelinux),YES)
     CXXFLAGS += $(shell pkg-config --cflags libselinux) -DHAVE_SELINUX
     LDFLAGS  += $(shell pkg-config --libs libselinux)
+endif
 endif
 
 cppFiles :=
@@ -199,12 +232,62 @@ else
 cppFiles += ../../zen/crash_report_none.cpp
 endif
 
+#macOS: the platform's own implementations (*_mac.*) in place of the Linux-only files
+ifeq ($(TARGET_OS),mac)
+cppFiles := $(filter-out ../../zen/recycler.cpp base/icon_loader.cpp ../../wx+/taskbar.cpp,$(cppFiles))
+cppFiles += ../../zen/recycler_mac.mm
+cppFiles += ../../zen/sys_error_mac.mm
+cppFiles += base/icon_loader_mac.cpp
+cppFiles += base/icon_loader_mac.mm
+cppFiles += ../../wx+/taskbar_mac.cpp
+cppFiles += ../../wx+/dock_tile_mac.mm
+endif
+
 objFiles := $(cppFiles:%=$(objPath)/ffs/src/%.o)
 target   := $(buildRoot)/Bin/$(exeName)
 
-.PHONY: all clean debug debugResources
+#the engine (comparison, synchronization, file systems, configuration, zen/) without the GUI: everything except application.cpp, ui/,
+#wx+/ and xBRZ/ (used by wx+/image_tools.cpp only), and without a crash reporting implementation (the program linking it picks one).
+#"make engine" builds it as a static library from the same objects as the app, for headless programs such as Tests/sync;
+#"make engine-flags" prints the compiler and linker flags such a program needs (CXX=, CXXFLAGS=, LDFLAGS=, ENGINE_LIB=, one per line).
+#Some of its files still need wxWidgets: see CONTRIBUTING.md, "The engine library".
+engineFiles := $(filter-out application.cpp ui/% ../../wx+/% ../../xBRZ/% ../../zen/crash_report_% ../../zen/crash_scrub.cpp,$(cppFiles))
+engineLib   := $(objPath)/libffs_engine.a
+
+.PHONY: all clean debug debugResources engine engine-flags
 
 all: $(target)
+
+#macOS: the app bundle, next to RealTimeSync.app (as in the official Mac package): mac_bundle.sh writes Info.plist and the icon, copies
+#the resources (and crashpad_handler of a Sentry build) and signs it ad hoc
+ifeq ($(TARGET_OS),mac)
+macBundle := $(buildRoot)/Bin/macos-$(ARCH)/FreeFileSync.app
+all: $(macBundle)
+
+#copied next to the main executable: crashpad_handler of a Sentry build (made by crash_report.mk)
+macBundleHelpers := $(if $(filter 1,$(FFS_SENTRY)),$(buildRoot)/Bin/crashpad_handler)
+
+#common.sh: the deployment target (LSMinimumSystemVersion); Animal.dat: copied when the resources lack it
+$(macBundle): $(target) mac_bundle.sh version/version.h $(wildcard ../Build/Resources/*) \
+              ../../.github/build/common.sh ../../.github/build/resources/Animal.dat $(macBundleHelpers)
+	mkdir -p "$(objPath)"
+	unzip -p ../Build/Resources/Icons.zip FreeFileSync.png > "$(objPath)/FreeFileSync.png"
+	$(SHELL) mac_bundle.sh "$@" "$(target)" FreeFileSync io.github.cuong-tran.freefilesync "$(objPath)/FreeFileSync.png" \
+	    $(macDeploymentTarget) "ffs_gui ffs_batch" ../Build/Resources $(foreach helper,$(macBundleHelpers),"$(helper)")
+endif
+
+engine: $(engineLib)
+
+$(engineLib): $(engineFiles:%=$(objPath)/ffs/src/%.o)
+	rm -f $@
+	$(AR) rcs $@ $^
+
+engine-flags:
+	$(info CXX=$(CXX))
+	$(info CXXFLAGS=$(CXXFLAGS))
+	$(info LDFLAGS=$(LDFLAGS))
+	$(info ENGINE_LIB=$(abspath $(engineLib)))
+	@:
 
 #relink after switching between the default and the FFS_SENTRY=1 build: same binary, objects from different folders
 #(a stamp shared by both object folders, rewritten only when the build switches; written while parsing, so make -n shows no command)
@@ -242,6 +325,12 @@ $(objPath)/ffs/src/%.o : % $(objPath)/ffs/src/%.d
 	mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
 
+#Objective-C++ (macOS *_mac.mm files) with automatic reference counting
+$(filter %.mm.o,$(objFiles)): CXXFLAGS += -fobjc-arc
+#AppKit/CoreGraphics headers of the macOS 26 SDK are no valid C++26 (enumerators of different enumeration types combined, P2864):
+#the files that include them are C++23, behind a header with standard types only (base/icon_loader_mac.h, wx+/dock_tile_mac.h)
+$(filter %/icon_loader_mac.mm.o %/dock_tile_mac.mm.o,$(objFiles)): CXXFLAGS += -std=c++23
+
 #recompile wx+/darkmode.cpp when the wxColorHook check above changes its result (e.g. after switching between a patched and a stock wxWidgets):
 #make doesn't track compiler flags, so keep the result in a stamp file that is rewritten only when the result changes
 wxColorHookStamp := $(objPath)/wxColorHook.stamp
@@ -257,6 +346,9 @@ $(wxColorHookStamp): FORCE
 clean:
 	rm -rf $(objPath)
 	rm -f $(target) $(crashReportStamp)
+ifeq ($(TARGET_OS),mac)
+	rm -rf $(macBundle)
+endif
 ifeq ($(FFS_SENTRY),1)
 	if ! compgen -G '$(buildRoot)/Bin/FreeFileSync_*' > /dev/null && ! compgen -G '$(buildRoot)/Bin/RealTimeSync_*' > /dev/null; then rm -f $(buildRoot)/Bin/crashpad_handler; fi #still needed by another binary?
 endif

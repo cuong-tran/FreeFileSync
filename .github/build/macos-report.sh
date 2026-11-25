@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# Informational reports for the macOS port, run by the macOS build workflow. Never fails the build: every check prints
-# its result instead.
+# Reports for the macOS port, run by the macOS build workflow. "toolchain" is informational and never fails: every check
+# prints its result instead; "zen-compile" fails if zen/ doesn't compile.
 #
 # Usage: macos-report.sh toolchain
 #            For Xcode's clang and, if installed, Homebrew LLVM: compiler and libc++ versions, which of -std=c++26 and
 #            -std=c++2c they accept, a syntax check of zen code that has no platform-specific includes, and the oldest
 #            deployment target at which the C++ library features zen uses are available.
-#        macos-report.sh port-todo <arch> [<deps prefix>]
-#            Syntax-checks every zen/*.cpp with $CXX (default: Xcode's clang++) for macOS on <arch>, with the libraries
-#            in <deps prefix> on the include path: the work list for porting zen/ to macOS. One line per file: "ok" or
-#            the first error.
+#        macos-report.sh zen-compile <arch> [<deps prefix>]
+#            Syntax-checks every zen/*.cpp and zen/*.mm (except crash_report_sentry.cpp, built only with FFS_SENTRY=1) with
+#            $CXX (default: Xcode's clang++) for macOS on <arch>, with the libraries in <deps prefix> on the include path.
+#            Prints all errors of every file (no -Wfatal-errors) and a summary. This one fails: exit code 1 if a file
+#            doesn't compile. (Linux-only files such as dir_watcher.cpp compile to nothing on macOS.)
 set -uo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." &>/dev/null && pwd)"
@@ -162,25 +163,40 @@ int main() { std::shared_mutex m; m.lock_shared(); m.unlock_shared(); }'
     done
 }
 
-port_todo() {
-    local arch="${1:?usage: macos-report.sh port-todo <arch> [<deps prefix>]}" prefix="${2:-}"
-    local cxx="${CXX:-$(xcrun -f clang++)}" std file
+zen_compile() {
+    local arch="${1:?usage: macos-report.sh zen-compile <arch> [<deps prefix>]}" prefix="${2:-}"
+    local cxx="${CXX:-$(xcrun -f clang++)}" std file log
     std="$(std_flag "$cxx")"
-    local flags=("$std" -isysroot "$SDK" -arch "$arch" -mmacosx-version-min="$DEPLOYMENT_TARGET" "${BASE_FLAGS[@]}")
+    local flags=("$std" -isysroot "$SDK" -arch "$arch" -mmacosx-version-min="$DEPLOYMENT_TARGET" -ferror-limit=0)
+    local flag
+    for flag in "${BASE_FLAGS[@]}"; do [ "$flag" = -Wfatal-errors ] || flags+=("$flag"); done
     [ -n "$prefix" ] && flags+=(-I"$prefix/include")
-    echo "zen/*.cpp on macOS $arch: $("$cxx" --version | sed -n 1p), $std, deployment target $DEPLOYMENT_TARGET${prefix:+, libraries from $prefix}"
-    local ok=0 failed=0 out
-    for file in "$ROOT"/zen/*.cpp; do
-        out="$(check_file "$cxx" "zen/$(basename "$file")" "${flags[@]}")"
-        echo "$out"
-        if grep -q ': ok$' <<<"$out"; then ok=$((ok + 1)); else failed=$((failed + 1)); fi
+    echo "zen on macOS $arch: $("$cxx" --version | sed -n 1p), $std, deployment target $DEPLOYMENT_TARGET${prefix:+, libraries from $prefix}"
+    local ok=0 failed=() extra
+    log="$(mktemp)"
+    # headers that no zen/*.cpp includes (socket.h: afs/sftp.cpp, afs/gdrive.cpp) are checked on their own
+    for file in "$ROOT"/zen/*.cpp "$ROOT"/zen/*.mm "$ROOT"/zen/socket.h; do
+        [ -f "$file" ] || continue
+        [ "$(basename "$file")" = crash_report_sentry.cpp ] && continue
+        extra=()
+        [[ "$file" == *.mm ]] && extra=(-fobjc-arc)
+        if [[ "$file" == *.h ]]; then extra=(-x c++ -include "zen/$(basename "$file")" /dev/null); else extra+=("zen/$(basename "$file")"); fi
+        if (cd "$ROOT" && "$cxx" "${flags[@]}" "${extra[@]}") >"$log" 2>&1 && ! grep -q 'error:' "$log"; then
+            ok=$((ok + 1))
+            if grep -q 'warning:' "$log"; then echo "== zen/$(basename "$file"): warnings"; cat "$log"; fi
+        else
+            failed+=("zen/$(basename "$file")")
+            echo "== zen/$(basename "$file"): FAILED"
+            cat "$log"
+        fi
     done
-    echo "== $ok compile, $failed fail"
+    rm -f "$log"
+    echo "== $ok compile, ${#failed[@]} fail${failed[*]:+: ${failed[*]}}"
+    [ ${#failed[@]} -eq 0 ]
 }
 
 case "${1:-}" in
-    toolchain) toolchain_report ;;
-    port-todo) shift; port_todo "$@" ;;
-    *)         echo "usage: macos-report.sh toolchain | port-todo <arch> [<deps prefix>]" >&2; exit 2 ;;
+    toolchain)   toolchain_report; exit 0 ;;
+    zen-compile) shift; zen_compile "$@"; exit ;;
+    *)           echo "usage: macos-report.sh toolchain | zen-compile <arch> [<deps prefix>]" >&2; exit 2 ;;
 esac
-exit 0

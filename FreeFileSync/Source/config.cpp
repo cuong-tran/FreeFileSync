@@ -9,6 +9,7 @@
 #include <zen/file_access.h>
 #include <zen/time.h>
 #include <zen/process_exec.h>
+#include <zen/build_info.h>
 #include <wx/uilocale.h>
 #include "ffs_paths.h"
 #include "base_tools.h"
@@ -26,6 +27,7 @@ const int XML_FORMAT_SYNC_CFG   = 23; //2023-08-24
 }
 
 
+#if defined ZEN_LINUX
 const ExternalApp fff::extCommandFileManager
 //"xdg-open %parent_path%" -> not good enough: we need %local_path% for proper MTP/Google Drive handling
 {L"Show in file manager", "xdg-open \"$(dirname %local_path%)\""};
@@ -34,6 +36,15 @@ const ExternalApp fff::extCommandFileManager
 
 const ExternalApp fff::extCommandOpenDefault
 {L"Open with default application", "xdg-open %local_path%"};
+#elif defined ZEN_MAC //"open -R": reveal (select) the item in Finder; same descriptions as on Linux, so the translations apply
+const ExternalApp fff::extCommandFileManager
+{L"Show in file manager", "open -R %local_path%"};
+
+const ExternalApp fff::extCommandOpenDefault
+{L"Open with default application", "open %local_path%"};
+#else
+    #error "not implemented for this platform"
+#endif
 
 
 

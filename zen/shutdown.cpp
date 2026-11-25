@@ -7,6 +7,7 @@
 #include "shutdown.h"
 #include "thread.h"
 #include "file_error.h"
+#include "build_info.h"
     #include <zen/process_exec.h>
 
 
@@ -22,9 +23,13 @@ void zen::shutdownSystem() //throw FileError
         onSystemShutdownRunTasks();
     try
     {
+#if defined ZEN_MAC //Apple event to System Events: no admin rights, but the user may be asked once to allow automation of "System Events"
+        auto [exitCode, output] = consoleExecute(R"(osascript -e 'tell application "System Events" to shut down')", std::nullopt /*timeoutMs*/); //throw SysError, (SysErrorTimeOut)
+#else
         //https://linux.die.net/man/2/reboot => needs admin rights!
         //"systemctl" should work without admin rights:
         auto [exitCode, output] = consoleExecute("systemctl poweroff", std::nullopt /*timeoutMs*/); //throw SysError, (SysErrorTimeOut)
+#endif
         trim(output);
         if (!output.empty()) //see comment in suspendSystem()
             throw SysError(utfTo<std::wstring>(output));
@@ -38,8 +43,16 @@ void zen::suspendSystem() //throw FileError
 {
     try
     {
+#if defined ZEN_MAC //no admin rights needed
+        auto [exitCode, output] = consoleExecute("pmset sleepnow", std::nullopt /*timeoutMs*/); //throw SysError, (SysErrorTimeOut)
+        if (exitCode != 0)
+            throw SysError(formatSystemError("pmset sleepnow", replaceCpy(_("Exit code %x"), L"%x", numberTo<std::wstring>(exitCode)),
+                                             utfTo<std::wstring>(trimCpy(output))));
+        return; //prints "Sleeping now..." on success
+#else
         //"systemctl" should work without admin rights:
         auto [exitCode, output] = consoleExecute("systemctl suspend", std::nullopt /*timeoutMs*/); //throw SysError, (SysErrorTimeOut)
+#endif
         trim(output);
         //why does "systemctl suspend" return exit code 1 despite apparent success!??
         if (!output.empty()) //at least we can assume "no output" on success
@@ -61,6 +74,9 @@ void zen::terminateProcess(int exitCode)
 
 
 //Command line alternatives:
+    //macOS: Shut down: osascript -e 'tell application "System Events" to shut down'   (sudo shutdown -h now needs admin)
+    //       Sleep:     pmset sleepnow
+    //       Log off:   osascript -e 'tell application "System Events" to log out'
     //Shut down:  systemctl poweroff      //alternative requiring admin: sudo shutdown -h 1
     //Sleep:      systemctl suspend       //alternative requiring admin: sudo pm-suspend
     //Log off:    gnome-session-quit --no-prompt

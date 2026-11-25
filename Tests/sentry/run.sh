@@ -17,6 +17,10 @@
 #   (a), (b) and (f) store the answer "send" in GlobalSettings.xml: without an answer nothing is sent
 #   (e) only with --default-build: the given binaries of a default build contain no sentry symbols or strings, and not the DSN
 #
+# macOS: the same scenarios with the app bundles (crashpad_handler in Contents/MacOS, settings and the report database in
+#   ~/Library/Application Support/FreeFileSync), started without Xvfb; (c)'s and (d)'s start checks use check-mac-app-starts.sh.
+#   (h) and (o) drive the GUI with xdotool and are skipped there, saying so in the log. <bin folder> is Build/Bin/macos-<arch>.
+#
 # Usage: Tests/sentry/run.sh [<bin folder>]          (a) to (d) on a FFS_SENTRY=1 build (default: FreeFileSync/Build/Bin)
 #        Tests/sentry/run.sh --default-build <binary>...   (e)
 #   SENTRY_TEST_DSN          the DSN the Sentry build was made with (default http://testkey@127.0.0.1:38917/1); the fake
@@ -25,6 +29,8 @@
 #   FFS_EXE, RTS_EXE         binary names in the bin folder (default FreeFileSync_<arch>, RealTimeSync_<arch>)
 #   WAIT_SECONDS             longest wait for an upload (default 60); waits poll, they don't sleep for fixed times
 #   SCREENSHOT_DIR           keep the screenshots of (h) and (o) there
+#   SENTRY_TEST_NO_CRASH_CAPTURE=<reason>  skip the scenarios that need a real crash captured ((a), (c) setting, (f)), printing the
+#                            reason: for environments where Crashpad catches no crashes, e.g. x86_64 apps under Rosetta 2
 # Build first, e.g.: FFS_SENTRY=1 SENTRY_DSN=http://testkey@127.0.0.1:38917/1 SENTRY_ENVIRONMENT=ci .github/build/build-free-file-sync.sh
 # Needs python3, xvfb-run and xdotool (and for (d) what check-app-starts.sh needs). Started as root, the apps run as "nobody":
 # as root FreeFileSync keeps its settings in root's home, not in $HOME.
@@ -63,20 +69,38 @@ if [ "${1:-}" = --default-build ]; then
 fi
 
 #------------------------------------------------------------------------------------------------------------------------
-BIN_DIR="$(realpath -- "${1:-$ROOT/FreeFileSync/Build/Bin}")"
-ARCH="$(uname -m)"
-FFS="$BIN_DIR/${FFS_EXE:-FreeFileSync_$ARCH}"
-RTS="$BIN_DIR/${RTS_EXE:-RealTimeSync_$ARCH}"
-RES_DIR="$(dirname "$BIN_DIR")/Resources"
+OS="$(uname -s)"
+ARCH="${ARCH:-$(uname -m)}"
+if [ "$OS" = Darwin ]; then
+    ((BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4))) || { echo "error: needs bash 4.4 or later (macOS: brew install bash)" >&2; exit 2; }
+    BIN_DIR="$(realpath "${1:-$ROOT/FreeFileSync/Build/Bin/macos-$ARCH}")"
+    FFS="$BIN_DIR/FreeFileSync.app/Contents/MacOS/FreeFileSync"
+    RTS="$BIN_DIR/RealTimeSync.app/Contents/MacOS/RealTimeSync"
+    HANDLERS=("$(dirname "$FFS")/crashpad_handler" "$(dirname "$RTS")/crashpad_handler")
+    RES_DIR="$BIN_DIR/FreeFileSync.app/Contents/Resources"
+else
+    BIN_DIR="$(realpath -- "${1:-$ROOT/FreeFileSync/Build/Bin}")"
+    FFS="$BIN_DIR/${FFS_EXE:-FreeFileSync_$ARCH}"
+    RTS="$BIN_DIR/${RTS_EXE:-RealTimeSync_$ARCH}"
+    HANDLERS=("$BIN_DIR/crashpad_handler")
+    RES_DIR="$(dirname "$BIN_DIR")/Resources"
+fi
+# cfg_dir <home>: the apps' configuration folder (GlobalSettings.xml, CrashReports/)
+cfg_dir()
+{
+    if [ "$OS" = Darwin ]; then echo "$1/Library/Application Support/FreeFileSync"; else echo "$1/.config/FreeFileSync"; fi
+}
 ENVIRONMENT="${SENTRY_TEST_ENVIRONMENT:-ci}"
 VERSION="$(sed -n 's/^const char ffsVersion\[\] = "\([^"]*\)".*/\1/p' "$ROOT/FreeFileSync/Source/version/version.h")"
 RELEASE_PREFIX="freefilesync@$VERSION+"
 PORT="$(sed -nE 's#^[a-z]+://[^@/]*@127\.0\.0\.1:([0-9]+)/.*#\1#p' <<<"$DSN")"
 [ -n "$PORT" ] || { echo "error: SENTRY_TEST_DSN must point to 127.0.0.1:<port>" >&2; exit 2; }
-for f in "$FFS" "$RTS" "$BIN_DIR/crashpad_handler"; do
+for f in "$FFS" "$RTS" "${HANDLERS[@]}"; do
     [ -x "$f" ] || { echo "error: $f not found: build with FFS_SENTRY=1 first (see the header of $0)" >&2; exit 2; }
 done
-grep -qF -- "$DSN" <(strings -a "$FFS") || { echo "error: $FFS was not built with SENTRY_DSN=$DSN" >&2; exit 2; }
+ffsStrings="$(strings -a "$FFS")" # captured first: "grep -q" on a pipe ends strings with SIGPIPE
+grep -qF -- "$DSN" <<<"$ffsStrings" || { echo "error: $FFS was not built with SENTRY_DSN=$DSN" >&2; exit 2; }
+unset ffsStrings
 
 WORK="$(mktemp -d)"
 SERVER_PID=""
@@ -128,7 +152,7 @@ start_server()
     python3 -I "$HERE/fake_sentry.py" "$WORK/$1/received" "$PORT" > "$WORK/$1/server.log" 2>&1 &
     SERVER_PID=$!
     local i
-    for (( i = 0; i < 100; ++i )); do
+    for (( i = 0; i < WAIT_SECONDS * 10; ++i )); do # a cold python3 can take seconds to start (seen on an Intel runner)
         grep -q '^port ' "$WORK/$1/server.log" 2>/dev/null && return 0
         kill -0 "$SERVER_PID" 2>/dev/null || break
         sleep 0.1
@@ -158,8 +182,12 @@ run_app()
     rm -f "$WORK/$name/exit" # from an earlier run of the same scenario
     # crashpad_handler gets --database=<home>/.config/...: wait_handler_done() and cleanup() find it by that
     ( rc=0 # not "cmd; echo $?": set -e would end the subshell at a crashed app
-      "${RUN_AS[@]}" env -i PATH="$PATH" HOME="$home" XDG_CONFIG_HOME="$home/.config" LANG=C.UTF-8 NO_AT_BRIDGE=1 "$@" \
-          xvfb-run -a -s "-screen 0 1280x1024x24" "$bin" > "$WORK/$name/app.log" 2>&1 || rc=$?
+      if [ "$OS" = Darwin ]; then # the window server is there: no Xvfb
+          env -i PATH="$PATH" HOME="$home" LANG=en_US.UTF-8 ${FFS_CRASH_REPORT_DEBUG:+FFS_CRASH_REPORT_DEBUG=1} "$@" "$bin" > "$WORK/$name/app.log" 2>&1 || rc=$?
+      else
+          "${RUN_AS[@]}" env -i PATH="$PATH" HOME="$home" XDG_CONFIG_HOME="$home/.config" LANG=C.UTF-8 NO_AT_BRIDGE=1 "$@" \
+              xvfb-run -a -s "-screen 0 1280x1024x24" "$bin" > "$WORK/$name/app.log" 2>&1 || rc=$?
+      fi
       echo "$rc" > "$WORK/$name/exit" ) &
     local pid=$! i
     for (( i = 0; i < WAIT_SECONDS * 10; ++i )); do
@@ -206,7 +234,7 @@ wait_for_request()
 }
 
 # the report database of an app in a scenario, and what is kept there for a later consent (see crash_report_sentry.cpp)
-database() { echo "$WORK/$1/home/.config/FreeFileSync/CrashReports/$2"; }
+database() { echo "$(cfg_dir "$WORK/$1/home")/CrashReports/$2"; }
 kept_reports() # <name> <app>: number of envelopes and crash dumps kept for a later consent
 {
     local db; db="$(database "$1" "$2")"
@@ -218,11 +246,12 @@ kept_reports() # <name> <app>: number of envelopes and crash dumps kept for a la
 # dialog counts as seen, so that no modal dialog is in the way of GUI driving.
 settings()
 {
-    mkdir -p "$WORK/$1/home/.config/FreeFileSync"
+    local dir; dir="$(cfg_dir "$WORK/$1/home")"
+    mkdir -p "$dir"
     printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' '<FreeFileSync XmlType="GLOBAL" XmlFormat="28">' \
         '    <Language Code="en_US"/>' '    <ColorTheme Appearance="Default"/>' \
         "    <WelcomeDialogVersion>$VERSION</WelcomeDialogVersion>" \
-        "    <CrashReports Enabled=\"$2\"/>" '</FreeFileSync>' > "$WORK/$1/home/.config/FreeFileSync/GlobalSettings.xml"
+        "    <CrashReports Enabled=\"$2\"/>" '</FreeFileSync>' > "$dir/GlobalSettings.xml"
     [ "${#RUN_AS[@]}" -eq 0 ] || chown -R nobody: "$WORK/$1"
 }
 
@@ -238,7 +267,14 @@ wait_handler_done()
     return 0
 }
 
-show_logs() { sed 's/^/    app: /' "$WORK/$1/app.log" | tail -20 >&2 || true; }
+show_logs()
+{
+    [ ! -f "$WORK/$1/app-first-run.log" ] || sed 's/^/    first run: /' "$WORK/$1/app-first-run.log" | tail -40 >&2 || true
+    sed 's/^/    app: /' "$WORK/$1/app.log" | tail -40 >&2 || true
+    if [ "$OS" = Darwin ]; then # where the reports went (or didn't): the report databases
+        find "$(cfg_dir "$WORK/$1/home")/CrashReports" -maxdepth 3 2>/dev/null | sed 's/^/    db: /' >&2 || true
+    fi
+}
 
 #------------------------------------------------------------------------------------------------------------------------
 # (a) crashes, with the user's consent
@@ -263,8 +299,16 @@ crash_test() # <name> <binary> <app tag> <FFS_TEST_CRASH value>
     wait_handler_done "$name"
     stop_server
 }
+# skipped <scenario...>: true (and says so) when crash capture is not available here (SENTRY_TEST_NO_CRASH_CAPTURE)
+skipped()
+{
+    [ -n "${SENTRY_TEST_NO_CRASH_CAPTURE:-}" ] || return 1
+    echo "== skipped: $*: $SENTRY_TEST_NO_CRASH_CAPTURE"
+}
+skipped a-segv a-abort || {
 crash_test a-segv  "$FFS" FreeFileSync segv
 crash_test a-abort "$RTS" RealTimeSync abort
+}
 
 # (b) internal error with paths in the message, with the user's consent
 name=b-internal
@@ -286,7 +330,12 @@ fi
 wait_handler_done "$name"
 stop_server
 
-# (c) turned off in GlobalSettings.xml: a real crash, nothing arrives, and the dump is not kept for later
+# (c) turned off in GlobalSettings.xml: a real crash, nothing arrives, and the dump is not kept for later.
+# macOS: sentry-native has no first-chance handler there, so the crash is not discarded in the process: the app dies by the
+# signal (exit code 139) and Crashpad writes a dump, which the next start with "don't send" deletes (crash_report_sentry.cpp,
+# markRevokedPeriod()): "nothing is kept" is checked after that start.
+dump_count() { find "$(database "$1" "$2")" -name '*.dmp' 2>/dev/null | wc -l | tr -d ' '; } # <name> <app>
+skipped c-setting-FreeFileSync c-setting-RealTimeSync ||
 for app in FreeFileSync RealTimeSync; do
     name="c-setting-$app"
     bin="$FFS"; [ "$app" = RealTimeSync ] && bin="$RTS"
@@ -295,24 +344,70 @@ for app in FreeFileSync RealTimeSync; do
     wait_handler_done "$name"
     sleep 1 # the handler is gone, but let a request that is already in flight land
     rc="$(cat "$WORK/$name/exit" 2>/dev/null || echo none)"
-    dumps="$(find "$(database "$name" "$app")" -name '*.dmp' 2>/dev/null | wc -l)"
-    if [ "$rc" != 1 ]; then # the crash handler discards the crash and ends the process with EXIT_FAILURE
+    expectRc=1 # the crash handler discards the crash and ends the process with EXIT_FAILURE
+    if [ "$OS" = Darwin ]; then
+        expectRc=139 # SIGSEGV
+        no_dumps() { [ "$(dump_count "$1" "$app")" -eq 0 ]; }
+        STOP_WHEN=no_dumps run_app "$name" "$bin" # the next start, still "don't send": deletes the dump
+        wait_handler_done "$name"
+        sleep 1
+    fi
+    dumps="$(dump_count "$name" "$app")"
+    if [ "$rc" != "$expectRc" ]; then
         show_logs "$name"
-        fail "$name: the app did not crash, or its crash was not discarded (exit code $rc)"
+        fail "$name: the app did not crash, or its crash was not discarded (exit code $rc, expected $expectRc)"
     elif [ "$dumps" -ne 0 ]; then
+        show_logs "$name"
         fail "$name: turned off, but a crash dump was kept ($dumps)"
     elif [ -n "$(ls "$WORK/$name/received")" ]; then
         fail "$name: turned off, but a report arrived: $(ls "$WORK/$name/received")"
     else
-        pass "$name: turned off: crashed, no dump kept, nothing arrived"
+        pass "$name: turned off: crashed (exit code $rc), no dump kept, nothing arrived"
     fi
     stop_server
 done
 
+# (c) macOS: crash while turned off, then the answer changes to "send" before the next start: the dump of the revoked period is
+# deleted before uploads are enabled, so nothing arrives, the database holds no report and the revoked period is over
+if [ "$OS" = Darwin ]; then
+    skipped c-revoked-then-send || {
+    name=c-revoked-then-send
+    start_server "$name"; new_home "$name" >/dev/null; settings "$name" false
+    run_app "$name" "$FFS" FFS_TEST_CRASH=segv
+    wait_handler_done "$name"
+    crashDumps="$(dump_count "$name" FreeFileSync)"
+    settings "$name" true
+    period_over() { [ "$(dump_count "$1" FreeFileSync)" -eq 0 ] && [ ! -e "$(database "$1" FreeFileSync)/revoked-period" ]; }
+    STOP_WHEN=period_over run_app "$name" "$FFS"
+    wait_handler_done "$name"
+    sleep 2 # an upload, if one had been started, lands now
+    reports="$(find "$(database "$name" FreeFileSync)" \( -name '*.dmp' -o -name '*.envelope' \) 2>/dev/null | wc -l | tr -d ' ')"
+    if [ "$crashDumps" -eq 0 ]; then
+        show_logs "$name"; fail "$name: the crash while turned off left no dump to test with"
+    elif [ -n "$(ls "$WORK/$name/received")" ]; then
+        fail "$name: a report of the revoked period arrived after \"send\": $(ls "$WORK/$name/received")"
+    elif [ "$reports" -ne 0 ] || [ -e "$(database "$name" FreeFileSync)/revoked-period" ]; then
+        show_logs "$name"; fail "$name: after \"send\": $reports reports left, or the revoked period still marked"
+    else
+        pass "$name: dump of the revoked period deleted before \"send\" applied, nothing arrived"
+    fi
+    stop_server
+    }
+fi
+
 # (c) FFS_NO_CRASH_REPORT=1: no reporter at all, so FFS_TEST_CRASH is ignored: the app starts normally, nothing arrives
 name=c-env
 start_server "$name"
-if FFS_NO_CRASH_REPORT=1 FFS_TEST_CRASH=segv WAIT_SECONDS=30 "$ROOT/.github/build/check-app-starts.sh" "$FFS" '^FreeFileSync [0-9.]+ ' > "$WORK/$name/check.log" 2>&1 &&
+# start_check <binary> <screenshot name>: the platform's start check, with the environment of the caller
+start_check()
+{
+    if [ "$OS" = Darwin ]; then
+        WAIT_SECONDS=30 "$ROOT/.github/build/check-mac-app-starts.sh" "${1%/Contents/MacOS/*}" '^FreeFileSync [0-9.]+ ' "$WORK/$2.png"
+    else
+        WAIT_SECONDS=30 "$ROOT/.github/build/check-app-starts.sh" "$1" '^FreeFileSync [0-9.]+ '
+    fi
+}
+if FFS_NO_CRASH_REPORT=1 FFS_TEST_CRASH=segv start_check "$FFS" "$name" > "$WORK/$name/check.log" 2>&1 &&
    [ -z "$(ls "$WORK/$name/received")" ]; then
     pass "$name: FFS_NO_CRASH_REPORT=1: starts normally, no test crash, nothing arrived"
 else
@@ -330,6 +425,7 @@ kept_test() # <name> <answer: true|false>
     new_home "$name" >/dev/null
     has_kept_envelope() { [ -n "$(find "$(database "$1" FreeFileSync)/cache" -name '*.envelope' 2>/dev/null)" ]; }
     STOP_WHEN=has_kept_envelope run_app "$name" "$FFS" FFS_TEST_CRASH=internal-error
+    cp "$WORK/$name/app.log" "$WORK/$name/app-first-run.log" 2>/dev/null || true # for show_logs: the run before the crash
     run_app "$name" "$FFS" FFS_TEST_CRASH=segv
     wait_handler_done "$name"
     local kept; kept="$(kept_reports "$name" FreeFileSync)"
@@ -382,8 +478,10 @@ run_app_bg_until_requests() # <name> <count>
     fi
     wait_handler_done "$name"
 }
+skipped f-kept-then-sent f-kept-then-deleted || {
 kept_test f-kept-then-sent    true
 kept_test f-kept-then-deleted false
+}
 
 # poll <seconds> <command...>: true once the command succeeds (every 0.1 s)
 poll()
@@ -430,6 +528,10 @@ wait_handler_done "$name"
 [ -z "$(ls "$WORK/$name/received")" ] || fail "$name: a report arrived: $(ls "$WORK/$name/received")"
 stop_server
 
+# (h) and (o) drive the GUI with xdotool under Xvfb: Linux only
+if [ "$OS" = Darwin ]; then
+    echo "== skipped on macOS: (h) two processes and (o) options dialog: they drive the GUI by keyboard with xdotool under Xvfb, which macOS lacks"
+else
 # (h) the answer given in a running FreeFileSync reaches a second process at once
 name=h-two-processes
 start_server "$name"
@@ -541,18 +643,27 @@ else
     cat "$WORK/$name/x.log" >&2
     fail "$name: OK in the options dialog without an answer stored a consent, or the app did not exit and save normally"
 fi
+fi
 
 # (d) no crash handler: starts normally (main window, no error), reporting off, nothing arrives
 name=d-no-handler
 start_server "$name"
-mkdir -p "$WORK/$name/app/Bin"
-cp -a "$FFS" "$WORK/$name/app/Bin/"
-for lib in "$BIN_DIR"/*.so*; do # a package's bundled libraries ($ORIGIN rpath)
-    [ -e "$lib" ] && cp -a "$lib" "$WORK/$name/app/Bin/"
-done
-ln -s "$RES_DIR" "$WORK/$name/app/Resources"
-[ "${#RUN_AS[@]}" -eq 0 ] || chown -R nobody: "$WORK/$name"
-if WAIT_SECONDS=30 "$ROOT/.github/build/check-app-starts.sh" "$WORK/$name/app/Bin/$(basename "$FFS")" '^FreeFileSync [0-9.]+ ' > "$WORK/$name/check.log" 2>&1; then
+if [ "$OS" = Darwin ]; then # a copy of the bundle without the handler, signed again (ad hoc) since its content changed
+    ditto "$BIN_DIR/FreeFileSync.app" "$WORK/$name/app/FreeFileSync.app"
+    rm "$WORK/$name/app/FreeFileSync.app/Contents/MacOS/crashpad_handler"
+    codesign --force --sign - --timestamp=none "$WORK/$name/app/FreeFileSync.app"
+    noHandlerFfs="$WORK/$name/app/FreeFileSync.app/Contents/MacOS/FreeFileSync"
+else
+    mkdir -p "$WORK/$name/app/Bin"
+    cp -a "$FFS" "$WORK/$name/app/Bin/"
+    for lib in "$BIN_DIR"/*.so*; do # a package's bundled libraries ($ORIGIN rpath)
+        [ -e "$lib" ] && cp -a "$lib" "$WORK/$name/app/Bin/"
+    done
+    ln -s "$RES_DIR" "$WORK/$name/app/Resources"
+    [ "${#RUN_AS[@]}" -eq 0 ] || chown -R nobody: "$WORK/$name"
+    noHandlerFfs="$WORK/$name/app/Bin/$(basename "$FFS")"
+fi
+if start_check "$noHandlerFfs" "$name" > "$WORK/$name/check.log" 2>&1; then
     if grep -q 'Crash reporting is off: Crash handler not found' "$WORK/$name/check.log" && [ -z "$(ls "$WORK/$name/received")" ]; then
         pass "$name: FreeFileSync starts without crashpad_handler, reporting off, nothing arrived"
     else

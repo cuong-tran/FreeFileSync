@@ -7,10 +7,13 @@
 #include "darkmode.h"
 #include <memory>
 #include <zen/sys_version.h>
+#include <zen/build_info.h>
 #include <wx/settings.h>
 #include <wx/window.h>
 #include "color_tools.h"
+#if defined ZEN_LINUX
     #include <gtk/gtk.h>
+#endif
 
 using namespace zen;
 

@@ -6,6 +6,7 @@
 #include <zen/process_exec.h>
 #include <zen/thread.h>
 #include <zen/file_access.h>
+#include <zen/process_priority.h>
 #include "test.h"
 
 #ifdef ZEN_LINUX
@@ -110,6 +111,11 @@ TEST_CASE(processExec)
     CHECK_THROWS(SysErrorTimeOut, (void)consoleExecute("ping -n 10 127.0.0.1", 200));
 #endif
 
+#ifdef ZEN_MAC
+    //openWithDefaultApp(): "open" fails for a missing item (opening a real one would start an app on the test machine)
+    CHECK_THROWS(FileError, openWithDefaultApp(appendPath(testDir, "missing file")));
+#endif
+
     //escapeCommandArg(): round trip through the shell
     for (const Zstring& arg : {Zstring("plain"), Zstring("with space"), Zstring("quote\"s and 'single'"), Zstring("$HOME `cmd` \\ & | ; < > ( ) # ~ *")})
     {
@@ -120,6 +126,20 @@ TEST_CASE(processExec)
 #else
         CHECK(!escapeCommandArg(arg).empty()); //cmd.exe quoting differs; checked once the Windows implementation exists
 #endif
+    }
+}
+
+
+TEST_CASE(processPriority)
+{
+    //background: lower I/O priority (Linux: ioprio class "best effort" 6, macOS: IOPOL_UTILITY), restored by the destructor
+    CHECK_NO_THROW(SetProcessPriority{ProcessPriority::background});
+    CHECK_NO_THROW(SetProcessPriority{ProcessPriority::normal});
+    {
+        std::unique_ptr<SetProcessPriority> prio;
+        CHECK_NO_THROW(prio = std::make_unique<SetProcessPriority>(ProcessPriority::background));
+        std::unique_ptr<SetProcessPriority> nested; //nested scopes restore in reverse order
+        CHECK_NO_THROW(nested = std::make_unique<SetProcessPriority>(ProcessPriority::background));
     }
 }
 

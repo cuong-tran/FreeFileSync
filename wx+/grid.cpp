@@ -17,9 +17,12 @@
 #include <zen/utf.h>
 #include <zen/zstring.h>
 #include <zen/format_unit.h>
+#include <zen/build_info.h>
 #include "color_tools.h"
 #include "dc.h"
+#if defined ZEN_LINUX
     #include <gtk/gtk.h>
+#endif
 
 using namespace zen;
 
@@ -1685,6 +1688,7 @@ wxSize Grid::GetSizeAvailableForScrollTarget(const wxSize& size)
     //luckily "scrollbar-spacing" is stable on GTK3
     const wxSize scrollBarSizeTmp = GetSize() - GetClientSize();
 
+#if defined ZEN_LINUX
     //lame hard-coded numbers (from Ubuntu 19.10) and openSuse
     //=> let's have a *close* eye on scrollbar fluctuation!
     assert(scrollBarSizeTmp.x == 0 ||
@@ -1693,6 +1697,9 @@ wxSize Grid::GetSizeAvailableForScrollTarget(const wxSize& size)
     assert(scrollBarSizeTmp.y == 0 ||
            scrollBarSizeTmp.y == 6 || scrollBarSizeTmp.y == 13 || //Ubuntu 19.10
            scrollBarSizeTmp.y == 16); //openSuse
+#elif defined ZEN_MAC
+    //scrollbar sizes depend on the "Show scroll bars" setting (overlay scrollers: 0): no fixed values to check
+#endif
     scrollBarHeightH_ = std::max(scrollBarHeightH_, scrollBarSizeTmp.y);
     scrollBarWidthV_  = std::max(scrollBarWidthV_,  scrollBarSizeTmp.x);
     //this function is called again by wxScrollHelper::AdjustScrollbars() if SB_SHOW_ALWAYS-scrollbars are not yet shown => scrollbar size > 0 eventually!
@@ -2040,6 +2047,7 @@ void Grid::showScrollBars(Grid::ScrollBarStatus horizontal, Grid::ScrollBarStatu
     showScrollbarH_ = horizontal;
     showScrollbarV_ = vertical;
 
+#if defined ZEN_LINUX
     //the following wxGTK approach is pretty much identical to wxWidgets 2.9 ShowScrollbars() code!
 
     auto mapStatus = [](ScrollBarStatus sbStatus) -> GtkPolicyType
@@ -2062,6 +2070,26 @@ void Grid::showScrollBars(Grid::ScrollBarStatus horizontal, Grid::ScrollBarStatu
     ::gtk_scrolled_window_set_policy(scrollWin,
                                      mapStatus(horizontal),
                                      mapStatus(vertical));
+#elif defined ZEN_MAC //wxOSX: wxScrolledWindow uses the generic wxScrollHelper, which implements ShowScrollbars()
+    auto mapStatus = [](ScrollBarStatus sbStatus)
+    {
+        switch (sbStatus)
+        {
+            case SB_SHOW_AUTOMATIC:
+                return wxSHOW_SB_DEFAULT;
+            case SB_SHOW_ALWAYS:
+                return wxSHOW_SB_ALWAYS;
+            case SB_SHOW_NEVER:
+                return wxSHOW_SB_NEVER;
+        }
+        assert(false);
+        return wxSHOW_SB_DEFAULT;
+    };
+
+    ShowScrollbars(mapStatus(horizontal), mapStatus(vertical));
+#else
+    #error "not implemented for this platform"
+#endif
 
     updateWindowSizes();
 }

@@ -19,8 +19,18 @@
 #include "../localization.h"
 #include "../ffs_paths.h"
 #include "../return_codes.h"
+#include <zen/build_info.h>
+#if defined ZEN_MAC
+    #include <wx/dialog.h> //wxDialog::OSXHasModalDialogsOpen()
+    #include <wx/utils.h>  //wxBell()
+    #include <wx+/popup_dlg.h>
+#endif
 
+#if defined ZEN_LINUX
     #include <gtk/gtk.h>
+#elif defined ZEN_MAC
+    #include <signal.h> //signal(): on Linux it comes with <gtk/gtk.h>
+#endif
 
 using namespace zen;
 using namespace rts;
@@ -93,6 +103,7 @@ bool Application::OnInit()
     try { imageResourcesInit(appendPath(fff::getResourceDirPath(), Zstr("Icons.zip"))); }
     catch (const FileError& e) { logExtraError(e.toString()); } //not critical in this context
 
+#if defined ZEN_LINUX
     auto loadCSS = [&](const char* fileName)
     {
         GtkCssProvider* provider = ::gtk_css_provider_new();
@@ -124,7 +135,11 @@ bool Application::OnInit()
         }
         catch (const SysError& e3) { logExtraError(_("Failed to update the color theme.") + L"\n\n" + e3.toString()); }
     }
+#elif defined ZEN_MAC
+    //no GTK CSS (Gtk3Styles.css): wxOSX uses native Cocoa controls
+#endif
 
+#if defined ZEN_LINUX
     /* we're a GUI app: ignore SIGHUP when the parent terminal quits! (or process is killed!)
             => the FFS launcher will still be killed => fine
             => macOS: apparently not needed! interestingly the FFS launcher does receive SIGHUP and *is* killed  */
@@ -132,6 +147,9 @@ bool Application::OnInit()
         oldHandler == SIG_ERR)
         logExtraError(_("Error during process initialization.") + L"\n\n" + formatSystemError("signal(SIGHUP)", getLastError()));
     else assert(!oldHandler);
+#elif defined ZEN_MAC
+    //SIGHUP: not needed on macOS (see comment above); sighandler_t is glibc-only anyway
+#endif
 
 
     /* prevent process termination on broken sockets/pipes and have send()/write() return EPIPE instead.
@@ -172,8 +190,48 @@ bool Application::OnInit()
 }
 
 
+#if defined ZEN_MAC
+void Application::MacOpenFiles(const wxArrayString& fileNames)
+{
+    std::vector<Zstring> filePaths;
+    for (const wxString& fileName : fileNames)
+        filePaths.push_back(utfTo<Zstring>(fileName));
+
+    if (!eventLoopEntered_) //launched by Finder: wxOSX calls MacOpenFiles() after OnInit(), before onEnterEventLoop() runs
+        macOpenFilesAtLaunch_.insert(macOpenFilesAtLaunch_.end(), filePaths.begin(), filePaths.end()); //=> checked and handled like command line arguments
+    else if (auto mainDlg = dynamic_cast<MainDialog*>(GetTopWindow());
+             mainDlg && !filePaths.empty())
+    {
+        //hidden while monitoring, or a modal dialog is open => don't replace the configuration underneath
+        if (!mainDlg->IsShown() || !mainDlg->IsEnabled() || wxDialog::OSXHasModalDialogsOpen())
+        {
+            wxBell();
+            return;
+        }
+
+        try
+        {
+            const Zstring& filePath = getResolvedFilePath(filePaths[0]); //the same checks as for command line arguments
+            if (!endsWithAsciiNoCase(filePath, Zstr(".ffs_real")) &&
+                !endsWithAsciiNoCase(filePath, Zstr(".ffs_batch")))
+                throw FileError(replaceCpy(_("Cannot open file %x."), L"%x", fmtPath(filePath)),
+                                _("Unexpected file extension:") + L' ' + fmtPath(getFileExtension(filePath)) + L'\n' +
+                                _("Expected:") + L" ffs_real, ffs_batch");
+
+            mainDlg->loadConfig(filePath); //like dropping the files on the main window
+            mainDlg->Raise();
+        }
+        catch (const FileError& e) { showNotificationDialog(mainDlg, DialogInfoType::error, PopupDialogCfg().setDetailInstructions(e.toString())); }
+    }
+}
+#endif
+
+
 void Application::onEnterEventLoop()
 {
+#if defined ZEN_MAC
+    eventLoopEntered_ = true;
+#endif
     //wxWidgets app exit handling is weird... we want to exit only if the logical main window is closed, not just *any* window!
     wxTheApp->SetExitOnFrameDelete(false); //prevent popup-windows from becoming temporary top windows leading to program exit after closure
     ZEN_ON_SCOPE_EXIT(if (!wxTheApp->GetExitOnFrameDelete()) wxTheApp->ExitMainLoop()); //quit application, if no main window was set (batch silent mode)
@@ -183,9 +241,23 @@ void Application::onEnterEventLoop()
 
     try
     {
+#if defined ZEN_LINUX
         for (int i = 1; i < argc; ++i)
         {
             const Zstring& filePath = getResolvedFilePath(utfTo<Zstring>(argv[i]));
+#elif defined ZEN_MAC //plus the files Finder asked to open at launch (see MacOpenFiles()): checked the same way
+        std::vector<Zstring> launchArgs;
+        for (int i = 1; i < argc; ++i)
+            launchArgs.push_back(utfTo<Zstring>(argv[i]));
+        launchArgs.insert(launchArgs.end(), macOpenFilesAtLaunch_.begin(), macOpenFilesAtLaunch_.end());
+        macOpenFilesAtLaunch_.clear();
+
+        for (const Zstring& launchArg : launchArgs)
+        {
+            const Zstring& filePath = getResolvedFilePath(launchArg);
+#else
+    #error "not implemented for this platform"
+#endif
 #if 0
             if (!fileAvailable(filePath)) //...be a little tolerant
                 for (const Zchar* ext : {Zstr(".ffs_real"), Zstr(".ffs_batch")})

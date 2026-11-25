@@ -12,6 +12,10 @@
     #include <sys/socket.h>
     #include <netinet/tcp.h> //TCP_NODELAY
     #include <netdb.h> //getaddrinfo
+#if defined ZEN_MAC
+    #include <fcntl.h> //FD_CLOEXEC
+    #include "process_exec.h" //lockFdInheritance
+#endif
 
 namespace zen
 {
@@ -44,12 +48,17 @@ std::wstring formatGaiErrorCode(int ec)
             ZEN_CASE_RETURN_STRING(EAI_SOCKTYPE);
             ZEN_CASE_RETURN_STRING(EAI_SYSTEM);
             ZEN_CASE_RETURN_STRING(EAI_OVERFLOW);
+#if defined ZEN_LINUX //glibc extensions
             ZEN_CASE_RETURN_STRING(EAI_INPROGRESS);
             ZEN_CASE_RETURN_STRING(EAI_CANCELED);
             ZEN_CASE_RETURN_STRING(EAI_NOTCANCELED);
             ZEN_CASE_RETURN_STRING(EAI_ALLDONE);
             ZEN_CASE_RETURN_STRING(EAI_INTR);
             ZEN_CASE_RETURN_STRING(EAI_IDN_ENCODE);
+#elif defined ZEN_MAC
+            ZEN_CASE_RETURN_STRING(EAI_BADHINTS);
+            ZEN_CASE_RETURN_STRING(EAI_PROTOCOL);
+#endif
         default:
             return replaceCpy(_("Error code %x"), L"%x", numberTo<std::wstring>(ec));
     }
@@ -113,6 +122,26 @@ public:
 
         const auto getConnectedSocket = [timeoutSec](const auto& /*addrinfo*/ ai)
         {
+#if defined ZEN_MAC //no SOCK_CLOEXEC/SOCK_NONBLOCK: set them right after creation, with forks by zen locked out in between
+            std::unique_lock fdLock = lockFdInheritance();
+            SocketType testSocket = ::socket(ai.ai_family,    //int socket_family
+                                             ai.ai_socktype,  //int socket_type
+                                             ai.ai_protocol); //int protocol
+            if (testSocket == invalidSocket)
+                THROW_LAST_SYS_ERROR_WSA("socket");
+            ZEN_ON_SCOPE_FAIL(closeSocket(testSocket));
+
+            if (::fcntl(testSocket, F_SETFD, FD_CLOEXEC) == -1)
+                THROW_LAST_SYS_ERROR_WSA("fcntl(FD_CLOEXEC)");
+            fdLock.unlock();
+
+            setNonBlocking(testSocket, true); //throw SysError
+
+            //SIGPIPE is ignored process-wide (see assert above), but a library or a debugger may change that: no SIGPIPE for this socket
+            int noSigPipe = 1;
+            if (::setsockopt(testSocket, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, sizeof(noSigPipe)) != 0)
+                THROW_LAST_SYS_ERROR_WSA("setsockopt(SO_NOSIGPIPE)");
+#else
             SocketType testSocket = ::socket(ai.ai_family,    //int socket_family
                                              SOCK_CLOEXEC | SOCK_NONBLOCK |
                                              ai.ai_socktype,  //int socket_type
@@ -120,6 +149,7 @@ public:
             if (testSocket == invalidSocket)
                 THROW_LAST_SYS_ERROR_WSA("socket");
             ZEN_ON_SCOPE_FAIL(closeSocket(testSocket));
+#endif
 
             if (::connect(testSocket, ai.ai_addr, static_cast<int>(ai.ai_addrlen)) != 0) //0 or SOCKET_ERROR(-1)
             {

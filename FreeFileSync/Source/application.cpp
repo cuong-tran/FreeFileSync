@@ -27,8 +27,13 @@
 #include "crash_report_init.h"
 #include "ffs_paths.h"
 #include "return_codes.h"
+#include <zen/build_info.h>
 
+#if defined ZEN_LINUX
     #include <gtk/gtk.h>
+#elif defined ZEN_MAC
+    #include <signal.h> //signal(): on Linux it comes with <gtk/gtk.h>
+#endif
 
 using namespace zen;
 using namespace fff;
@@ -150,6 +155,7 @@ bool Application::OnInit()
     try { imageResourcesInit(appendPath(getResourceDirPath(), Zstr("Icons.zip"))); }
     catch (const FileError& e) { logExtraError(e.toString()); } //not critical in this context
 
+#if defined ZEN_LINUX
     //GTK should already have been initialized by wxWidgets (see \src\gtk\app.cpp:wxApp::Initialize)
     auto loadCSS = [&](const char* fileName)
     {
@@ -182,7 +188,11 @@ bool Application::OnInit()
         }
         catch (const SysError& e2) { logExtraError(_("Failed to update the color theme.") + L"\n\n" + e2.toString()); }
     }
+#elif defined ZEN_MAC
+    //no GTK CSS (Gtk3Styles.css): wxOSX uses native Cocoa controls
+#endif
 
+#if defined ZEN_LINUX
     /* we're a GUI app: ignore SIGHUP when the parent terminal quits! (or process is killed!)
         => the FFS launcher will still be killed => fine
         => macOS: apparently not needed! interestingly the FFS launcher does receive SIGHUP and *is* killed  */
@@ -190,6 +200,9 @@ bool Application::OnInit()
         oldHandler == SIG_ERR)
         logExtraError(_("Error during process initialization.") + L"\n\n" + formatSystemError("signal(SIGHUP)", getLastError()));
     else assert(!oldHandler);
+#elif defined ZEN_MAC
+    //SIGHUP: not needed on macOS (see comment above); sighandler_t is glibc-only anyway
+#endif
 
 
     /* prevent process termination on broken sockets/pipes and have send()/write() return EPIPE instead.
@@ -270,9 +283,93 @@ int Application::OnExit()
 
 
 
+#if defined ZEN_MAC
+namespace
+{
+//a config file Finder asked the running app to open: the same checks as for a command line argument (see onEnterEventLoop())
+Zstring checkFinderFilePath(const Zstring& itemPath) //throw FileError
+{
+    const Zstring& filePath = getResolvedFilePath(itemPath);
+    if (!endsWithAsciiNoCase(filePath, Zstr(".ffs_gui")) &&
+        !endsWithAsciiNoCase(filePath, Zstr(".ffs_batch")))
+        throw FileError(replaceCpy(_("Cannot open file %x."), L"%x", fmtPath(filePath)),
+                        _("Unexpected file extension:") + L' ' + fmtPath(getFileExtension(filePath)) + L'\n' +
+                        _("Expected:") + L" ffs_gui, ffs_batch");
+    return filePath;
+}
+
+
+/* macOS runs one process per app bundle and hands later Finder opens to it: start a new process of our own executable for them
+   instead, so that a batch job runs as one, exactly as on Linux (and a .ffs_gui opens in a window of its own during batch mode) */
+void startNewProcess(const std::vector<Zstring>& args) //throw FileError
+{
+    const Zstring ffsLaunchPath = getProcessPath(); //throw FileError
+    Zstring cmdLine = escapeCommandArg(ffsLaunchPath);
+    for (const Zstring& arg : args)
+        cmdLine += Zstr(' ') + escapeCommandArg(arg);
+    try
+    {
+        //run async, but give consoleExecute() some "time to fail" (as for the restart in MainDialog::onMenuOptions())
+        const auto& [exitCode, output] = consoleExecute(cmdLine, 100 /*timeoutMs*/); //throw SysError, SysErrorTimeOut
+        if (exitCode == 126 || exitCode == 127) //sh: cannot execute/not found; other codes are the job's own result, which it reports itself
+            throw SysError(formatSystemError("", replaceCpy(_("Exit code %x"), L"%x", numberTo<std::wstring>(exitCode)), utfTo<std::wstring>(output)));
+    }
+    catch (SysErrorTimeOut&) {} //still running: fine
+    catch (const SysError& e) { throw FileError(replaceCpy(_("Command %x failed."), L"%x", fmtPath(cmdLine)), e.toString()); }
+}
+}
+
+
+void Application::MacOpenFiles(const wxArrayString& fileNames)
+{
+    std::vector<Zstring> filePaths;
+    for (const wxString& fileName : fileNames)
+        filePaths.push_back(utfTo<Zstring>(fileName));
+
+    if (!eventLoopEntered_) //launched by Finder: wxOSX calls MacOpenFiles() after OnInit(), before onEnterEventLoop() runs
+    {
+        macOpenFilesAtLaunch_.insert(macOpenFilesAtLaunch_.end(), filePaths.begin(), filePaths.end()); //=> checked and handled like command line arguments
+        return;
+    }
+
+    //already running: .ffs_batch => a new process runs the job; .ffs_gui => like dropping the files on the main window
+    auto mainDlg = dynamic_cast<MainDialog*>(GetTopWindow()); //nullptr: batch mode without main window
+    std::vector<Zstring> guiFilePaths;
+    for (const Zstring& itemPath : filePaths)
+        try
+        {
+            const Zstring& filePath = checkFinderFilePath(itemPath); //throw FileError
+            if (endsWithAsciiNoCase(filePath, Zstr(".ffs_batch")))
+                startNewProcess({filePath}); //throw FileError
+            else
+                guiFilePaths.push_back(filePath);
+        }
+        catch (const FileError& e) { showNotificationDialog(mainDlg, DialogInfoType::error, PopupDialogCfg().setDetailInstructions(e.toString())); }
+
+    if (!guiFilePaths.empty())
+    {
+        if (mainDlg)
+            mainDlg->openConfigFilesFromFinder(guiFilePaths); //queued while the window is busy
+        else
+            try { startNewProcess(guiFilePaths); } //throw FileError
+            catch (const FileError& e) { showNotificationDialog(nullptr, DialogInfoType::error, PopupDialogCfg().setDetailInstructions(e.toString())); }
+    }
+}
+#endif
+
+
 void Application::onEnterEventLoop()
 {
+#if defined ZEN_LINUX
     const std::vector<Zstring>& commandArgs = getCommandlineArgs(*this);
+#elif defined ZEN_MAC //plus the files Finder asked to open at launch: see MacOpenFiles()
+    std::vector<Zstring> commandArgs = getCommandlineArgs(*this);
+    commandArgs.insert(commandArgs.end(), macOpenFilesAtLaunch_.begin(), macOpenFilesAtLaunch_.end());
+    macOpenFilesAtLaunch_.clear();
+    eventLoopEntered_ = true;
+#else
+    #error "not implemented for this platform"
+#endif
 
     //wxWidgets app exit handling is weird... we want to exit only if the logical main window is closed, not just *any* window!
     wxTheApp->SetExitOnFrameDelete(false); //prevent popup-windows from becoming temporary top windows leading to program exit after closure

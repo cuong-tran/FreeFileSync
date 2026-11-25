@@ -5,6 +5,8 @@
 // *****************************************************************************
 #pragma once
 
+#include <zen/build_info.h>
+
 #include <wx/bmpbuttn.h>
 #include <wx/settings.h>
 #include <wx/statbmp.h>
@@ -14,6 +16,22 @@
 
 namespace zen
 {
+#if defined ZEN_MAC
+/* wxOSX: a bitmap button has wxBU_NOTEXT, so SetLabel() only stores the label (setButtonLabel() draws it into the image),
+   but wxWidgetCocoaImpl::SetFont() hands GetLabel() to the NSButton as its title anyway: the text would show twice, the native
+   copy next to the image. So the label is hidden from SetFont() while it runs, and GetLabel()/GetLabelText() keep the text. */
+template <class Function> inline
+bool setFontWithoutNativeLabel(wxAnyButton& btn, Function setFontBase)
+{
+    assert(btn.HasFlag(wxBU_NOTEXT));
+    const wxString label = btn.GetLabel();
+    btn.SetLabel(wxString());
+    const bool rv = setFontBase();
+    btn.SetLabel(label);
+    return rv;
+}
+#endif
+
 //zen::BitmapTextButton is identical to wxBitmapButton, but preserves the label via SetLabel(), which wxFormbuilder would ditch!
 class BitmapTextButton : public wxBitmapButton
 {
@@ -33,6 +51,9 @@ public:
     {
         SetLabel(label);
     }
+#if defined ZEN_MAC
+    bool SetFont(const wxFont& font) override { return setFontWithoutNativeLabel(*this, [&] { return wxBitmapButton::SetFont(font); }); }
+#endif
 };
 
 //wxButton::SetBitmap() also supports "image + text", but screws up proper gap and border handling

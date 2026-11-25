@@ -42,4 +42,12 @@ namespace zen
 {
 double fromChars(const char* first, const char* last);
 char* toChars(char* first, char* last, double num);
+
+/*  Floating-point std::from_chars() is missing where the C++ library doesn't provide it for the deployment target: Apple's libc++ has
+    it only from macOS 26 on (libc++ availability macro). fromChars() then uses a strtod_l() fallback with the same results.
+    ZEN_TEST_FROM_CHARS_FALLBACK (test builds only) forces the fallback on, so it can be tested on every platform.        */
+#if defined ZEN_TEST_FROM_CHARS_FALLBACK || \
+    (defined _LIBCPP_AVAILABILITY_HAS_FROM_CHARS_FLOATING_POINT && !_LIBCPP_AVAILABILITY_HAS_FROM_CHARS_FLOATING_POINT)
+    #define ZEN_FROM_CHARS_FALLBACK
+#endif
 }

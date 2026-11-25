@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <optional>
 //#include <zen/legacy_compiler.h> //macOS: std::get
+#include <zen/build_info.h>
 #include <wx/dcbuffer.h> //for macro: wxALWAYS_NATIVE_DOUBLE_BUFFER
 #include <wx/dcscreen.h>
 
@@ -98,6 +99,7 @@ double getScreenDpiScale()
     assert(wxTheApp); //only call after wxWidgets was initalized!
     static const double scale = []
     {
+#if defined ZEN_LINUX
         /* Standard DPI:
              Windows/Ubuntu: 96 x 96
              macOS: wxWidgets uses DIP (note: wxScreenDC().GetPPI() returns 72 x 72 which is a lie; looks like 96 x 96)       */
@@ -105,6 +107,11 @@ double getScreenDpiScale()
 
         const int dpiY = wxScreenDC().GetPPI().y; //perf: buffering for calls to ::GetDeviceCaps() needed!?
         return static_cast<double>(dpiY) / defaultDpi;
+#elif defined ZEN_MAC //wxOSX: GetPPI() is 72 x content scale factor, but one DIP (= one point) looks like 96 DPI
+        return wxScreenDC().GetContentScaleFactor(); //=> screen pixels per DIP: 2 on Retina displays, else 1 (main display)
+#else
+    #error "not implemented for this platform"
+#endif
     }();
     /* wxScreenDC().GetContentScaleFactor():
           Windows: always returns 1, despite 140% desktop scaling!

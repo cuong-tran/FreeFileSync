@@ -40,6 +40,9 @@ public:
     {
         SetLabel(label);
     }
+#if defined ZEN_MAC
+    bool SetFont(const wxFont& font) override { return setFontWithoutNativeLabel(*this, [&] { return wxBitmapButton::SetFont(font); }); }
+#endif
 
     void init(const wxImage& imgActive,
               const wxImage& imgInactive, int pad);

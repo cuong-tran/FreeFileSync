@@ -6,7 +6,10 @@
 
 #include "folder_history_box.h"
 #include <wx+/dc.h>
+#include <zen/build_info.h>
+#if defined ZEN_LINUX
     #include <gtk/gtk.h>
+#endif
 #include "../afs/concrete.h"
 
 using namespace zen;
@@ -44,8 +47,12 @@ FolderHistoryBox::FolderHistoryBox(wxWindow* parent,
     //2. even if we handle "drag-data-received" for "text/uri-list" this doesn't consider logic in dirname.cpp
     //=> disable all drop events on the text control (disables text drop, too, but not a big loss)
     //=> all drops are nicely propagated as regular file drop events like they should have been in the first place!
+#if defined ZEN_LINUX
     if (GtkWidget* widget = GetConnectWidget())
         ::gtk_drag_dest_unset(widget);
+#elif defined ZEN_MAC
+    //nothing to do (to be checked): the native NSComboBox has no GTK "file://" text/uri-list drop handling
+#endif
 }
 
 

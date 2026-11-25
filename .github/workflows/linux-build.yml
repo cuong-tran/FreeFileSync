@@ -334,10 +334,10 @@ jobs:
           OFFLINE: 1
         run: |
           # upstream's source zip has no Resources/Animal.dat (the welcome dialog's picture, part of the official binaries
-          # only), so a first start of any build from these sources shows "Failed to load image from file ...Animal.dat";
-          # a placeholder JPEG keeps that known gap from failing the check
+          # only), so a first start of a plain build from these sources shows "Failed to load image from file ...Animal.dat";
+          # the packages and the Mac bundles ship this repository's own picture, which the check uses as well
           res=FreeFileSync/Build/Resources
-          [ -f "$res/Animal.dat" ] || convert -size 64x64 xc:gray "jpg:$res/Animal.dat"
+          [ -f "$res/Animal.dat" ] || cp .github/build/resources/Animal.dat "$res/"
           mkdir -p screenshots
           rc=0
           SCREENSHOT=screenshots/FreeFileSync.png .github/build/check-app-starts.sh FreeFileSync/Build/Bin/FreeFileSync_x86_64-clang-libc++ '^FreeFileSync [0-9.]+ ' || rc=1

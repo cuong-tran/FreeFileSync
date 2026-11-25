@@ -1,0 +1,8 @@
+# zlib from the macOS SDK (libz.tbd), which has no .pc file of its own. The static libcurl and libssh2 in
+# .build/deps/macos-<arch> require "zlib", so pkg-config fails for them without this file; the makefiles
+# (FreeFileSync/Source/platform.mk) add this folder to the prefix's pkgconfig folder.
+Name: zlib
+Description: zlib compression library from the macOS SDK
+Version: 1.2.12
+Libs: -lz
+Cflags:

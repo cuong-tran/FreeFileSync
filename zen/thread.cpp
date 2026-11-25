@@ -6,7 +6,12 @@
 
 #include "thread.h"
 #include "globals.h"
+#include "build_info.h"
+#if defined ZEN_LINUX
     #include <sys/prctl.h>
+#elif defined ZEN_MAC
+    #include <pthread.h>
+#endif
 
 using namespace zen;
 
@@ -15,7 +20,13 @@ using namespace zen;
 
 void zen::setCurrentThreadName(const Zstring& threadName)
 {
+#if defined ZEN_LINUX
     ::prctl(PR_SET_NAME, threadName.c_str(), 0, 0, 0);
+#elif defined ZEN_MAC
+    ::pthread_setname_np(threadName.c_str()); //current thread only; longer names (> 63 bytes) fail with ENAMETOOLONG: best effort, like prctl()
+#else
+    #error "not implemented for this platform"
+#endif
 
 }
 

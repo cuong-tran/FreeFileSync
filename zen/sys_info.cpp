@@ -9,12 +9,20 @@
 #include "file_access.h"
 #include "sys_version.h"
 
+#include "build_info.h"
     #include <iostream>
     #include "symlink_target.h"
     #include "file_io.h"
     #include <ifaddrs.h>
     #include <net/if.h> //IFF_LOOPBACK
+#if defined ZEN_LINUX
     #include <netpacket/packet.h> //sockaddr_ll
+#elif defined ZEN_MAC
+    #include <sys/sysctl.h>  //sysctlbyname
+    #include <mach-o/dyld.h> //_NSGetExecutablePath
+    #include <sysdir.h>      //sysdir_start_search_path_enumeration
+    #include <stdlib.h>      //realpath
+#endif
 
 
     #include "process_exec.h"
@@ -97,6 +105,21 @@ namespace
 
 ComputerModel zen::getComputerModel() //throw FileError
 {
+#if defined ZEN_MAC
+    try
+    {
+        size_t bufSize = 0;
+        if (::sysctlbyname("hw.model", nullptr, &bufSize, nullptr, 0) != 0)
+            THROW_LAST_SYS_ERROR("sysctlbyname(hw.model)");
+        std::vector<char> buf(bufSize + 1);
+        if (::sysctlbyname("hw.model", buf.data(), &bufSize, nullptr, 0) != 0)
+            THROW_LAST_SYS_ERROR("sysctlbyname(hw.model)");
+
+        return {.model = trimCpy(utfTo<std::wstring>(buf.data())), //e.g. "MacBookPro18,3", "Mac14,2", "VMware7,1"
+                .vendor = L"Apple"};
+    }
+    catch (const SysError& e) { throw FileError(_("Cannot get process information."), e.toString()); }
+#elif defined ZEN_LINUX
     ComputerModel cm;
     try
     {
@@ -192,6 +215,7 @@ ComputerModel zen::getComputerModel() //throw FileError
         return cm;
     }
     catch (const SysError& e) { throw FileError(_("Cannot get process information."), e.toString()); }
+#endif
 }
 
 
@@ -213,8 +237,22 @@ Zstring zen::getProcessPath() //throw FileError
 {
     try
     {
+#if defined ZEN_MAC
+        uint32_t bufSize = 0;
+        ::_NSGetExecutablePath(nullptr, &bufSize); //"If the buffer is not large enough, -1 is returned and the expected buffer size is copied in *bufsize"
+        std::vector<char> buf(bufSize + 1);
+        if (::_NSGetExecutablePath(buf.data(), &bufSize) != 0)
+            throw SysError(formatSystemError("_NSGetExecutablePath", L"", L"Buffer too small."));
+
+        char* resolvedPath = ::realpath(buf.data(), nullptr); //path may contain symlinks and "..": make it like /proc/self/exe
+        if (!resolvedPath)
+            THROW_LAST_SYS_ERROR("realpath");
+        ZEN_ON_SCOPE_EXIT(::free(resolvedPath));
+        return resolvedPath;
+#else
         return getSymlinkRawContent_impl("/proc/self/exe").targetPath; //throw SysError
         //path does not contain symlinks => no need for ::realpath()
+#endif
 
     }
     catch (const SysError& e) { throw FileError(_("Cannot get process information."), e.toString()); }
@@ -257,6 +295,9 @@ Zstring zen::getUserHome() //throw FileError
 
 Zstring zen::getUserDataPath() //throw FileError
 {
+#if defined ZEN_MAC
+    return appendPath(getUserHome(), "Library/Application Support"); //throw FileError; home of the login user if running as root
+#else
     if (::getuid() != 0) //nofail; non-root
         if (const std::optional<Zstring> xdgCfgPath = getEnvironmentVar("XDG_CONFIG_HOME");
             xdgCfgPath&& !xdgCfgPath->empty())
@@ -264,11 +305,26 @@ Zstring zen::getUserDataPath() //throw FileError
     //root(0) => consider as request for elevation, NOT impersonation
 
     return appendPath(getUserHome(), ".config"); //throw FileError
+#endif
 }
 
 
 Zstring zen::getUserDownloadsPath() //throw FileError
 {
+#if defined ZEN_MAC
+    //sysdir: the C API behind NSSearchPathForDirectoriesInDomains(NSDownloadsDirectory, NSUserDomainMask, ...)
+    char path[PATH_MAX] = {};
+    if (sysdir_search_path_enumeration_state state = ::sysdir_start_search_path_enumeration(SYSDIR_DIRECTORY_DOWNLOADS, SYSDIR_DOMAIN_MASK_USER);
+        (state = ::sysdir_get_next_search_path_enumeration(state, path)) != 0)
+    {
+        const Zstring downloadsPath = path; //user domain: "~/Downloads"
+        if (startsWith(downloadsPath, "~/"))
+            return appendPath(getUserHome(), afterFirst(downloadsPath, '/', IfNotFoundReturn::none)); //throw FileError
+        if (!downloadsPath.empty())
+            return downloadsPath;
+    }
+    return appendPath(getUserHome(), "Downloads"); //throw FileError
+#else
     try
     {
         if (::getuid() != 0) //nofail; non-root
@@ -285,6 +341,7 @@ Zstring zen::getUserDownloadsPath() //throw FileError
         return appendPath(getUserHome(), "Downloads"); //throw FileError
     }
     catch (const SysError& e) { throw FileError(_("Cannot get process information."), e.toString()); }
+#endif
 }
 
 

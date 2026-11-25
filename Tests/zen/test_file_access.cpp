@@ -3,6 +3,8 @@
 #include <zen/file_access.h>
 #include <zen/file_traverser.h>
 #include <zen/symlink_target.h>
+#include <zen/process_exec.h>
+#include <zen/extra_log.h>
 #include "test.h"
 
 using namespace zen;
@@ -12,6 +14,18 @@ namespace fs = std::filesystem;
 
 namespace
 {
+//errors zen reports through logExtraError() (e.g. extended attributes it couldn't copy); tests fetch them with fetchExtraLog(),
+//anything left is printed at exit (and the log must be initialized before it is destroyed)
+const bool extraLogInit = []
+{
+    initExtraLog([](const ErrorLog& log)
+    {
+        for (const LogEntry& entry : log)
+            std::cerr << "unfetched extra log entry: " << std::string(entry.message.begin(), entry.message.end()) << '\n';
+    });
+    return true;
+}();
+
 //2024-02-29 13:37:42 UTC
 const time_t testTime = 1709213862;
 
@@ -395,6 +409,14 @@ TEST_CASE(fileAccessPermissions)
     CHECK_NO_THROW(copyItemPermissions(appendPath(testDir, "sourceLink"), appendPath(testDir, "targetLink"), ProcSymlink::asLink));
     CHECK(getPerms(target2) == permsTarget);
     CHECK(getPerms(source) == permsSource);
+#ifdef ZEN_MAC
+    //macOS: symlinks have permissions of their own (lchmod)
+    auto getLinkPerms = [](const Zstring& itemPath) { return fs::symlink_status(toPath(itemPath)).permissions() & perms::mask; };
+    fs::permissions(toPath(appendPath(testDir, "sourceLink")), perms::owner_all, fs::perm_options::replace | fs::perm_options::nofollow);
+    CHECK_NO_THROW(copyItemPermissions(appendPath(testDir, "sourceLink"), appendPath(testDir, "targetLink"), ProcSymlink::asLink));
+    CHECK(getLinkPerms(appendPath(testDir, "targetLink")) == perms::owner_all);
+    CHECK(getPerms(target2) == permsTarget);
+#endif
 #else
     //Windows: ACLs, checked once the Windows implementation exists
     CHECK_NO_THROW(copyItemPermissions(source, target, ProcSymlink::follow));
@@ -427,3 +449,199 @@ TEST_CASE(fileAccessFreeSpaceAndTemp)
     CHECK(!tempPath.empty());
     CHECK(fs::is_directory(toPath(tempPath)));
 }
+
+
+#ifdef ZEN_MAC
+namespace
+{
+std::string runShell(const Zstring& cmdLine) //throw SysError: output of a command that must succeed
+{
+    const auto [exitCode, output] = consoleExecute(cmdLine, std::nullopt); //throw SysError, SysErrorTimeOut
+    if (exitCode != 0)
+        throw SysError(L"exit code " + numberTo<std::wstring>(exitCode) + L": " + utfTo<std::wstring>(cmdLine) + L"\n" + utfTo<std::wstring>(output));
+    return utfTo<std::string>(output);
+}
+}
+
+
+//macOS: extended attributes and ACLs, checked with the system tools (xattr, chmod +a, ls -le)
+TEST_CASE(fileAccessMacMetadata)
+{
+    const Zstring source = appendPath(testDir, "source");
+    const Zstring target = appendPath(testDir, "target");
+    writeFile(source, "content");
+
+    //copyNewFile(): extended attributes come along; the byte count is the file content only
+    runShell("xattr -w com.freefilesync.zentest 'zen value' " + escapeCommandArg(source)); //throw SysError
+    int64_t bytesNotified = 0;
+    CHECK_NO_THROW((void)copyNewFile(source, target, [&](int64_t bytesDelta) { bytesNotified += bytesDelta; }));
+    CHECK_EQUAL(bytesNotified, static_cast<int64_t>(7));
+    CHECK_EQUAL(trimCpy(runShell("xattr -p com.freefilesync.zentest " + escapeCommandArg(target))), std::string("zen value"));
+
+    //copyDirectoryAttributes(): extended attributes of folders
+    const Zstring sourceDir = appendPath(testDir, "sourceDir");
+    const Zstring targetDir = appendPath(testDir, "targetDir");
+    createDirectory(sourceDir);
+    createDirectory(targetDir);
+    runShell("xattr -w com.freefilesync.zentest 'folder value' " + escapeCommandArg(sourceDir));
+    CHECK_NO_THROW(copyDirectoryAttributes(sourceDir, targetDir));
+    CHECK_EQUAL(trimCpy(runShell("xattr -p com.freefilesync.zentest " + escapeCommandArg(targetDir))), std::string("folder value"));
+
+    //copyItemPermissions(): ACL, owner and mode; "allow" entries only, so the test folder stays deletable
+    auto getAcl = [](const Zstring& itemPath) //throw SysError: the ACL lines of "ls -led", e.g. " 0: group:everyone allow read"
+    {
+        std::vector<std::string> aclLines;
+        const std::string output = runShell("ls -led " + escapeCommandArg(itemPath));
+        split(output, '\n', [&](std::string_view line)
+        {
+            line = trimCpy(line);
+            if (!line.empty() && isDigit(line[0]) && contains(line, ": "))
+                aclLines.emplace_back(line);
+        });
+        return aclLines;
+    };
+    auto getMode = [](const Zstring& itemPath) { return fs::symlink_status(toPath(itemPath)).permissions() & fs::perms::mask; };
+    using fs::perms;
+
+    //read-only file: the ACL is copied before the mode, so the target doesn't need to be writable and stays 0444
+    const Zstring aclSource = appendPath(testDir, "aclSource");
+    const Zstring aclTarget = appendPath(testDir, "aclTarget");
+    writeFile(aclSource, "s");
+    writeFile(aclTarget, "t");
+    runShell("chmod +a 'everyone allow read' " + escapeCommandArg(aclSource));
+    fs::permissions(toPath(aclSource), perms::owner_read | perms::group_read | perms::others_read); //0444
+    fs::permissions(toPath(aclTarget), perms::owner_read | perms::owner_write);                     //0600
+    CHECK(getAcl(aclTarget).empty());
+    CHECK_NO_THROW(copyItemPermissions(aclSource, aclTarget, ProcSymlink::follow));
+    CHECK(getMode(aclTarget) == (perms::owner_read | perms::group_read | perms::others_read));
+    CHECK(!getAcl(aclSource).empty());
+    CHECK(getAcl(aclTarget) == getAcl(aclSource));
+
+    //read-only folder (0555)
+    const Zstring aclSourceDir = appendPath(testDir, "aclSourceDir");
+    const Zstring aclTargetDir = appendPath(testDir, "aclTargetDir");
+    createDirectory(aclSourceDir);
+    createDirectory(aclTargetDir);
+    runShell("chmod +a 'everyone allow list,search' " + escapeCommandArg(aclSourceDir));
+    const perms perms0555 = perms::owner_read | perms::owner_exec | perms::group_read | perms::group_exec | perms::others_read | perms::others_exec;
+    fs::permissions(toPath(aclSourceDir), perms0555);
+    CHECK_NO_THROW(copyItemPermissions(aclSourceDir, aclTargetDir, ProcSymlink::follow));
+    CHECK(getMode(aclTargetDir) == perms0555);
+    CHECK(!getAcl(aclSourceDir).empty() && getAcl(aclTargetDir) == getAcl(aclSourceDir));
+
+    //no ACL on the source: the target's ACL is removed
+    CHECK_NO_THROW(copyItemPermissions(appendPath(testDir, "source"), aclTarget, ProcSymlink::follow));
+    CHECK(getAcl(aclTarget).empty());
+
+    //inherited entries (from an inheritable entry of the target's parent folder) are kept: the target's ACL becomes the
+    //source's explicit entries followed by its own inherited ones
+    const Zstring inheritDir = appendPath(testDir, "inheritDir");
+    createDirectory(inheritDir);
+    runShell("chmod +a 'everyone allow readattr,file_inherit,directory_inherit' " + escapeCommandArg(inheritDir));
+    const Zstring inheritTarget  = appendPath(inheritDir, "target");
+    const Zstring inheritTarget2 = appendPath(inheritDir, "target2");
+    writeFile(inheritTarget,  "t");
+    writeFile(inheritTarget2, "t");
+    auto isInherited = [](const std::string& line) { return contains(line, " inherited "); };
+    const std::vector<std::string> aclInherited = getAcl(inheritTarget);
+    CHECK(aclInherited.size() == 1 && isInherited(aclInherited[0])); //the kernel added it on create
+    std::cout << "   inherited ACL: " << (aclInherited.empty() ? std::string("none") : aclInherited[0]) << std::endl;
+
+    CHECK_NO_THROW(copyItemPermissions(aclSource, inheritTarget, ProcSymlink::follow)); //explicit "everyone allow read"
+    const std::vector<std::string> aclMerged = getAcl(inheritTarget);
+    CHECK(aclMerged.size() == 2 && aclMerged.size() == aclInherited.size() + getAcl(aclSource).size());
+    if (aclMerged.size() == 2)
+    {
+        CHECK(!isInherited(aclMerged[0]) && contains(aclMerged[0], "allow read")); //explicit entries first
+        CHECK(isInherited(aclMerged[1]));
+    }
+    //source without explicit entries: a target with only inherited entries is left as it is, explicit ones are removed
+    CHECK_NO_THROW(copyItemPermissions(appendPath(testDir, "source"), inheritTarget2, ProcSymlink::follow));
+    CHECK(getAcl(inheritTarget2) == aclInherited);
+    CHECK_NO_THROW(copyItemPermissions(appendPath(testDir, "source"), inheritTarget, ProcSymlink::follow));
+    CHECK(getAcl(inheritTarget) == aclInherited);
+
+    //symlinks (ProcSymlink::asLink): mode and ACL of the link itself, the link targets are untouched
+    const Zstring linkSource = appendPath(testDir, "linkSource");
+    const Zstring linkTarget = appendPath(testDir, "linkTarget");
+    fs::create_symlink("aclSource", toPath(linkSource));
+    fs::create_symlink("target", toPath(linkTarget));
+    fs::permissions(toPath(linkSource), perms::owner_read | perms::owner_exec, fs::perm_options::replace | fs::perm_options::nofollow);
+    bool linkAcl = true;
+    try { runShell("chmod -h +a 'everyone allow read' " + escapeCommandArg(linkSource)); }
+    catch (const SysError& e) { linkAcl = false; std::cout << "   no ACL on symlinks: " << utfTo<std::string>(e.toString()) << std::endl; }
+    const auto targetModeBefore = getMode(target);
+    CHECK_NO_THROW(copyItemPermissions(linkSource, linkTarget, ProcSymlink::asLink));
+    CHECK(getMode(linkTarget) == (perms::owner_read | perms::owner_exec));
+    if (linkAcl)
+        CHECK(!getAcl(linkSource).empty() && getAcl(linkTarget) == getAcl(linkSource));
+    CHECK(getMode(target) == targetModeBefore);
+    CHECK(getMode(aclSource) == (perms::owner_read | perms::group_read | perms::others_read));
+}
+
+
+//macOS: a second volume (FAT disk image, attached without admin rights): moves across volumes, a case-insensitive file system
+//without ACLs, extended attributes it can't fully take
+TEST_CASE(fileAccessMacSecondVolume)
+{
+    const Zstring imagePath = appendPath(testDir, "fat.dmg");
+    const Zstring mountPath = appendPath(testDir, "mnt");
+    createDirectory(mountPath);
+    runShell("hdiutil create -quiet -size 32m -fs MS-DOS -volname ZENTEST " + escapeCommandArg(imagePath)); //throw SysError
+    runShell("hdiutil attach -quiet -nobrowse -noverify -noautoopen -mountpoint " + escapeCommandArg(mountPath) + ' ' + escapeCommandArg(imagePath));
+    ZEN_ON_SCOPE_EXIT(try { runShell("hdiutil detach -quiet -force " + escapeCommandArg(mountPath)); }
+                      catch (const SysError& e) { reportFailure(__FILE__, __LINE__, "hdiutil detach: " + utfTo<std::string>(e.toString())); });
+    (void)fetchExtraLog(); //start empty
+
+    int64_t freeSpace = 0;
+    CHECK_NO_THROW(freeSpace = getFreeDiskSpace(mountPath));
+    CHECK(0 < freeSpace && freeSpace <= 32 * 1024 * 1024);
+
+    //extended attributes the target can't fully take never fail the copy: the file is kept
+    const Zstring source = appendPath(testDir, "source.txt");
+    writeFile(source, "content");
+    runShell("xattr -w com.freefilesync.small 'zen value' " + escapeCommandArg(source));
+    runShell("xattr -w com.freefilesync.big \"$(head -c 200000 /dev/zero | tr '\\0' a)\" " + escapeCommandArg(source)); //200 KB
+    const Zstring target = appendPath(mountPath, "copy.txt");
+    CHECK_NO_THROW((void)copyNewFile(source, target, nullptr));
+    CHECK(pathExists(target) && readFile(target) == "content");
+    //...and are not copied at all to a volume without native extended attributes: macOS would emulate them with AppleDouble
+    //"._<name>" files, which the next comparison sees as target-only items
+    const Zstring sourceDir = appendPath(testDir, "sourceDir");
+    createDirectory(sourceDir);
+    runShell("xattr -w com.freefilesync.small 'folder value' " + escapeCommandArg(sourceDir));
+    createDirectory(appendPath(mountPath, "dir"));
+    CHECK_NO_THROW(copyDirectoryAttributes(sourceDir, appendPath(mountPath, "dir")));
+    CHECK_NO_THROW((void)copyNewFile(source, appendPath(mountPath, nativeRelPath("dir/copy2.txt")), nullptr));
+
+    CHECK(trimCpy(runShell("xattr " + escapeCommandArg(target))).empty());
+    CHECK(trimCpy(runShell("xattr " + escapeCommandArg(appendPath(mountPath, "dir")))).empty());
+    for (const Zstring& folder : {mountPath, appendPath(mountPath, "dir")})
+        traverseFolder(folder,
+        [&](const FileInfo& fi) { CHECK(!startsWith(fi.itemName, "._")); if (startsWith(fi.itemName, "._")) std::cerr << "   AppleDouble file: " << toPrintable(fi.fullPath) << '\n'; },
+        [&](const FolderInfo& fi) { CHECK(!startsWith(fi.itemName, "._")); }, nullptr);
+    for (const LogEntry& entry : fetchExtraLog())
+        reportFailure(__FILE__, __LINE__, "logged: " + std::string(entry.message.begin(), entry.message.end()));
+
+    //no ACLs on FAT (owner and mode depend on the mount: just report)
+    try
+    {
+        copyItemPermissions(source, target, ProcSymlink::follow); //throw FileError
+        std::cout << "   copyItemPermissions() to FAT: ok" << std::endl;
+    }
+    catch (const FileError& e) { std::cout << "   copyItemPermissions() to FAT: " << utfTo<std::string>(e.toString()) << std::endl; }
+
+    //moving across volumes
+    CHECK_THROWS(ErrorMoveUnsupported, moveAndRenameItem(source, appendPath(mountPath, "moved.txt"), false));
+    CHECK(pathExists(source));
+
+    //FAT is case-insensitive: the existing-target check sees the same item, case-only renames work
+    writeFile(appendPath(mountPath, "Case.txt"), "x");
+    CHECK(pathExists(appendPath(mountPath, "CASE.TXT")));
+    CHECK_NO_THROW(moveAndRenameItem(appendPath(mountPath, "Case.txt"), appendPath(mountPath, "CASE.txt"), false));
+    std::vector<Zstring> names;
+    traverseFolder(mountPath, [&](const FileInfo& fi) { names.push_back(fi.itemName); }, nullptr, nullptr);
+    CHECK(std::find(names.begin(), names.end(), "CASE.txt") != names.end());
+    CHECK(std::find(names.begin(), names.end(), "Case.txt") == names.end());
+}
+#endif

@@ -6,6 +6,7 @@
 #pragma once
 
 //#include <memory>
+#include <zen/build_info.h>
 #include <wx/aui/aui.h>
 #include <wx+/async_task.h>
 #include <wx+/file_drop.h>
@@ -39,6 +40,12 @@ public:
     static void create(const FfsGuiConfig& guiCfg, const std::vector<Zstring>& cfgFilePaths,
                        const GlobalConfig& globalCfg, const Zstring& globalCfgFilePath, //take over ownership => save on exit
                        bool startComparison);
+
+#if defined ZEN_MAC
+    //Finder asked the running app to open config files (Application::MacOpenFiles()): like dropping them on the main window,
+    //queued while a modal dialog is open, the window is disabled or a comparison/sync is running
+    void openConfigFilesFromFinder(const std::vector<Zstring>& filePaths);
+#endif
 
 private:
     MainDialog(const FfsGuiConfig& guiCfg, const std::vector<Zstring>& cfgFilePaths,
@@ -354,6 +361,13 @@ private:
     //mitigate reentrancy:
     bool localKeyEventsEnabled_ = true;
     bool operationInProgress_  = false; //see SingleOperationBlocker; e.g. do NOT allow dialog exit while sync is running => crash!!!
+
+#if defined ZEN_MAC
+    bool isBlockedForAppMenu() const; //a modal dialog is open or the window is disabled: About/Preferences/Quit and Finder opens must wait
+    void onFinderFilesPendingIdle(wxIdleEvent& event);
+    std::vector<Zstring> finderFilesPending_; //see openConfigFilesFromFinder()
+    bool finderFilesLoading_ = false; //re-entry guard: loadConfiguration() may show dialogs
+#endif
 
     TempFileBuffer tempFileBuf_; //buffer temporary copies of non-native files for %local_path%
 

@@ -8,6 +8,8 @@
 #include "thread.h"
 #include "scope_guard.h"
 #include "file_access.h"
+#include "build_info.h"
+#if defined ZEN_LINUX //macOS: dir_watcher_mac.cpp
 
     #include <map>
     #include <sys/inotify.h>
@@ -153,4 +155,4 @@ std::vector<DirWatcher::Change> DirWatcher::fetchChanges(const std::function<voi
 
     return output;
 }
-
+#endif

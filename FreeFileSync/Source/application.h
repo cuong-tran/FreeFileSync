@@ -7,6 +7,7 @@
 
 //#include <vector>
 #include <zen/zstring.h>
+#include <zen/build_info.h>
 #include <wx/app.h>
 #include "config.h"
 #include "return_codes.h"
@@ -21,6 +22,12 @@ private:
     int  OnExit() override;
     wxLayoutDirection GetLayoutDirection() const override;
     void onEnterEventLoop();
+
+#if defined ZEN_MAC
+    void MacOpenFiles(const wxArrayString& fileNames) override; //Finder: open .ffs_gui/.ffs_batch files (double-click, Dock icon drop)
+    std::vector<Zstring> macOpenFilesAtLaunch_; //received before onEnterEventLoop()
+    bool eventLoopEntered_ = false;
+#endif
 
     void runBatchMode(const FfsBatchConfig& batchCfg, const Zstring& cfgFilePath,
                       GlobalConfig globalCfg, const Zstring& globalCfgFilePath);

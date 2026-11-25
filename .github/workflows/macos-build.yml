@@ -1,13 +1,13 @@
-# macOS CI (M1 step 3 of docs/PORTING_PLAN.md): builds and caches the third-party libraries for both Mac architectures
-# and reports what the Apple toolchain accepts. FreeFileSync itself does not build on macOS yet (M3).
+# macOS CI (M1 step 3 and M3 of docs/PORTING_PLAN.md): builds and caches the third-party libraries for both Mac architectures,
+# reports what the Apple toolchain accepts and builds and tests zen/. FreeFileSync itself does not build on macOS yet (M3 step 3+).
 #
 # - "Toolchain report" (informational): Xcode's clang and Homebrew LLVM against the C++ dialect and the platform-
 #   independent zen code, and the oldest deployment target per C++ library feature (.github/build/macos-report.sh).
 # - "Libraries (<arch>)": OpenSSL, libssh2, libidn2, libcurl and wxWidgets (wxOSX/Cocoa) as static libraries with the
 #   .github/build scripts (FFS_TARGET=macos-<arch>), arm64 natively and x86_64 cross-compiled on the same arm64 runner,
-#   cached like the Linux libraries. Uploads one archive per architecture with the build log and a manifest, and a
-#   (non-failing) syntax check of every zen/*.cpp as the macOS porting work list. The same job builds sentry-native (crash
-#   reporting for FFS_SENTRY=1 builds, .github/build/build-sentry-native.sh) against those libraries, cached on its own.
+#   cached like the Linux libraries. Uploads one archive per architecture with the build log and a manifest. The same job
+#   builds sentry-native (crash reporting for FFS_SENTRY=1 builds, .github/build/build-sentry-native.sh) against those
+#   libraries, cached on its own, then compiles all of zen/ against the libraries and runs the zen unit tests (M3 steps 1, 2).
 #
 # Later stages slot in after "Libraries": a job per architecture that builds FreeFileSync.app and RealTimeSync.app
 # against the cached libraries (needs: libraries), and a "wrap-mac-dmg" job that turns each .app into a .dmg and uploads
@@ -23,6 +23,9 @@ on:
       - "Bugs.txt"
       - "FreeFileSync/Source/**"
       - "zen/**"
+      - "Tests/zen/**"
+      - "Tests/sync/**"
+      - "Tests/sentry/**"
       - "wx+/**"
       - "zenXml/**"
       - "libcurl/**"
@@ -31,6 +34,11 @@ on:
   pull_request:
     paths: *build-paths
   workflow_dispatch:
+    inputs:
+      sentry_dry_run:
+        description: "Build the shipped apps as a crash reporting build against a fake DSN (no upload), to test that path without the SENTRY_DSN secret; its artifacts are named sentry-dry-run-...-NOT-FOR-RELEASE and get no DMG"
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -109,7 +117,7 @@ jobs:
       # the build scripts need bash 4+ and GNU coreutils/flock (macOS has bash 3.2 and BSD tools)
       - name: Install build tools
         run: |
-          brew install bash coreutils flock pkgconf
+          brew install bash coreutils flock pkgconf make # make: GNU make 4 ("gmake") for the makefiles; macOS has 3.81
           bash --version | sed -n 1p
           echo "MACOSX_DEPLOYMENT_TARGET in common.sh: $(sed -nE 's/^FFS_MACOS_DEPLOYMENT_TARGET=([0-9.]+).*/\1/p' .github/build/common.sh)"
 
@@ -162,6 +170,7 @@ jobs:
 
       # fails the job if a library is missing, has another architecture or another deployment target (also on a cache hit)
       - name: Check libraries and write the manifest
+        id: libcheck
         run: |
           prefix=".build/deps/macos-${{ matrix.arch }}"
           target="$(sed -nE 's/^FFS_MACOS_DEPLOYMENT_TARGET=([0-9.]+).*/\1/p' .github/build/common.sh)"
@@ -200,17 +209,363 @@ jobs:
           echo "libcurl $(pkg-config --modversion libcurl 2>&1), static link flags: $(pkg-config --static --libs libcurl 2>&1)" >> manifest.txt
           cat manifest.txt
 
-      # informational: the work list for porting zen/ (M3 step 1)
-      - name: zen port work list
-        continue-on-error: true
-        run: .github/build/macos-report.sh port-todo ${{ matrix.arch }} ".build/deps/macos-${{ matrix.arch }}" 2>&1 | tee macos-port-todo-${{ matrix.arch }}.txt
+      # zen/ against the libraries above (http.cpp, open_ssl.cpp, socket.h need curl, OpenSSL, libidn2): every file, all errors
+      - name: Compile zen
+        run: .github/build/macos-report.sh zen-compile ${{ matrix.arch }} ".build/deps/macos-${{ matrix.arch }}" 2>&1 | tee zen-compile-${{ matrix.arch }}.txt
 
-      - name: Upload zen port work list
+      # the engine (afs/, base/, the non-UI files of FreeFileSync/Source, zen/) as libffs_engine.a with the makefile (M3 step 3);
+      # -k: every file that fails, not just the first
+      - name: Engine library
+        run: |
+          set -o pipefail
+          gmake -C FreeFileSync/Source -k -j"$(sysctl -n hw.ncpu)" engine ARCH=${{ matrix.arch }} objPath="$RUNNER_TEMP/engine-obj" 2>&1 | tee engine-${{ matrix.arch }}.txt
+          lib="$RUNNER_TEMP/engine-obj/libffs_engine.a"
+          ls -l "$lib"
+          lipo -archs "$lib"
+
+      # crash reporting (zen/crash_report_sentry.cpp) against the sentry-native above, through the makefile's FFS_SENTRY=1 rules
+      # (generated build header, sentry-native's flags); compiled only: the apps that link it come with M3 steps 4 and 5
+      - name: Compile crash reporting
+        if: ${{ !cancelled() && steps.libcheck.outcome == 'success' }} # also after a failed engine build: one run reports everything
+        env:
+          SENTRY_DSN: https://public@127.0.0.1/1 # placeholder: nothing is sent, the object is not linked
+        run: |
+          obj="$RUNNER_TEMP/sentry-obj"
+          gmake -C FreeFileSync/Source FFS_SENTRY=1 ARCH=${{ matrix.arch }} objPath="$obj" "$obj/ffs/src/../../zen/crash_report_sentry.cpp.o"
+          lipo -archs "$obj/zen/crash_report_sentry.cpp.o"
+
+      # the zen unit tests (also run by zen-tests.yml); x86_64 runs under Rosetta 2, or is only compiled without it
+      - name: zen tests
+        if: ${{ !cancelled() && steps.libcheck.outcome == 'success' }}
+        env:
+          ARCH: ${{ matrix.arch }}
+          ZEN_TEST_ALL_ERRORS: 1
+        run: |
+          if [ "$ARCH" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "::warning::Rosetta 2 not available: x86_64 zen tests are compiled only"
+            export ZEN_TEST_COMPILE_ONLY=1
+          fi
+          bash Tests/zen/run.sh
+
+      # crash reporting only with the repository secret (as in linux-build.yml's Packages jobs); the secret itself is never echoed
+      - name: Crash reporting
+        id: sentry
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          DRY_RUN: ${{ inputs.sentry_dry_run && '1' || '' }}
+        run: |
+          if [ "$DRY_RUN" = 1 ]; then # the same path as with the secret, against a fake DSN, without upload
+            echo "enabled=1" >> "$GITHUB_OUTPUT"
+            echo "dry=1" >> "$GITHUB_OUTPUT"
+            msg="DRY RUN (workflow_dispatch input sentry_dry_run): the apps are built with FFS_SENTRY=1 against a fake DSN on 127.0.0.1, dSYMs made and checked, nothing uploaded; the artifacts are named sentry-dry-run-...-NOT-FOR-RELEASE and no DMG is made"
+          elif [ -n "$SENTRY_DSN" ]; then
+            echo "enabled=1" >> "$GITHUB_OUTPUT"
+            msg="on: the apps are built with FFS_SENTRY=1 against the SENTRY_DSN secret; dSYMs made with dsymutil"
+            if [ -n "$SENTRY_AUTH_TOKEN" ] && [ -n "$SENTRY_ORG" ] && [ -n "$SENTRY_PROJECT" ]; then
+              echo "upload=1" >> "$GITHUB_OUTPUT"
+              msg="$msg and uploaded with sentry-cli"
+            else
+              msg="$msg, not uploaded (SENTRY_AUTH_TOKEN, SENTRY_ORG or SENTRY_PROJECT is not set)"
+            fi
+          else
+            msg="off: the SENTRY_DSN secret is not set (or not available to this run), so the apps are built as before, without any crash reporting code"
+          fi
+          echo "$msg"
+          echo "**Crash reporting (${{ matrix.arch }})**: $msg" >> "$GITHUB_STEP_SUMMARY"
+
+      # the apps (M3 step 4): FreeFileSync.app and RealTimeSync.app side by side in FreeFileSync/Build/Bin/macos-<arch>, built with the
+      # makefiles (objects of the engine step reused; a crash reporting build compiles everything again, with debug info),
+      # ad-hoc signed by FreeFileSync/Source/mac_bundle.sh
+      - name: Build the apps
+        id: apps
+        if: ${{ !cancelled() && steps.libcheck.outcome == 'success' }}
+        env:
+          FFS_SENTRY: ${{ steps.sentry.outputs.enabled == '1' && '1' || '' }}
+          SENTRY_DSN: ${{ steps.sentry.outputs.dry == '1' && 'http://testkey@127.0.0.1:38917/1' || (steps.sentry.outputs.enabled == '1' && secrets.SENTRY_DSN || '') }}
+          SENTRY_ENVIRONMENT: ${{ github.ref == 'refs/heads/main' && steps.sentry.outputs.dry != '1' && 'release' || 'ci' }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -o pipefail
+          jobs="$(sysctl -n hw.ncpu)"
+          ffsObj="$RUNNER_TEMP/engine-obj" rtsObj="$RUNNER_TEMP/rts-obj"
+          sentryArgs=()
+          if [ "$FFS_SENTRY" = 1 ]; then
+            export FFS_GIT_SHA="${SOURCE_SHA:0:12}"
+            sentryArgs=(FFS_SENTRY=1)
+            ffsObj="$RUNNER_TEMP/release-sentry-obj" rtsObj="$RUNNER_TEMP/release-sentry-rts-obj"
+          fi
+          {
+            gmake -C FreeFileSync/Source -k -j"$jobs" ARCH=${{ matrix.arch }} "${sentryArgs[@]}" objPath="$ffsObj"
+            gmake -C FreeFileSync/Source/RealTimeSync -k -j"$jobs" ARCH=${{ matrix.arch }} "${sentryArgs[@]}" objPath="$rtsObj"
+          } 2>&1 | tee apps-${{ matrix.arch }}.txt
+          if [ -n "$SENTRY_DSN" ] && grep -qF "$SENTRY_DSN" apps-${{ matrix.arch }}.txt; then echo "::error::the DSN appears in the build log"; exit 1; fi
+          ls -l FreeFileSync/Build/Bin/macos-${{ matrix.arch }}
+
+      - name: Check the apps contain no crash reporting code
+        if: ${{ !cancelled() && steps.apps.outcome == 'success' && steps.sentry.outputs.enabled != '1' }}
+        run: |
+          bin="FreeFileSync/Build/Bin/macos-${{ matrix.arch }}"
+          Tests/sentry/run.sh --default-build "$bin/FreeFileSync.app/Contents/MacOS/FreeFileSync" "$bin/RealTimeSync.app/Contents/MacOS/RealTimeSync"
+          for app in FreeFileSync RealTimeSync; do
+            [ ! -e "$bin/$app.app/Contents/MacOS/crashpad_handler" ] || { echo "::error::$app.app ships crashpad_handler"; exit 1; }
+          done
+
+      # debug symbols of a crash reporting build: one dSYM per executable (dsymutil, from the objects), then the executables (and
+      # crashpad_handler) are stripped of their debug map (strip -S: no absolute build paths of every object in the shipped app)
+      # and signed again like mac_bundle.sh does (inner executables first, then the bundle); the dSYM's UUID must equal the
+      # shipped binary's, and sentry-cli must find both usable (also in a dry run, which uploads nothing). sentry-cli reads
+      # token, organization and project from the environment, so nothing secret is on its command line
+      - name: dSYMs
+        if: ${{ !cancelled() && steps.apps.outcome == 'success' && steps.sentry.outputs.enabled == '1' }}
+        env:
+          UPLOAD: ${{ steps.sentry.outputs.upload }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+        run: |
+          bin="FreeFileSync/Build/Bin/macos-${{ matrix.arch }}"
+          mkdir -p dsyms
+          cli="$(.github/build/fetch-sentry-cli.sh)"
+          "$cli" --version
+          for app in FreeFileSync RealTimeSync; do
+            bundle="$bin/$app.app"
+            exe="$bundle/Contents/MacOS/$app"
+            dsymutil "$exe" -o "dsyms/$app.dSYM"
+            echo "$app: $(otool -l "$exe" | grep -c LC_SYMTAB) symbol table(s), debug map entries before strip: $(nm -ap "$exe" | grep -c ' OSO ' || true)"
+            for f in "$bundle"/Contents/MacOS/*; do strip -S "$f"; done
+            [ "$(nm -ap "$exe" | grep -c ' OSO ' || true)" = 0 ] || { echo "::error::$app: debug map left after strip -S"; exit 1; }
+            for f in "$bundle"/Contents/MacOS/*; do
+              [ "$f" = "$exe" ] || codesign --force --sign - --timestamp=none "$f"
+            done
+            codesign --force --sign - --timestamp=none "$bundle"
+            codesign --verify --strict --verbose=2 "$bundle"
+            want="$(dwarfdump --uuid "$exe" | awk '{ print $2 }')"
+            got="$(dwarfdump --uuid "dsyms/$app.dSYM" | awk '{ print $2 }')"
+            echo "$app: binary $want, dSYM $got"
+            [ -n "$want" ] && [ "$want" = "$got" ] || { echo "::error::$app: the dSYM's UUID does not match the binary's"; exit 1; }
+            "$cli" debug-files check "dsyms/$app.dSYM/Contents/Resources/DWARF/$app" # the debug file inside the bundle
+            "$cli" debug-files check "$exe"
+          done
+          if [ "$UPLOAD" = 1 ]; then
+            "$cli" debug-files upload dsyms
+          else
+            echo "dSYMs not uploaded (dry run, or no SENTRY_AUTH_TOKEN/SENTRY_ORG/SENTRY_PROJECT)"
+          fi
+
+      - name: Upload the dSYMs
+        if: ${{ !cancelled() && steps.apps.outcome == 'success' && steps.sentry.outputs.enabled == '1' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.sentry.outputs.dry == '1' && 'sentry-dry-run-' || '' }}dsyms-macos-${{ matrix.arch }}${{ steps.sentry.outputs.dry == '1' && '-NOT-FOR-RELEASE' || '' }}
+          path: dsyms/
+          if-no-files-found: error
+
+      # signatures, architecture, deployment target, and no library outside the system: the bundles run on any Mac of the architecture
+      - name: Check the apps
+        if: ${{ !cancelled() && steps.apps.outcome == 'success' }}
+        run: |
+          target="$(sed -nE 's/^FFS_MACOS_DEPLOYMENT_TARGET=([0-9.]+).*/\1/p' .github/build/common.sh)"
+          for app in FreeFileSync RealTimeSync; do
+            bundle="FreeFileSync/Build/Bin/macos-${{ matrix.arch }}/$app.app"
+            exe="$bundle/Contents/MacOS/$app"
+            codesign --verify --strict --verbose=2 "$bundle"
+            plutil -lint "$bundle/Contents/Info.plist"
+            lipo -info "$exe"
+            [ "$(lipo -archs "$exe")" = "${{ matrix.arch }}" ] || { echo "::error::$exe is not ${{ matrix.arch }} only"; exit 1; }
+            minos="$(otool -l "$exe" | awk '/LC_BUILD_VERSION/ { found = 1 } found && $1 == "minos" && !done { print $2; done = 1 }')"
+            [ "$minos" = "$target" ] || { echo "::error::$exe is built for macOS $minos, not $target"; exit 1; }
+            otool -L "$exe" | tee otool.txt
+            if nonSystem="$(tail -n +2 otool.txt | grep -vE '^\s+(/usr/lib/|/System/Library/)')"; then
+              echo "::error::$app links libraries outside the system:"; echo "$nonSystem"; exit 1
+            fi
+          done
+
+      - name: Zip the apps
+        if: ${{ !cancelled() && steps.apps.outcome == 'success' }}
+        run: |
+          version="$(sed -nE 's/.*ffsVersion\[\] = "([0-9.]+)".*/\1/p' FreeFileSync/Source/version/version.h)"
+          name="FreeFileSync-$version-macos-${{ matrix.arch }}"
+          # a dry run's crash reporting build points at a fake DSN: named so that nobody takes it for a release build (and the DMG
+          # job, which takes FreeFileSync-*.zip, leaves it alone)
+          [ "${{ steps.sentry.outputs.dry }}" != 1 ] || name="sentry-dry-run-$name-NOT-FOR-RELEASE"
+          dir="$RUNNER_TEMP/$name"
+          mkdir -p "$dir"
+          cp -R FreeFileSync/Build/Bin/macos-${{ matrix.arch }}/{FreeFileSync,RealTimeSync}.app "$dir/"
+          # ditto keeps signatures, extended attributes and symlinks
+          ditto -c -k --keepParent "$dir" "$name.zip"
+          echo "APP_ZIP=$name.zip" >> "$GITHUB_ENV"
+
+      - name: Upload the apps
+        if: ${{ !cancelled() && steps.apps.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ env.APP_ZIP }}
+          archive: false
+          if-no-files-found: error
+
+      # Tests/sync's sync_test writes the configurations for the start check and the batch run with the engine's own config writer
+      - name: Test helper
+        id: helper
+        if: ${{ !cancelled() && steps.apps.outcome == 'success' }}
+        run: ARCH=${{ matrix.arch }} SYNC_TEST_OBJ="$RUNNER_TEMP/engine-obj" SYNC_TEST_BIN="$RUNNER_TEMP/sync-bin" SYNC_TEST_COMPILE_ONLY=1 bash Tests/sync/run.sh
+
+      # each app starts with a fresh HOME, shows its window (checked by title), ends on SIGTERM without crashing (x86_64 under Rosetta 2);
+      # FreeFileSync twice: first start (main window with the About dialog on top), then with a configuration of two existing folders
+      # and global settings that skip the first-start dialogs, so the main window shows a comparison result (buttons refreshed)
+      - name: Start the apps
+        if: ${{ !cancelled() && steps.helper.outcome == 'success' }}
+        env:
+          SCREENSHOT_TO_LOG: 1 # a small copy of each screenshot in the log as well (see check-mac-app-starts.sh)
+          SENTRY_BUILD: ${{ steps.sentry.outputs.enabled }}
+        run: |
+          if [ "${{ matrix.arch }}" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "::warning::Rosetta 2 not available: x86_64 apps not started"; exit 0
+          fi
+          bin="FreeFileSync/Build/Bin/macos-${{ matrix.arch }}"
+          mkdir -p screenshots
+          .github/build/check-mac-app-starts.sh "$bin/FreeFileSync.app" '^About' "screenshots/FreeFileSync-first-start-${{ matrix.arch }}.png"
+
+          work="$RUNNER_TEMP/start-check"
+          mkdir -p "$work/left/sub" "$work/right"
+          echo "new" > "$work/left/new.txt"
+          echo "changed left" > "$work/left/sub/changed.txt"
+          echo "old" > "$work/right/changed.txt"
+          echo "only right" > "$work/right/only-right.txt"
+          "$RUNNER_TEMP/sync-bin/sync_test" --write-gui "$work/job.ffs_gui" "$work/left" "$work/right"
+          "$RUNNER_TEMP/sync-bin/sync_test" --write-global "$work/GlobalSettings.xml"
+          .github/build/check-mac-app-starts.sh "$bin/FreeFileSync.app" '(^| )FreeFileSync [0-9.]+' "screenshots/FreeFileSync-main-${{ matrix.arch }}.png" \
+            "$work/job.ffs_gui" "$work/GlobalSettings.xml"
+
+          # a crash reporting build (secret or dry run): with the welcome dialog seen but no answer stored, the first-start notice shows
+          if [ "$SENTRY_BUILD" = 1 ]; then
+            "$RUNNER_TEMP/sync-bin/sync_test" --write-global-unanswered "$work/GlobalSettings-unanswered.xml"
+            .github/build/check-mac-app-starts.sh "$bin/FreeFileSync.app" '^Crash reports$' "screenshots/FreeFileSync-crash-notice-${{ matrix.arch }}.png" \
+              "$work/GlobalSettings-unanswered.xml"
+          fi
+
+          .github/build/check-mac-app-starts.sh "$bin/RealTimeSync.app" '^RealTimeSync [0-9.]+' "screenshots/RealTimeSync-${{ matrix.arch }}.png"
+
+      # FreeFileSync in batch mode: a mirror job (written by the engine's config writer through Tests/sync's sync_test --write-batch)
+      # must end with exit code 0 and leave the right folder equal to the left one
+      - name: Batch run
+        if: ${{ !cancelled() && steps.helper.outcome == 'success' }}
+        run: |
+          if [ "${{ matrix.arch }}" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "::warning::Rosetta 2 not available: x86_64 batch run skipped"; exit 0
+          fi
+          work="$RUNNER_TEMP/batch"
+          mkdir -p "$work/left/sub dir" "$work/right" "$work/logs" "$work/home"
+          echo "a" > "$work/left/a.txt"
+          echo "b" > "$work/left/sub dir/b é.txt"
+          echo "deleted by mirror" > "$work/right/old.txt"
+          "$RUNNER_TEMP/sync-bin/sync_test" --write-batch "$work/job.ffs_batch" "$work/left" "$work/right" "$work/logs"
+          start=$SECONDS
+          HOME="$work/home" gtimeout 300 FreeFileSync/Build/Bin/macos-${{ matrix.arch }}/FreeFileSync.app/Contents/MacOS/FreeFileSync "$work/job.ffs_batch" && rc=0 || rc=$?
+          echo "batch run: exit code $rc after $((SECONDS - start)) s"
+          ls -l "$work/logs" || true
+          [ "$rc" = 0 ] || { cat "$work"/logs/* 2>/dev/null || true; echo "::error::batch run ended with exit code $rc"; exit 1; }
+          diff -r "$work/left" "$work/right"
+          echo "batch run: right folder equals left folder"
+
+      # crash reporting in the Mac apps: both apps built with FFS_SENTRY=1 against a fake DSN on 127.0.0.1 (separate objects;
+      # after everything above, since the bundles land in the same folder), then Tests/sentry/run.sh against a fake endpoint
+      # (x86_64 under Rosetta 2)
+      - name: Sentry build
+        id: sentrybuild
+        if: ${{ !cancelled() && steps.helper.outcome == 'success' }}
+        env:
+          SENTRY_DSN: http://testkey@127.0.0.1:38917/1
+          SENTRY_ENVIRONMENT: ci
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -o pipefail
+          export FFS_GIT_SHA="${SOURCE_SHA:0:12}"
+          jobs="$(sysctl -n hw.ncpu)"
+          {
+            gmake -C FreeFileSync/Source -j"$jobs" ARCH=${{ matrix.arch }} FFS_SENTRY=1 objPath="$RUNNER_TEMP/sentry-ffs-obj"
+            gmake -C FreeFileSync/Source/RealTimeSync -j"$jobs" ARCH=${{ matrix.arch }} FFS_SENTRY=1 objPath="$RUNNER_TEMP/sentry-rts-obj"
+          } 2>&1 | tee sentry-apps-${{ matrix.arch }}.txt
+          bin="FreeFileSync/Build/Bin/macos-${{ matrix.arch }}"
+          for app in FreeFileSync RealTimeSync; do
+            ls -l "$bin/$app.app/Contents/MacOS"
+            codesign --verify --strict --verbose=2 "$bin/$app.app"
+            [ "$(lipo -archs "$bin/$app.app/Contents/MacOS/crashpad_handler")" = "${{ matrix.arch }}" ] || { echo "::error::$app.app: crashpad_handler is not ${{ matrix.arch }}"; exit 1; }
+          done
+
+      # x86_64 crash capture can't be tested under Rosetta 2 (see below): on workflow_dispatch the build goes to the "Sentry tests
+      # (Intel)" job, which runs on an Intel runner
+      - name: Zip the Sentry build for the Intel runner
+        if: ${{ !cancelled() && steps.sentrybuild.outcome == 'success' && matrix.arch == 'x86_64' && github.event_name == 'workflow_dispatch' }}
+        run: |
+          dir="$RUNNER_TEMP/sentry-test-build-macos-x86_64"
+          mkdir -p "$dir"
+          cp -R FreeFileSync/Build/Bin/macos-x86_64/{FreeFileSync,RealTimeSync}.app "$dir/"
+          ditto -c -k --keepParent "$dir" sentry-test-build-macos-x86_64-NOT-FOR-RELEASE.zip
+
+      - name: Upload the Sentry build for the Intel runner
+        if: ${{ !cancelled() && steps.sentrybuild.outcome == 'success' && matrix.arch == 'x86_64' && github.event_name == 'workflow_dispatch' }}
+        uses: actions/upload-artifact@v7
+        with:
+          path: sentry-test-build-macos-x86_64-NOT-FOR-RELEASE.zip
+          archive: false
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Sentry tests
+        if: ${{ !cancelled() && steps.sentrybuild.outcome == 'success' }}
+        env:
+          SENTRY_TEST_DSN: http://testkey@127.0.0.1:38917/1
+          SENTRY_TEST_ENVIRONMENT: ci
+          FFS_CRASH_REPORT_DEBUG: 1 # sentry-native's log in the app output, which failed scenarios print
+          ARCH: ${{ matrix.arch }}
+        run: |
+          if [ "${{ matrix.arch }}" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "::warning::Rosetta 2 not available: x86_64 Sentry tests skipped"; exit 0
+          fi
+          if [ "${{ matrix.arch }}" = x86_64 ] && [ "$(uname -m)" = arm64 ]; then
+            # seen in CI: the x86_64 apps' crashes end them with the signal, no dump (exit code 139); arm64 natively is fine
+            export SENTRY_TEST_NO_CRASH_CAPTURE="Crashpad catches no crashes of x86_64 apps under Rosetta 2 (needs an Intel Mac)"
+            echo "::warning::x86_64 under Rosetta 2: the scenarios that need a captured crash are skipped ($SENTRY_TEST_NO_CRASH_CAPTURE)"
+          fi
+          Tests/sentry/run.sh "FreeFileSync/Build/Bin/macos-${{ matrix.arch }}"
+
+      - name: Upload screenshots
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-macos-${{ matrix.arch }}
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload app build log
         if: always()
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          path: macos-port-todo-${{ matrix.arch }}.txt
+          path: apps-${{ matrix.arch }}.txt
+          archive: false
+          if-no-files-found: ignore
+
+      - name: Upload zen compile log
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          path: zen-compile-${{ matrix.arch }}.txt
+          archive: false
+          if-no-files-found: ignore
+
+      - name: Upload engine build log
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          path: engine-${{ matrix.arch }}.txt
           archive: false
           if-no-files-found: ignore
 
@@ -227,3 +582,100 @@ jobs:
           path: macos-libraries-${{ matrix.arch }}.tar.gz
           archive: false
           if-no-files-found: error
+
+  # one drag-to-Applications disk image per architecture with both apps (the shape of Musikku's wrap-mac-dmg job): the app zips
+  # stay zips through the artifact download (skip-decompress: the artifact action's own unpacking would lose the bundle structure),
+  # ditto -x -k unpacks them with signatures and extended attributes, .github/build/wrap-mac-dmg.sh builds and checks the image
+  dmg:
+    name: DMG
+    needs: libraries
+    # also when a later check in the app jobs (e.g. the Sentry tests) failed: the zips are uploaded before; never for a Sentry dry run
+    if: ${{ !cancelled() && !inputs.sentry_dry_run }}
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install create-dmg
+        run: |
+          brew install create-dmg || echo "::warning::create-dmg not installed: the images are made with hdiutil alone"
+
+      - name: Download the app zips
+        uses: actions/download-artifact@v8
+        with:
+          pattern: FreeFileSync-*-macos-*.zip
+          path: mac-zips
+          merge-multiple: true
+          skip-decompress: true
+
+      - name: Wrap each architecture's apps into a .dmg
+        run: |
+          shopt -s nullglob
+          zips=(mac-zips/FreeFileSync-*-macos-*.zip)
+          ls -l mac-zips
+          [ "${#zips[@]}" -eq 2 ] || { echo "::error::expected two app zips (arm64, x86_64), found ${#zips[@]}"; exit 1; }
+          mkdir -p dist
+          for zip in "${zips[@]}"; do
+            base="$(basename "$zip" .zip)" # FreeFileSync-<version>-macos-<arch>
+            work="$(mktemp -d)"
+            ditto -x -k "$zip" "$work"
+            .github/build/wrap-mac-dmg.sh "$work/$base" "dist/$base.dmg" 2>&1 | tee -a dmg.log
+            method="$(sed -nE 's/^\[wrap-mac-dmg\] made with (.*): .*/\1/p' dmg.log | tail -1)"
+            echo "- \`$base.dmg\`: made with $method, both apps' signatures valid inside the mounted image" >> "$GITHUB_STEP_SUMMARY"
+            rm -rf "$work"
+          done
+          ls -lh dist
+
+      - name: Upload the .dmg (arm64)
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/*-macos-arm64.dmg
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload the .dmg (x86_64)
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/*-macos-x86_64.dmg
+          archive: false
+          if-no-files-found: error
+
+  # crash capture of the x86_64 apps on a real Intel Mac (under Rosetta 2 Crashpad catches nothing): the x86_64 Sentry build of the
+  # app job, Tests/sentry/run.sh without skips; on workflow_dispatch only (Intel runners are scarce)
+  sentry-intel:
+    name: Sentry tests (Intel)
+    needs: libraries
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the x86_64 Sentry build
+        uses: actions/download-artifact@v8
+        with:
+          name: sentry-test-build-macos-x86_64-NOT-FOR-RELEASE.zip
+          path: sentry-zip
+          skip-decompress: true
+
+      - name: Install bash 4.4+
+        run: | # the Intel image's PATH has the system's bash 3.2
+          brew list bash >/dev/null 2>&1 || brew install bash
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+
+      - name: Sentry tests
+        env:
+          SENTRY_TEST_DSN: http://testkey@127.0.0.1:38917/1
+          SENTRY_TEST_ENVIRONMENT: ci
+          FFS_CRASH_REPORT_DEBUG: 1
+          ARCH: x86_64
+        run: |
+          uname -m; sw_vers; bash --version | head -1; python3 --version
+          ditto -x -k sentry-zip/sentry-test-build-macos-x86_64-NOT-FOR-RELEASE.zip "$RUNNER_TEMP/apps"
+          "$(brew --prefix)/bin/bash" Tests/sentry/run.sh "$RUNNER_TEMP/apps/sentry-test-build-macos-x86_64"

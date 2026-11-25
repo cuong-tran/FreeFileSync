@@ -1,6 +1,7 @@
 name: ZIP AFS test
 
 #builds the read-only ZIP AbstractFileSystem (FreeFileSync/Source/afs/zip.cpp) with its zen dependencies and runs Tests/zip_afs against archives made by Python zipfile and Info-ZIP
+#matrix: g++ and clang + libc++ on Ubuntu; Xcode's clang on macOS for arm64 and x86_64 (cross-compiled on the arm64 runner, run under Rosetta 2)
 on:
   push:
     branches: [dev, main] #other branches: through their pull request (or run by hand), so a PR push doesn't test the same commit twice
@@ -8,12 +9,14 @@ on:
       - 'FreeFileSync/Source/afs/**'
       - 'zen/**'
       - 'Tests/zip_afs/**'
+      - '.github/build/common.sh' #FFS_MACOS_DEPLOYMENT_TARGET
       - '.github/workflows/zip-sync.yml'
   pull_request:
     paths:
       - 'FreeFileSync/Source/afs/**'
       - 'zen/**'
       - 'Tests/zip_afs/**'
+      - '.github/build/common.sh' #FFS_MACOS_DEPLOYMENT_TARGET
       - '.github/workflows/zip-sync.yml'
   workflow_dispatch:
 
@@ -32,27 +35,70 @@ jobs:
       matrix:
         include:
           - name: g++
+            platform: ubuntu
+            runner: ubuntu-24.04
             container: gcc:15 #FreeFileSync 14.13 is built with -std=c++26
             cxx: g++
             stdlib: ''
           - name: clang + libc++ #the compiler and C++ library of the macOS and Windows ports
+            platform: ubuntu
+            runner: ubuntu-24.04
             container: ''
             cxx: clang++-20
             stdlib: libc++
-    runs-on: ubuntu-24.04
+          - name: macOS arm64
+            platform: macos
+            runner: macos-15
+            container: ''
+            cxx: clang++ #Xcode's clang (newest Xcode 26.x, selected below)
+            stdlib: ''
+            arch: arm64
+          - name: macOS x86_64
+            platform: macos
+            runner: macos-15 #arm64 runner: cross-compiled with -arch x86_64, run under Rosetta 2
+            container: ''
+            cxx: clang++
+            stdlib: ''
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
     #entries without a container run directly on the runner; the g++ entry runs as root in its container, the clang entry as the
     #unprivileged runner user, so both are covered
     container: ${{ matrix.container }}
     env:
       CXX: ${{ matrix.cxx }}
       STDLIB: ${{ matrix.stdlib }}
+      ARCH: ${{ matrix.arch }} #macOS only
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies (gcc container)
-        if: matrix.container != ''
+        if: matrix.platform == 'ubuntu' && matrix.container != ''
         run: apt-get update && apt-get install -y --no-install-recommends zlib1g-dev libglib2.0-dev pkg-config zip python3
       - name: Install dependencies (runner)
-        if: matrix.container == ''
+        if: matrix.platform == 'ubuntu' && matrix.container == ''
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-20 libc++-20-dev libc++abi-20-dev zlib1g-dev libglib2.0-dev pkg-config zip python3
+      - name: Select Xcode
+        if: matrix.platform == 'macos'
+        run: |
+          xcode="$(ls -d /Applications/Xcode_26.*.app 2>/dev/null | sort -V | tail -n 1)"
+          if [ -z "$xcode" ]; then
+            echo "::error::no Xcode 26.x on this runner image; installed: $(ls -d /Applications/Xcode*.app | tr '\n' ' ')"
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
+          echo "using $xcode"
+      - name: Install dependencies (macOS)
+        if: matrix.platform == 'macos'
+        run: brew list bash >/dev/null 2>&1 || brew install bash #run.sh needs bash 4.4+ (macOS ships 3.2); zip and python3 are preinstalled
+      #x86_64 test binaries run under Rosetta 2; without it (and if it can't be installed), the entry only compiles
+      - name: Rosetta 2
+        if: matrix.platform == 'macos' && matrix.arch == 'x86_64'
+        run: |
+          if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            sudo softwareupdate --install-rosetta --agree-to-license || true
+          fi
+          if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "::warning::Rosetta 2 not available on this runner: x86_64 ZIP tests are compiled only"
+            echo "ZIP_TEST_COMPILE_ONLY=1" >> "$GITHUB_ENV"
+          fi
       - name: Build and run ZIP tests
         run: bash Tests/zip_afs/run.sh

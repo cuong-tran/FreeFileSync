@@ -5,12 +5,17 @@
 // *****************************************************************************
 #pragma once
 
+#include "build_info.h"  //ZEN_LINUX, ZEN_MAC
 #include "scope_guard.h" //
 #include "i18n.h"        //not used by this header, but the "rest of the world" needs it!
 #include "zstring.h"     //
 #include "extra_log.h"   //
 
+#if defined ZEN_LINUX
     #include <glib.h>
+#elif defined ZEN_MAC
+    struct __CFError; //CFErrorRef = __CFError*, see formatCFError()
+#endif
     #include <cerrno>
 
 namespace zen
@@ -22,7 +27,13 @@ ErrorCode getLastError();
 
 std::wstring formatSystemError(const std::string& functionName, const std::wstring& errorCode, const std::wstring& errorMsg);
 std::wstring formatSystemError(const std::string& functionName, ErrorCode ec);
+#if defined ZEN_LINUX
     std::wstring formatGlibError(const std::string& functionName, GError* error);
+#elif defined ZEN_MAC
+    //CoreFoundation/Cocoa errors (implementation: sys_error_mac.mm); NSError* is toll-free bridged: pass (__bridge CFErrorRef)nsError
+    std::wstring formatCFError(const std::string& functionName, ::__CFError* error); //error may be nullptr
+    std::wstring formatOSStatus(const std::string& functionName, int /*OSStatus*/ status);
+#endif
 
 
 //A low-level exception class giving (non-translated) detail information only - same conceptional level like "GetLastError()"!

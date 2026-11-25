@@ -6,6 +6,9 @@
 #pragma once
 
 #include "file_error.h"
+#if defined ZEN_MAC
+    #include <mutex>
+#endif
 
 namespace zen
 {
@@ -20,4 +23,11 @@ DEFINE_NEW_SYS_ERROR(SysErrorTimeOut)
    Linux/macOS: SysErrorTimeOut leaves zombie process behind if timeoutMs is used             */
 
 void openWithDefaultApp(const Zstring& itemPath); //throw FileError
+
+#if defined ZEN_MAC
+/*  macOS has no pipe2(), SOCK_CLOEXEC or accept4(): a file descriptor created without an atomic close-on-exec flag leaks into a
+    child process that another thread forks before FD_CLOEXEC is set. Hold this lock from creating such a descriptor until
+    FD_CLOEXEC is set: consoleExecute() holds it from creating its pipe until fork() returns. Not covered: forks outside zen.  */
+[[nodiscard]] std::unique_lock<std::mutex> lockFdInheritance();
+#endif
 }

@@ -5,15 +5,31 @@
 // *****************************************************************************
 
 #include "sys_version.h"
+#include "build_info.h"
     #include <iostream>
     #include "file_io.h"
     #include "process_exec.h"
+#if defined ZEN_MAC
+    #include <sys/sysctl.h> //sysctlbyname
+#endif
 
 using namespace zen;
 
 
 OsVersionDetail impl::getOsVersionRaw() //throw SysError
 {
+#if defined ZEN_MAC
+    //e.g. "15.6.1"; available since macOS 10.13.4 (unlike NSProcessInfo, no Objective-C needed)
+    size_t bufSize = 0;
+    if (::sysctlbyname("kern.osproductversion", nullptr, &bufSize, nullptr, 0) != 0)
+        THROW_LAST_SYS_ERROR("sysctlbyname(kern.osproductversion)");
+    std::vector<char> buf(bufSize + 1);
+    if (::sysctlbyname("kern.osproductversion", buf.data(), &bufSize, nullptr, 0) != 0)
+        THROW_LAST_SYS_ERROR("sysctlbyname(kern.osproductversion)");
+
+    const std::wstring osName = L"macOS";
+    const std::wstring osVersion = trimCpy(utfTo<std::wstring>(buf.data()));
+#else
     /* prefer lsb_release:             lsb_release      Distributor ID: Debian
          1. terser OS name                              Release:        8.11
          2. detailed version number
@@ -64,6 +80,7 @@ OsVersionDetail impl::getOsVersionRaw() //throw SysError
     //osVersion is usually available, except for Arch Linux: https://freefilesync.org/forum/viewtopic.php?t=7276
     //  lsb_release Release is "rolling"
     //  /etc/os-release: VERSION_ID is missing, but there is BUILD_ID=rolling instead
+#endif
 
     std::vector<std::wstring_view> verDigits = splitCpy<std::wstring_view>(osVersion, L'.', SplitOnEmpty::allow); //e.g. "7.7.1908"
     verDigits.resize(2);

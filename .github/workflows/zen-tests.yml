@@ -1,7 +1,8 @@
 name: zen tests
 
 #builds the zen platform layer (zen/*.cpp) with the unit tests in Tests/zen and runs them
-#matrix: g++ and clang + libc++ on Ubuntu for now; macOS and Windows runners get their own entries once zen builds there (see docs/PORTING_PLAN.md)
+#matrix: g++ and clang + libc++ on Ubuntu; Xcode's clang on macOS for arm64 and x86_64 (cross-compiled on the arm64 runner, run under
+#Rosetta 2); Windows gets its own entries once zen builds there (see docs/PORTING_PLAN.md)
 on:
   push:
     branches: [dev, main] #other branches: through their pull request (or run by hand), so a PR push doesn't test the same commit twice
@@ -9,11 +10,13 @@ on:
       - 'zen/**'
       - 'Tests/zen/**'
       - '.github/workflows/zen-tests.yml'
+      - '.github/build/common.sh' #FFS_MACOS_DEPLOYMENT_TARGET
   pull_request:
     paths:
       - 'zen/**'
       - 'Tests/zen/**'
       - '.github/workflows/zen-tests.yml'
+      - '.github/build/common.sh' #FFS_MACOS_DEPLOYMENT_TARGET
   workflow_dispatch:
 
 concurrency: #like the other workflows: a newer push cancels the run it supersedes
@@ -42,6 +45,20 @@ jobs:
             container: ''
             cxx: clang++-20
             stdlib: libc++
+          - name: macOS arm64
+            platform: macos
+            runner: macos-15
+            container: ''
+            cxx: clang++ #Xcode's clang (newest Xcode 26.x, selected below) with Apple's libc++
+            stdlib: ''
+            arch: arm64
+          - name: macOS x86_64
+            platform: macos
+            runner: macos-15 #arm64 runner: cross-compiled with -arch x86_64, run under Rosetta 2
+            container: ''
+            cxx: clang++
+            stdlib: ''
+            arch: x86_64
     runs-on: ${{ matrix.runner }}
     #entries without a container run directly on the runner; the g++ entry runs as root in its container, the clang entry as the
     #unprivileged runner user, which covers both code paths where zen treats root differently (e.g. sys_info.cpp)
@@ -50,6 +67,8 @@ jobs:
     env:
       CXX: ${{ matrix.cxx }}
       STDLIB: ${{ matrix.stdlib }}
+      ARCH: ${{ matrix.arch }} #macOS only
+      ZEN_TEST_ALL_ERRORS: 1 #a failed build reports all errors of each file, not just the first
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies (gcc container)
@@ -58,5 +77,45 @@ jobs:
       - name: Install dependencies (runner)
         if: matrix.platform == 'ubuntu' && matrix.container == ''
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-20 libc++-20-dev libc++abi-20-dev libglib2.0-dev pkg-config
+      - name: Select Xcode
+        if: matrix.platform == 'macos'
+        run: |
+          xcode="$(ls -d /Applications/Xcode_26.*.app 2>/dev/null | sort -V | tail -n 1)"
+          if [ -z "$xcode" ]; then
+            echo "::error::no Xcode 26.x on this runner image; installed: $(ls -d /Applications/Xcode*.app | tr '\n' ' ')"
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
+          echo "using $xcode"
+      - name: Install dependencies (macOS)
+        if: matrix.platform == 'macos'
+        run: |
+          brew list bash >/dev/null 2>&1 || brew install bash #run.sh needs bash 4.4+ (macOS ships 3.2)
+          bash --version | sed -n 1p
+          clang++ --version | sed -n 1p
+      #x86_64 test binaries run under Rosetta 2; without it (and if it can't be installed), the entry only compiles
+      - name: Rosetta 2
+        if: matrix.platform == 'macos' && matrix.arch == 'x86_64'
+        run: |
+          if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            sudo softwareupdate --install-rosetta --agree-to-license || true
+          fi
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "Rosetta 2 available"
+          else
+            echo "::warning::Rosetta 2 not available on this runner: x86_64 zen tests are compiled only"
+            echo "ZEN_TEST_COMPILE_ONLY=1" >> "$GITHUB_ENV"
+          fi
       - name: Build and run zen tests
-        run: bash Tests/zen/run.sh
+        run: ZEN_TEST_BIN="$RUNNER_TEMP/zen-test-bin" bash Tests/zen/run.sh
+      #FSEvents delivers events asynchronously and coalesces them: the watcher test must be reliable, not just pass once
+      - name: dirWatcher test 20 times (macOS)
+        if: matrix.platform == 'macos' && env.ZEN_TEST_COMPILE_ONLY != '1'
+        run: |
+          mkdir -p "$RUNNER_TEMP/zen-test-root"
+          for i in $(seq 1 20); do
+            "$RUNNER_TEMP/zen-test-bin/zen_test" --root "$RUNNER_TEMP/zen-test-root" dirWatcher > "$RUNNER_TEMP/dw.log" 2>&1 ||
+              { cat "$RUNNER_TEMP/dw.log"; echo "::error::dirWatcher failed in run $i of 20"; exit 1; }
+          done
+          tail -n 1 "$RUNNER_TEMP/dw.log"
+          echo "dirWatcher: 20 of 20 runs passed"

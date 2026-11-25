@@ -53,6 +53,8 @@ if [ "${FFS_SENTRY:-}" = 1 ]; then
     cp -a "$BIN_DIR/crashpad_handler" "$stage/Bin/"
 fi
 cp -a "$RES_DIR" "$stage/"
+# the welcome dialog's picture is missing from upstream's source zip: ship this repository's own (.github/build/resources/README.md)
+[ -f "$stage/Resources/Animal.dat" ] || cp "$SCRIPT_DIR/resources/Animal.dat" "$stage/Resources/"
 
 # bundle every library the binaries resolve from the prefix (ldd lists indirect dependencies too), under its soname
 log "Bundling the libraries from $INSTALL_DIR/lib"
