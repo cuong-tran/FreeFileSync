@@ -89,11 +89,16 @@ if [ "$FFS_TARGET" != linux ]; then
     esac
     export MACOSX_DEPLOYMENT_TARGET="$FFS_MACOS_DEPLOYMENT_TARGET"
     export CC="${CC:-clang}" CXX="${CXX:-clang++}"
-    export CFLAGS="-O2 -arch $TARGET_ARCH${CFLAGS:+ $CFLAGS}"
-    export CXXFLAGS="-O2 -arch $TARGET_ARCH${CXXFLAGS:+ $CXXFLAGS}"
+    # source paths (__FILE__ of asserts, debug info) relative to the work area instead of absolute, so that no path of the build
+    # machine (e.g. its home folder) ends up in the libraries and the apps; build-openssl.sh leaves it out (see there)
+    # shellcheck disable=SC2034 # PATH_MAP_FLAG: used by build-openssl.sh
+    PATH_MAP_FLAG="-ffile-prefix-map=$BUILD_DIR=.build"
+    case "$INSTALL_DIR/" in ("$BUILD_DIR"/*) ;; (*) PATH_MAP_FLAG="$PATH_MAP_FLAG -ffile-prefix-map=$INSTALL_DIR=.build/deps/$FFS_TARGET" ;; esac
+    export CFLAGS="-O2 -arch $TARGET_ARCH $PATH_MAP_FLAG${CFLAGS:+ $CFLAGS}"
+    export CXXFLAGS="-O2 -arch $TARGET_ARCH $PATH_MAP_FLAG${CXXFLAGS:+ $CXXFLAGS}"
     # Objective-C(++) sources (wxOSX's *.mm files) are compiled with these, not with CFLAGS/CXXFLAGS
-    export OBJCFLAGS="-O2 -arch $TARGET_ARCH${OBJCFLAGS:+ $OBJCFLAGS}"
-    export OBJCXXFLAGS="-O2 -arch $TARGET_ARCH${OBJCXXFLAGS:+ $OBJCXXFLAGS}"
+    export OBJCFLAGS="-O2 -arch $TARGET_ARCH $PATH_MAP_FLAG${OBJCFLAGS:+ $OBJCFLAGS}"
+    export OBJCXXFLAGS="-O2 -arch $TARGET_ARCH $PATH_MAP_FLAG${OBJCXXFLAGS:+ $OBJCXXFLAGS}"
     export LDFLAGS="-arch $TARGET_ARCH $LDFLAGS"
     export PKG_CONFIG_LIBDIR="$INSTALL_DIR/lib/pkgconfig"
 fi
