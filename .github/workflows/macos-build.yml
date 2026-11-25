@@ -413,7 +413,7 @@ jobs:
         run: ARCH=${{ matrix.arch }} SYNC_TEST_OBJ="$RUNNER_TEMP/engine-obj" SYNC_TEST_BIN="$RUNNER_TEMP/sync-bin" SYNC_TEST_COMPILE_ONLY=1 bash Tests/sync/run.sh
 
       # each app starts with a fresh HOME, shows its window (checked by title), ends on SIGTERM without crashing (x86_64 under Rosetta 2);
-      # FreeFileSync twice: first start (main window with the About dialog on top), then with a configuration of two existing folders
+      # FreeFileSync twice: first start (About dialog, the main window as a second screenshot), then with a configuration of two existing folders
       # and global settings that skip the first-start dialogs, so the main window shows a comparison result (buttons refreshed)
       - name: Start the apps
         if: ${{ !cancelled() && steps.helper.outcome == 'success' }}
