@@ -19,7 +19,8 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | done | `b4b35bb..3289e88`, fixes `f3e2601..bd9f1bf` | 7 findings: 6 fixed, 1 kept |
 | M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | done | `bd9f1bf..1152282`, fixes `1152282..83f890e` | 9 findings: all fixed |
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | done | `83f890e..bf0ef72`, fixes `d284031..8420f50` | 7 findings: all fixed |
-| M3 macOS | Pull request | open; squash-merged once all checks pass | | |
+| M3 macOS | Pull request | merged as [#13](https://github.com/cuong-tran/FreeFileSync/pull/13) (squash, `5b2dbe1`) | | |
+| M3 macOS | Fixes from the first test on a real Mac (`docs/MAC_TEST_REPORT.md` on branch `mac-test-report`) | done, PR [#14](https://github.com/cuong-tran/FreeFileSync/pull/14) | `5b2dbe1..mac-test-fixes` | not reviewed by an agent; owner review on the PR |
 | M4 Windows | | | | |
 
 ## How the work runs
@@ -68,6 +69,13 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | 2026-11-25 | Work resumed after the pause of 2026-11-24 23:00 UTC | Owner said continue. |
 | 2026-11-25 | macOS crash reports while reporting is off: uploads are disabled and stored dumps are deleted at start and when "send" is given later | sentry-native has no hook on macOS to discard a crash; a dump made while the user had opted out must never be uploaded. |
 
+| 2026-11-26 | Message boxes lay out their `wxRichTextCtrl` detail text after the dialog has its final size (macOS only) | wxOSX laid it out inside the partial repaint caused by hiding the caret when the focus moved to the button, so wrapped paragraphs were never drawn (F4). Reproduced on a Mac with a test program around the real `wx+/popup_dlg.cpp`. |
+| 2026-11-26 | RealTimeSync looks for FreeFileSync next to its own bundle, then next to the untranslocated original (`SecTranslocate*`, looked up with `dlsym`), then through LaunchServices by bundle id | App Translocation runs a quarantined bundle alone from a read-only mount (F2); the Security functions have no public header, so a missing symbol only disables that step. |
+| 2026-11-26 | Live light/dark switches are handled on `wxEVT_SYS_COLOUR_CHANGED` (macOS only), after wxWidgets' own handlers (`CallAfter`) | `wxAuiManager` resets its art to system colors in its own handler, so the app's caption colors must be applied after it (F5). Linux keeps upstream's behavior. |
+| 2026-11-26 | Edit menu: stock ids for Cut/Copy/Paste/Select All, native `undo:`/`redo:` actions for Undo/Redo (`wx+/edit_menu_mac.mm`) | wxOSX maps only the former to first-responder actions; wx's Undo/Redo events go to the frame, not the text field, and are disabled during modal dialogs (F6). |
+| 2026-11-26 | The macOS default exclude filter adds Finder/Spotlight metadata (`.DS_Store`, `._*`, `.Trashes`, `.fseventsd`, `.Spotlight-V100`, `.DocumentRevisions-V100`, `.TemporaryItems`) | Only new configurations get it; saved ones keep their filter (F7). |
+| 2026-11-26 | macOS UI checks on a Mac without a person at it: a library injected with `DYLD_INSERT_LIBRARIES` (the ad-hoc signed apps have no hardened runtime) switches the app's own `NSApp.appearance`, sends synthesized key events and renders windows with `cacheDisplayInRect:` | Works with a locked screen, never changes the system appearance. Synthesized Cmd+V pastes even without an Edit menu, so it cannot reproduce F6's paste failure with a real keyboard. A test that swaps the general pasteboard must restore it in the same block: one early return lost the owner's clipboard content once. |
+
 ## Needed from the repository owner
 
 - Repository secrets for Sentry (builds work without them, reporting stays off): `SENTRY_DSN`, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`.
@@ -92,7 +100,9 @@ Marked `KNOWN_ISSUE` in `Tests/zen`, not fixed (upstream code):
 - `afs/gdrive.cpp` (upstream): the OAuth login loop never closes the accepted client socket. Left as is.
 - The Mac UI has only been seen through CI screenshots. To check on a real Mac: main window layout (fonts and sizes were set for GTK), dark mode, Dock icon, tray item, the application menu, opening files from Finder, drag and drop, folder picker, sounds, "Show in Finder". Dock progress (`wx+/taskbar_mac.cpp`, `dock_tile_mac.mm`) is implemented but has never been seen. Not testable in CI: Finder opens, the modal-dialog guards, starting a batch process from a running app. The app icon is upscaled from a 128 px image.
 - Crash capture for x86_64 is tested on a real Intel runner only on manual dispatch (`sentry_dry_run`); under Rosetta 2 on the arm64 runners Crashpad catches no crashes, so those scenarios are skipped there with a printed reason.
-- The first-start crash-report notice may not render its explanatory text on macOS (a blank area in the CI screenshot). To check on a real Mac.
+- Fixed by PR #14 (2026-11-26), from `docs/MAC_TEST_REPORT.md`: Xcode 27 build (F1), RealTimeSync under App Translocation (F2), Gatekeeper steps in the README (F3), blank wrapped text in message boxes including the crash-report notice (F4), live light/dark switch (F5), Edit menu (F6), macOS default filter (F7), Windows/Linux texts (F8), libidn2 download fallback (F12), start check screenshots, modal windows and preferences (F15), Sentry release name (F17). To check on a real Mac: F2 with a quarantined install, F6 Cmd+V in the versioning folder box with a real keyboard, F5 with a real system appearance switch (tested only with the app's own appearance), the open dialogs during a switch (not handled: they keep their colors until reopened).
+- Left from the Mac test report: F9 (standard menu items stay English, Mac menu wording, F-keys), F10 (default window size), F11 (dark mode details: white percentage cells, light "[Last session]" row), F13 (blurry icon, gray plate), F14 (unsaved configuration lost after a language change, probably upstream), F16 (`hdiutil` deprecation warnings), F18 (accessibility of bitmap buttons, slow AX tree of big logs), the smaller remarks.
+- `fff::showCrashReportNotice()` passes a checkbox label without `&`, which fails an assertion in `wx+/popup_dlg.cpp` in debug builds (release builds are unaffected).
 - `f-kept-then-deleted` once found two dumps instead of one in a dry run; not reproduced since, and the test now prints the first run's log if it recurs.
 - The dSYM path for the Mac apps is exercised by the dry run, but a real upload to Sentry has never happened (no secrets).
 - The DMGs (`FreeFileSync-14.13-macos-<arch>.dmg`, about 19 MB, both apps plus an Applications link) have no background picture; their window layout has only been checked by the script, not by eye.
