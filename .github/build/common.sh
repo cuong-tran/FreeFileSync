@@ -153,15 +153,23 @@ install_id() {
     return 0
 }
 
-# download_archive <archive file name> <url>: downloads the archive to $ARCHIVE_DIR (unless it is there already) and
-# verifies it against KNOWN_SHA256
+# download_archive <archive file name> <url> [<fallback url>...]: downloads the archive to $ARCHIVE_DIR (unless it is there
+# already), trying the URLs in order (e.g. a mirror redirector that may send to a broken mirror, then the origin), and verifies
+# it against KNOWN_SHA256
 download_archive() {
-    local file="$1" url="$2"
+    local file="$1"
+    shift
     local archive="$ARCHIVE_DIR/$file"
     mkdir -p "$ARCHIVE_DIR" "$SOURCE_DIR"
     if [ ! -f "$archive" ]; then
-        log "Downloading $url"
-        curl -fL --retry 3 -o "$archive.part" "$url"
+        local url ok=no
+        for url in "$@"; do
+            log "Downloading $url"
+            if curl -fL --retry 3 -o "$archive.part" "$url"; then ok=yes; break; fi
+            rm -f "$archive.part"
+            log "Download from $url failed"
+        done
+        [ "$ok" = yes ] || die "cannot download $file"
         mv "$archive.part" "$archive"
     fi
 
@@ -174,7 +182,7 @@ download_archive() {
     fi
 }
 
-# fetch_source <name-version> <archive file name> <url> [nopatch]
+# fetch_source <name-version> <archive file name> <url(s)> [nopatch]   (several URLs: separated by spaces, tried in order)
 # Downloads and verifies the archive, unpacks a fresh copy to $SOURCE_DIR/<name-version>
 # and applies patches/<name-version>.patch (the fixes listed in Bugs.txt).
 fetch_source() {
@@ -191,7 +199,8 @@ fetch_source() {
         die "no patch for $name in $PATCH_DIR: port the $name fixes from Bugs.txt first, or set FFS_SKIP_PATCHES=1 to build it unpatched"
     fi
 
-    download_archive "$file" "$url"
+    # shellcheck disable=SC2086 # a list of URLs, which contain no spaces
+    download_archive "$file" $url
 
     rm -rf "${SOURCE_DIR:?}/$name"
     tar xf "$archive" -C "$SOURCE_DIR"
