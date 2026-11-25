@@ -151,6 +151,47 @@ jobs:
             (*) echo "::error::cleanup did not end a process started from the checkout by a relative path"; kill -KILL "$pid"; exit 1 ;;
           esac
 
+      # FAT volumes: does macOS report native extended attributes for them (VOL_CAP_INT_EXTENDED_ATTR, what zen's
+      # copyExtendedAttributes() asks), and does it put attributes (AppleDouble "._" files) on a file a process merely writes?
+      # (macOS 27 showed "._" files in the FAT tests of Tests/zen and Tests/sync.) A disk image in $RUNNER_TEMP, detached after.
+      - name: FAT volume and extended attributes
+        run: |
+          w="$RUNNER_TEMP/fat-probe"
+          mkdir -p "$w/mnt"
+          cat > "$w/caps.c" <<'EOF'
+          #include <stdio.h>
+          #include <stdint.h>
+          #include <sys/attr.h>
+          #include <sys/mount.h>
+          #include <unistd.h>
+          int main(int argc, char** argv)
+          {
+              struct { uint32_t length; vol_capabilities_attr_t caps; } __attribute__((aligned(4), packed)) buf;
+              struct attrlist al = { .bitmapcount = ATTR_BIT_MAP_COUNT, .volattr = ATTR_VOL_INFO | ATTR_VOL_CAPABILITIES };
+              struct statfs st;
+              if (statfs(argv[1], &st) != 0 || getattrlist(st.f_mntonname, &al, &buf, sizeof(buf), 0) != 0) { perror("statfs/getattrlist"); return 1; }
+              const uint32_t bit = VOL_CAP_INT_EXTENDED_ATTR;
+              printf("file system %s: VOL_CAP_INT_EXTENDED_ATTR valid %d, set %d\n", st.f_fstypename,
+                     !!(buf.caps.valid[VOL_CAPABILITIES_INTERFACES] & bit), !!(buf.caps.capabilities[VOL_CAPABILITIES_INTERFACES] & bit));
+              return 0;
+          }
+          EOF
+          xcrun clang -o "$w/caps" "$w/caps.c"
+          hdiutil create -quiet -size 32m -fs MS-DOS -volname PROBE "$w/fat.dmg"
+          hdiutil attach -quiet -nobrowse -noverify -noautoopen -mountpoint "$w/mnt" "$w/fat.dmg"
+          trap 'hdiutil detach -quiet -force "$w/mnt" || true' EXIT
+          "$w/caps" "$w/mnt"
+          "$w/caps" "$RUNNER_TEMP"
+          printf 'content\n' > "$w/mnt/written.txt"     # written by this process only, no attributes set
+          mkdir "$w/mnt/dir"
+          echo "after a plain write: $(ls -A "$w/mnt" | tr '\n' ' ')"
+          echo "attributes of the written file: $(xattr "$w/mnt/written.txt" | tr '\n' ' ')"
+          echo "attributes of a folder made on it: $(xattr "$w/mnt/dir" | tr '\n' ' ')"
+          printf 'x\n' > "$w/src.txt"
+          echo "attributes a new file in \$RUNNER_TEMP gets: $(xattr "$w/src.txt" | tr '\n' ' ')"
+          cat "$w/src.txt" > "$w/mnt/catcopy.txt"
+          echo "after cat to the volume: $(ls -A "$w/mnt" | tr '\n' ' '); attributes: $(xattr "$w/mnt/catcopy.txt" | tr '\n' ' ')"
+
       - name: Clean up the self-hosted Mac
         if: always()
         run: .github/build/mac-runner.sh cleanup
