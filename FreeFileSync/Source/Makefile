@@ -242,6 +242,7 @@ cppFiles += base/icon_loader_mac.mm
 cppFiles += ../../wx+/taskbar_mac.cpp
 cppFiles += ../../wx+/dock_tile_mac.mm
 cppFiles += ../../wx+/edit_menu_mac.mm
+cppFiles += ../../wx+/darkmode_mac.mm
 cppFiles += ffs_paths_mac.cpp
 endif
 
@@ -331,8 +332,8 @@ $(objPath)/ffs/src/%.o : % $(objPath)/ffs/src/%.d
 $(filter %.mm.o,$(objFiles)): CXXFLAGS += -fobjc-arc
 #AppKit/CoreGraphics headers of the macOS 26 SDK are no valid C++26 (enumerators of different enumeration types combined, P2864):
 #the files that include them are C++23, behind a header with standard types only (base/icon_loader_mac.h, wx+/dock_tile_mac.h,
-#wx+/edit_menu_mac.h)
-$(filter %/icon_loader_mac.mm.o %/dock_tile_mac.mm.o %/edit_menu_mac.mm.o,$(objFiles)): CXXFLAGS += -std=c++23
+#wx+/edit_menu_mac.h, wx+/darkmode_mac.h)
+$(filter %/icon_loader_mac.mm.o %/dock_tile_mac.mm.o %/edit_menu_mac.mm.o %/darkmode_mac.mm.o,$(objFiles)): CXXFLAGS += -std=c++23
 
 #recompile wx+/darkmode.cpp when the wxColorHook check above changes its result (e.g. after switching between a patched and a stock wxWidgets):
 #make doesn't track compiler flags, so keep the result in a stamp file that is rewritten only when the result changes

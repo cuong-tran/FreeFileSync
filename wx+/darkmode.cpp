@@ -13,6 +13,8 @@
 #include "color_tools.h"
 #if defined ZEN_LINUX
     #include <gtk/gtk.h>
+#elif defined ZEN_MAC
+    #include "darkmode_mac.h"
 #endif
 
 using namespace zen;
@@ -95,9 +97,9 @@ void zen::colorThemeCleanup()
 
 void zen::updateDerivedSystemColors(ColorTheme currentTheme)
 {
-    /*  "System" in equalAppearance()/changeColorTheme() means the system's appearance: follow it while the app itself follows the
-        system. With an explicit Light/Dark theme (wxApp::SetAppearance()) the app's appearance no longer tells what the system has,
-        and wxOSX reports no switch then: "System" keeps the last value seen (PROGRESS.md, open issues)  */
+    /*  "System" in equalAppearance() means the system's appearance: follow it while the app itself follows the system. With an
+        explicit Light/Dark theme the app's appearance no longer tells what the system has, and wxOSX reports no switch then; on
+        macOS that value is not needed then: changeColorTheme(System) hands the appearance back to the system  */
     if (currentTheme == ColorTheme::System)
         globalDefaultThemeIsDark = wxSystemSettings::GetAppearance().AreAppsDark();
 
@@ -116,6 +118,15 @@ bool zen::equalAppearance(ColorTheme colTheme1, ColorTheme colTheme2)
 
 void zen::changeColorTheme(ColorTheme colTheme) //throw ErrorRestartRequired, FileError
 {
+#if defined ZEN_MAC //"System": really follow the system again, also through later switches (wxEVT_SYS_COLOUR_CHANGED redraws the rest)
+    if (colTheme == ColorTheme::System)
+    {
+        macos::followSystemAppearance();
+        globalDefaultThemeIsDark = wxSystemSettings::GetAppearance().AreAppsDark();
+        refGlobalColorHook() = std::make_unique<SysColorsHook>();
+        return;
+    }
+#endif
     if (colTheme == ColorTheme::System) //SetAppearance(System) isn't working reliably! surprise!?
         colTheme = *globalDefaultThemeIsDark ? ColorTheme::Dark : ColorTheme::Light;
 

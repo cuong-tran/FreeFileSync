@@ -6345,6 +6345,17 @@ void MainDialog::onMenuOptions(wxCommandEvent& event)
         try { writeCrashReportSetting(globalCfg_, globalCfgFilePath_); } //throw FileError
         catch (const FileError& e) { showNotificationDialog(this, DialogInfoType::error, PopupDialogCfg().setDetailInstructions(e.toString())); }
 
+#if defined ZEN_MAC
+    /*  macOS: the theme applies at once, as a system switch does (docs/MAC_TEST_REPORT.md, F5): wxApp::SetAppearance() changes the
+        windows' appearance, and the wxEVT_SYS_COLOUR_CHANGED handler redraws what doesn't follow by itself; no restart, no new window,
+        the comparison result stays. Compared as settings: after a live switch "System" may not equal the appearance seen at start  */
+    if (globalCfg_.appColorTheme != colorThemeOld)
+        try
+        {
+            changeColorTheme(globalCfg_.appColorTheme); //throw ErrorRestartRequired, FileError
+        }
+        catch (const FileError& e) { showNotificationDialog(this, DialogInfoType::error, PopupDialogCfg().setDetailInstructions(e.toString())); }
+#else
     if (!equalAppearance(globalCfg_.appColorTheme, colorThemeOld))
     {
         if (!folderCmp_.empty()) //otherwise: why bother the user?
@@ -6393,6 +6404,7 @@ void MainDialog::onMenuOptions(wxCommandEvent& event)
             showNotificationDialog(this, DialogInfoType::error, PopupDialogCfg().setDetailInstructions(e.toString()));
         }
     }
+#endif
 }
 
 
