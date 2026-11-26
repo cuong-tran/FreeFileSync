@@ -26,7 +26,8 @@
 #                                      paths, from lsof), detaches disk images that live there, deletes what the tests moved to the
 #                                      trash (from the trash log, each path checked by trashItemOk), deletes
 #                                      crash reports of binaries from the checkout or $RUNNER_TEMP, unregisters test app bundles
-#                                      from Launch Services, restores the apps' preferences and saved window state as found,
+#                                      from Launch Services, restores the apps' preferences and saved window state as found
+#                                      (and removes their ~/Library/Caches and HTTPStorages folders if setup found none),
 #                                      removes the build output, evicts old cache entries. Each of these stages runs even if one
 #                                      before it failed; failed stages are named at the end and fail the step. Idempotent: a second
 #                                      cleanup in the same job (TMPDIR and setup's state already gone) succeeds and changes nothing
@@ -147,7 +148,7 @@ cmd_setup()
     # HOME, but macOS keeps both per bundle id in the real home folder). What cleanup may do is recorded explicitly: a saved
     # copy (restore it), "<id>.absent" (there was none: delete what the job made), or nothing (couldn't be read: leave alone).
     # Never "absent" because a read failed: cleanup would delete the owner's preferences.
-    local id saved
+    local id saved d
     for id in $BUNDLE_IDS; do
         if defaults read "$id" > /dev/null 2> "$STATE_DIR/defaults.err"; then
             defaults export "$id" "$STATE_DIR/$id.plist.part" && mv "$STATE_DIR/$id.plist.part" "$STATE_DIR/$id.plist" ||
@@ -164,6 +165,10 @@ cmd_setup()
         else
             touch "$STATE_DIR/$id.savedState.absent"
         fi
+        # what macOS keeps per bundle id beside them (seen on the owner's Mac): removed by cleanup only if setup found none
+        for d in Caches HTTPStorages; do
+            [ -e "$HOME/Library/$d/$id" ] || [ -L "$HOME/Library/$d/$id" ] || touch "$STATE_DIR/$id.$d.absent"
+        done
     done
     rm -f "$STATE_DIR/defaults.err"
     echo "self-hosted runner prepared: names masked, TMPDIR in \$RUNNER_TEMP, app preferences saved for cleanup"
@@ -451,7 +456,7 @@ cleanupLaunchServices()
 cleanupPreferences()
 {
     [ -d "$STATE_DIR" ] || { echo "cleanup: no state of setup (an earlier cleanup of this job used it): preferences left as they are"; return 0; }
-    local id saved failed=0
+    local id saved d failed=0
     for id in $BUNDLE_IDS; do
         if [ -f "$STATE_DIR/$id.plist" ]; then
             defaults import "$id" "$STATE_DIR/$id.plist" 2>/dev/null || { echo "::warning::cleanup: could not restore the preferences of $id"; failed=1; }
@@ -464,8 +469,13 @@ cleanupPreferences()
         elif [ -f "$STATE_DIR/$id.savedState.absent" ]; then
             rm -rf "$saved" || { echo "::warning::cleanup: could not remove the saved state of $id"; failed=1; }
         fi
+        for d in Caches HTTPStorages; do
+            if [ -f "$STATE_DIR/$id.$d.absent" ]; then
+                rm -rf "$HOME/Library/$d/$id" || { echo "::warning::cleanup: could not remove ~/Library/$d/$id"; failed=1; }
+            fi
+        done
     done
-    echo "cleanup: preferences and saved state of the apps as found"
+    echo "cleanup: preferences, saved state, caches and HTTP storage of the apps as found"
     return "$failed"
 }
 
