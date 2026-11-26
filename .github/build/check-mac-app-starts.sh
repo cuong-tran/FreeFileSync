@@ -24,8 +24,8 @@
 # <screenshot>-window<n>.png; anywhere else (the self-hosted runner, a local run on someone's Mac) none is taken and
 # <screenshot.png> is not created. SCREENSHOT_TO_LOG=1: also print a small JPEG of each screenshot as base64 into the log (between
 # "-----BEGIN SCREENSHOT <name>-----" and "-----END SCREENSHOT-----"); GitHub's runners only, too.
-# NSUserDefaults ignores HOME, so the app's preferences plist lands in the real ~/Library/Preferences; it is removed afterwards
-# unless it existed before the run.
+# NSUserDefaults ignores HOME, so the app's preferences plist lands in the real ~/Library/Preferences; outside CI it is removed
+# afterwards unless it existed before the run (in CI, mac-runner.sh setup/cleanup take care of it).
 set -euo pipefail
 [ $# -ge 3 ] || { echo "usage: $0 <bundle.app> <title regex> <screenshot.png> [<app argument>...]" >&2; exit 2; }
 titleRegex="$2" shot="$3"
@@ -44,8 +44,10 @@ work="$(mktemp -d "$(t="${TMPDIR:-/tmp}"; echo "${t%/}")/start-check.XXXXXX")" #
 pid=""
 bundleId="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist" 2>/dev/null || true)"
 prefsPlist="$HOME/Library/Preferences/$bundleId.plist"
-prefsExisted=yes
-[ -z "$bundleId" ] || [ -e "$prefsPlist" ] || prefsExisted=no
+prefsExisted=yes # also when unknown: never delete then
+# outside CI only: in CI, mac-runner.sh setup/cleanup save and restore both apps' preferences (self-hosted), and GitHub's runners
+# are thrown away
+[ -n "${GITHUB_ACTIONS:-}" ] || [ -z "$bundleId" ] || [ -e "$prefsPlist" ] || prefsExisted=no
 cleanup()
 {
     if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; fi
@@ -154,7 +156,7 @@ if [ "$hosted" = yes ]; then # (never on a person's Mac: see the header)
 fi
 if [ "${SCREENSHOT_TO_LOG:-0}" = 1 ] && [ "$hosted" = yes ]; then
     for f in ${shots[@]+"${shots[@]}"}; do
-        [ -f "$f" ] && sips -Z 900 -s format jpeg -s formatOptions 55 "$f" --out "$work/small.jpg" >/dev/null || continue
+        if ! [ -f "$f" ] || ! sips -Z 900 -s format jpeg -s formatOptions 55 "$f" --out "$work/small.jpg" >/dev/null; then continue; fi
         echo "::group::screenshot $(basename "$f") (base64 JPEG)"
         echo "-----BEGIN SCREENSHOT $(basename "$f")-----"
         base64 -i "$work/small.jpg" | fold -w 120
