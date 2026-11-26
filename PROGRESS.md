@@ -20,14 +20,13 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | done | `bd9f1bf..1152282`, fixes `1152282..83f890e` | 9 findings: all fixed |
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | done | `83f890e..bf0ef72`, fixes `d284031..8420f50` | 7 findings: all fixed |
 | M3 macOS | Pull request | merged as [#13](https://github.com/cuong-tran/FreeFileSync/pull/13) (squash, `5b2dbe1`) after all checks passed | | no review threads |
-| CI | macOS jobs on the owner's self-hosted runner (label `self-hosted`) | done; pull request open, squash-merged once all checks pass | `79879b9..2d06b25` | two reviews, 16 findings, all fixed |
+| CI | macOS jobs on the owner's self-hosted runner (label `self-hosted`) | done, merged as [#15](https://github.com/cuong-tran/FreeFileSync/pull/15) (squash, `b4617dc`) after all checks passed | `79879b9..2d06b25` | two reviews, 16 findings, all fixed |
+| Review | [#14](https://github.com/cuong-tran/FreeFileSync/pull/14) `mac-test-fixes` (fixed by another session of the owner's) | a reviewer sub-session reviews it with `/code-review medium` after every push until clean and green; then an approval | | |
 | M4 Windows | | not started: paused by the owner for testing on a real Mac | | |
 
 ## Paused
 
-Paused on 2026-11-25 at the owner's request, after M3 was merged and before M4 (Windows). The owner tests the Mac apps on a real Mac first, with a local Claude Code session that writes its findings to `docs/MAC_TEST_REPORT.md` on a branch `mac-test-report`.
-
-To resume: read that report (or what the owner relays), fix what it found on `dev` with a coder session (review, record, PR, squash-merge as usual), then start M4 step 1 (toolchain and dependency cross builds with llvm-mingw, wxMSW) per `docs/PORTING_PLAN.md`.
+M4 (Windows) is paused by the owner (2026-11-25) until the Mac test findings are dealt with. Running meanwhile: the review loop on #14 (see Status). To resume M4: the owner says so; then start M4 step 1 (toolchain and dependency cross builds with llvm-mingw, wxMSW) per `docs/PORTING_PLAN.md` with a fresh coder session.
 
 ## Mac test report (2026-11-25/26)
 
@@ -86,6 +85,7 @@ To resume: read that report (or what the owner relays), fix what it found on `de
 | 2026-11-25 | The macOS CI jobs run on the owner's self-hosted runner (their own Mac, label `self-hosted`); hosted runners stay as fallback and for pull requests from forks | Asked by the owner; hosted macOS runners were short of capacity. Rules for that machine: no fork code, nothing from the screen or home folder in logs or artifacts, no software installs or `sudo`, tests clean up after themselves. |
 | 2026-11-25 | macOS: on volumes without native extended attributes (FAT, exFAT, some network shares), a `._X` file next to an existing `X` is not reported as an item by the native file system | On macOS 27 every file a provenance-tracked process creates (any downloaded app opened through Gatekeeper) gets `com.apple.provenance`, which such volumes store as `._X`; the app cannot remove it. Without this, each sync to a FAT or exFAT volume would show phantom target-only files. Finder treats these files the same way. Orphaned `._X` files stay visible. |
 | 2026-11-26 | Only real AppleDouble files (checked by their header) are hidden as companions on volumes without native extended attributes | A user's ordinary file named `._X` must stay visible. A real AppleDouble `._X` beside `X` on an APFS side still cannot be mirrored to FAT/exFAT (macOS owns that name there); the exclude filter `*/._*` is the remedy. |
+| 2026-11-26 | This session's reviewer sub-session reviews #14 and never pushes to its branch or merges it; an approval is given when the loop ends clean and green | Asked by the owner. GitHub may refuse the approval, since this session acts as the PR's author; a comment then states the result. |
 
 ## Needed from the repository owner
 
