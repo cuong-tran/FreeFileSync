@@ -149,11 +149,15 @@ fail() { echo "== FAILED: $1" >&2; FAILED+=("$1"); }
 start_server()
 {
     mkdir -p "$WORK/$1/received"
+    touch "$WORK/$1/start-marker" # crash reports newer than this belong to the scenario (show_logs)
     python3 -I "$HERE/fake_sentry.py" "$WORK/$1/received" "$PORT" > "$WORK/$1/server.log" 2>&1 &
     SERVER_PID=$!
     local i
-    for (( i = 0; i < WAIT_SECONDS * 10; ++i )); do # a cold python3 can take seconds to start (seen on an Intel runner)
-        grep -q '^port ' "$WORK/$1/server.log" 2>/dev/null && return 0
+    for (( i = 0; i < WAIT_SECONDS * 10; ++i )); do
+        if grep -q '^port ' "$WORK/$1/server.log" 2>/dev/null; then
+            [ "$i" -lt 20 ] || echo "note: the fake endpoint took $((i / 10)) s to start" >&2
+            return 0
+        fi
         kill -0 "$SERVER_PID" 2>/dev/null || break
         sleep 0.1
     done
@@ -172,7 +176,11 @@ new_home()
 }
 
 # run_app <name> <binary> <env assignments...>: start the app under Xvfb; return once it has exited by itself, or once
-# "$STOP_WHEN <name>" is true (default: a request arrived; the app is stopped then), WAIT_SECONDS at most. Output: $WORK/<name>/app.log, exit code: $WORK/<name>/exit.
+# "$STOP_WHEN <name>" is true (default: a request arrived; the app is stopped then, with SIGTERM or $STOP_SIGNAL), WAIT_SECONDS
+# at most. Output: $WORK/<name>/app.log, exit code: $WORK/<name>/exit.
+# STOP_SIGNAL=KILL where what the test checks is on disk or has arrived when STOP_WHEN fires: the apps' SIGTERM handler
+# (upstream's, application.cpp) is not async-signal-safe, and a SIGTERM while the app is still starting up can crash it
+# (seen on GitHub's runners: SIGILL, SIGKILL), which makes a crash report of its own; SIGKILL makes none.
 # A crashed app's crashpad_handler keeps running to upload the report; cleanup() and wait_handler_done() end it.
 run_app()
 {
@@ -199,13 +207,13 @@ run_app()
         # still running: SIGTERM normally ends FreeFileSync and RealTimeSync right away (their shutdown handler), then xvfb-run
         # ends. That handler isn't async-signal-safe (upstream says so) and can deadlock, rarely: SIGKILL after 10 s.
         local pattern; pattern="$(sed 's/[][\\.*^$+?(){}|]/\\&/g' <<<"$bin")"
-        pkill -TERM -x -f -- "$pattern" 2>/dev/null || true
+        pkill -"${STOP_SIGNAL:-TERM}" -x -f -- "$pattern" 2>/dev/null || true
         for (( i = 0; i < 100; ++i )); do
             [ -f "$WORK/$name/exit" ] && break
             sleep 0.1
         done
         if [ ! -f "$WORK/$name/exit" ]; then
-            echo "note: $(basename "$bin") did not end on SIGTERM within 10 s, killed" >&2
+            echo "note: $(basename "$bin") did not end on SIG${STOP_SIGNAL:-TERM} within 10 s, killed" >&2
             pkill -KILL -x -f -- "$pattern" 2>/dev/null || true
         fi
     fi
@@ -270,9 +278,19 @@ wait_handler_done()
 show_logs()
 {
     [ ! -f "$WORK/$1/app-first-run.log" ] || sed 's/^/    first run: /' "$WORK/$1/app-first-run.log" | tail -40 >&2 || true
+    [ ! -f "$WORK/$1/app-second-run.log" ] || sed 's/^/    second run: /' "$WORK/$1/app-second-run.log" | tail -40 >&2 || true
     sed 's/^/    app: /' "$WORK/$1/app.log" | tail -40 >&2 || true
+    [ ! -f "$WORK/$1/exits" ] || echo "    exit codes of the runs: $(tr '\n' ' ' < "$WORK/$1/exits")" >&2
     if [ "$OS" = Darwin ]; then # where the reports went (or didn't): the report databases
         find "$(cfg_dir "$WORK/$1/home")/CrashReports" -maxdepth 3 2>/dev/null | sed 's/^/    db: /' >&2 || true
+        # macOS's own crash reports of the scenario's app runs (expected ones included): GitHub's runners only, never on a
+        # person's Mac (they hold machine details). ReportCrash writes them a few seconds after the crash
+        if [ "${RUNNER_ENVIRONMENT:-}" = github-hosted ] && [ -f "$WORK/$1/start-marker" ]; then
+            sleep 3
+            local reports=()
+            mapfile -t reports < <(find "$HOME/Library/Logs/DiagnosticReports" -newer "$WORK/$1/start-marker" \( -name 'FreeFileSync*.ips' -o -name 'RealTimeSync*.ips' \) 2>/dev/null)
+            [ "${#reports[@]}" -eq 0 ] || python3 -I "$HERE/crash_summary.py" "${reports[@]}" | sed 's/^/    /' >&2 || true
+        fi
     fi
 }
 
@@ -424,12 +442,17 @@ kept_test() # <name> <answer: true|false>
     start_server "$name"
     new_home "$name" >/dev/null
     has_kept_envelope() { [ -n "$(find "$(database "$1" FreeFileSync)/cache" -name '*.envelope' 2>/dev/null)" ]; }
-    STOP_WHEN=has_kept_envelope run_app "$name" "$FFS" FFS_TEST_CRASH=internal-error
+    # (stopped with SIGKILL: the envelope is on disk then; see run_app)
+    STOP_SIGNAL=KILL STOP_WHEN=has_kept_envelope run_app "$name" "$FFS" FFS_TEST_CRASH=internal-error
     cp "$WORK/$name/app.log" "$WORK/$name/app-first-run.log" 2>/dev/null || true # for show_logs: the run before the crash
+    echo "internal-error run: $(cat "$WORK/$name/exit" 2>/dev/null)" > "$WORK/$name/exits"
     run_app "$name" "$FFS" FFS_TEST_CRASH=segv
+    cp "$WORK/$name/app.log" "$WORK/$name/app-second-run.log" 2>/dev/null || true
+    echo "segv run: $(cat "$WORK/$name/exit" 2>/dev/null)" >> "$WORK/$name/exits"
     wait_handler_done "$name"
     local kept; kept="$(kept_reports "$name" FreeFileSync)"
     if [ -n "$(ls "$WORK/$name/received")" ]; then
+        show_logs "$name"
         fail "$name: not asked yet, but a report arrived: $(ls "$WORK/$name/received")"; stop_server; return
     elif [ "$kept" -ne 2 ]; then
         show_logs "$name"
@@ -459,7 +482,8 @@ run_app_bg_until_requests() # <name> <count>
 {
     local name="$1" count="$2"
     enough_requests() { local f=("$WORK/$1/received"/*/request.json); [ -e "${f[0]}" ] && [ "${#f[@]}" -ge "$count" ]; }
-    STOP_WHEN=enough_requests run_app "$name" "$FFS"
+    STOP_SIGNAL=KILL STOP_WHEN=enough_requests run_app "$name" "$FFS" # (SIGKILL: the requests have arrived; see run_app)
+    echo "send run: $(cat "$WORK/$name/exit" 2>/dev/null)" >> "$WORK/$name/exits"
     if wait_for_request "$name" "$count"; then
         local kinds; kinds="$(cd "$WORK/$name/received" && ls | sed 's/^[0-9]*-//' | sort | tr '\n' ' ')"
         local env_dir; env_dir="$(first_request "$name" envelope)"
@@ -470,6 +494,7 @@ run_app_bg_until_requests() # <name> <count>
            python3 -I "$HERE/check_report.py" crash "$dmp_dir" "$RELEASE_PREFIX" "$ENVIRONMENT" FreeFileSync "${forbid[@]}"; then
             pass "$name: kept while not asked, both sent after \"send\""
         else
+            show_logs "$name"
             fail "$name: after \"send\": expected the kept envelope and minidump, got: $kinds"
         fi
     else
