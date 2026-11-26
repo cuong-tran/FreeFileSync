@@ -59,6 +59,7 @@ wxMenu& addEditMenu(wxMenuBar& menuBar, size_t pos) //returns the Edit menu, own
     menuBar.Insert(pos, menuEdit, _("&Edit"));
 
     macos::setNativeUndoRedoActions(menuEdit->GetHMenu(), 0 /*posUndo*/, 1 /*posRedo*/);
+    macos::giveTextFieldsEditShortcuts();
     return *menuEdit;
 }
 #endif

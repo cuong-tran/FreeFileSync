@@ -28,3 +28,30 @@ void zen::macos::setNativeUndoRedoActions(void* nsMenu, int posUndo, int posRedo
     setAction(posUndo, @selector(undo:));
     setAction(posRedo, @selector(redo:));
 }
+
+
+void zen::macos::giveTextFieldsEditShortcuts()
+{
+    /*  wxOSX gives a button with a mnemonic in its label ("&Versioning") the key equivalent Cmd+<letter> (src/osx/cocoa/button.mm,
+        SetAcceleratorFromLabel()). AppKit offers a key equivalent to the key window's views before the menu bar, so in a dialog with
+        such a button Cmd+V pressed in a text field clicked the button instead of pasting (docs/MAC_TEST_REPORT.md, F6). A local
+        monitor sees the key first: with a text field (its field editor, an NSText) focused, the menu bar gets the edit shortcuts
+        before the window; outside text fields nothing changes.  */
+    static bool installed = false;
+    if (installed)
+        return;
+    installed = true;
+
+    [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent*(NSEvent* event)
+    {
+        const NSEventModifierFlags mods = event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask &
+                                          (NSEventModifierFlagCommand | NSEventModifierFlagShift | NSEventModifierFlagOption | NSEventModifierFlagControl);
+        NSString* key = event.charactersIgnoringModifiers.lowercaseString;
+        const bool editShortcut = (mods == NSEventModifierFlagCommand && [@[@"x", @"c", @"v", @"a", @"z"] containsObject:key]) ||
+                                  (mods == (NSEventModifierFlagCommand | NSEventModifierFlagShift) && [key isEqualToString:@"z"]);
+        if (editShortcut && [NSApp.keyWindow.firstResponder isKindOfClass:NSText.class])
+            if ([NSApp.mainMenu performKeyEquivalent:event])
+                return nil; //handled by the Edit menu
+        return event;
+    }];
+}

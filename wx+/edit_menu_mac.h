@@ -11,4 +11,8 @@ namespace zen::macos
 {
 //let the items at these positions of an NSMenu (wxMenu::GetHMenu()) send undo:/redo: to the first responder, as in a native Edit menu
 void setNativeUndoRedoActions(void* nsMenu, int posUndo, int posRedo);
+
+//while a text field has the focus, Cmd+X/C/V/A/Z and Cmd+Shift+Z go to the menu bar first, before buttons whose label mnemonic
+//wxOSX turned into the same Cmd+letter key equivalent (e.g. "&Versioning" = Cmd+V); once per process
+void giveTextFieldsEditShortcuts();
 }
