@@ -27,7 +27,7 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 
 ## Paused
 
-M4 (Windows) is paused by the owner (2026-11-25) until the Mac test findings are dealt with. Running meanwhile: the review loop on #14 (see Status). To resume M4: the owner says so; then start M4 step 1 (toolchain and dependency cross builds with llvm-mingw, wxMSW) per `docs/PORTING_PLAN.md` with a fresh coder session.
+M4 (Windows) is paused by the owner (2026-11-25) until the Mac test findings are dealt with. The Mac test fixes are merged ([#14](https://github.com/cuong-tran/FreeFileSync/pull/14)). To resume M4: the owner says so; then start M4 step 1 (toolchain and dependency cross builds with llvm-mingw, wxMSW) per `docs/PORTING_PLAN.md` with a fresh coder session.
 
 ## Mac test report (2026-11-25/26)
 
