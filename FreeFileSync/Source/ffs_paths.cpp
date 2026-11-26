@@ -125,11 +125,24 @@ Zstring fff::getFreeFileSyncLauncherPath() //throw FileError
                     launcherPath && launcherExists(*launcherPath))
                     return *launcherPath;
 
-            //the bundles were installed apart: FreeFileSync.app wherever LaunchServices knows it (bundle id from the Makefile)
-            for (const Zstring& ffsBundlePath : getAppBundlePathsById("io.github.cuong-tran.freefilesync"))
-                if (const Zstring launcherPath = appendPath(ffsBundlePath, Zstr("Contents/MacOS/FreeFileSync"));
-                    launcherExists(launcherPath))
-                    return launcherPath;
+            /*  the bundles were installed apart: FreeFileSync.app where LaunchServices knows it, installed copies first (/Applications,
+                ~/Applications), then others, never one on a mounted volume (an old disk image, an external disk)  */
+            const std::vector<Zstring> ffsBundlePaths = getAppBundlePathsById(freeFileSyncBundleId);
+            const std::optional<Zstring> homePath = [] () -> std::optional<Zstring>
+            {
+                try { return getUserHome(); } /*throw FileError*/ catch (FileError&) { return std::nullopt; }
+            }();
+            auto isInstalled = [&](const Zstring& path)
+            {
+                return startsWith(path, Zstr("/Applications/")) ||
+                       (homePath && startsWith(path, appendPath(*homePath, Zstr("Applications")) + Zstr('/')));
+            };
+            for (const bool installedPass : {true, false})
+                for (const Zstring& ffsBundlePath : ffsBundlePaths)
+                    if (isInstalled(ffsBundlePath) == installedPass && !startsWith(ffsBundlePath, Zstr("/Volumes/")))
+                        if (const Zstring launcherPath = appendPath(ffsBundlePath, Zstr("Contents/MacOS/FreeFileSync"));
+                            launcherExists(launcherPath))
+                            return launcherPath;
 
             if (siblingPath)
                 return *siblingPath; //not found anywhere: the expected place, for the error message when it is started

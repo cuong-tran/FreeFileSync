@@ -12,6 +12,9 @@
 //macOS helpers of ffs_paths.cpp: Core Foundation and LaunchServices stay in ffs_paths_mac.cpp
 namespace fff
 {
+//FreeFileSync.app's bundle id: must match the one FreeFileSync/Source/Makefile passes to mac_bundle.sh
+constexpr const char* freeFileSyncBundleId = "io.github.cuong-tran.freefilesync";
+
 /*  App Translocation: macOS runs a bundle that still has the quarantine flag (downloaded, then moved by Finder together with other
     files, e.g. copied out of a DMG) from a random read-only mount that holds that one bundle only:
         /private/var/folders/.../AppTranslocation/<uuid>/d/RealTimeSync.app
