@@ -48,12 +48,23 @@ wxMenu& addEditMenu(wxMenuBar& menuBar, size_t pos) //returns the Edit menu, own
             if (focus->GetEventHandler()->ProcessEvent(cmdEvent))
                 return;
 
-            wxKeyEvent keyEvent(wxEVT_KEY_DOWN);
-            keyEvent.m_keyCode = keyCode;
-            keyEvent.SetControlDown(true);
-            keyEvent.SetEventObject(focus);
-            keyEvent.SetId(focus->GetId());
-            focus->GetEventHandler()->ProcessEvent(keyEvent);
+            //as wxWidgets delivers a real key press: first wxEVT_CHAR_HOOK, which propagates to the parents (e.g. the log panel's
+            //Ctrl+A that selects the log whatever control of the panel has the focus), then, unless handled, wxEVT_KEY_DOWN
+            auto makeKeyEvent = [&](wxEventType type)
+            {
+                wxKeyEvent keyEvent(type);
+                keyEvent.m_keyCode = keyCode;
+                keyEvent.SetControlDown(true);
+                keyEvent.SetEventObject(focus);
+                keyEvent.SetId(focus->GetId());
+                return keyEvent;
+            };
+            wxKeyEvent charHookEvent = makeKeyEvent(wxEVT_CHAR_HOOK);
+            if (focus->GetEventHandler()->ProcessEvent(charHookEvent)) //false: unhandled or skipped
+                return;
+
+            wxKeyEvent keyDownEvent = makeKeyEvent(wxEVT_KEY_DOWN);
+            focus->GetEventHandler()->ProcessEvent(keyDownEvent);
         }, id);
 
     menuBar.Insert(pos, menuEdit, _("&Edit"));
