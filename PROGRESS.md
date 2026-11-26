@@ -20,7 +20,7 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | done | `bd9f1bf..1152282`, fixes `1152282..83f890e` | 9 findings: all fixed |
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | done | `83f890e..bf0ef72`, fixes `d284031..8420f50` | 7 findings: all fixed |
 | M3 macOS | Pull request | merged as [#13](https://github.com/cuong-tran/FreeFileSync/pull/13) (squash, `5b2dbe1`) after all checks passed | | no review threads |
-| CI | macOS jobs on the owner's self-hosted runner (label `self-hosted`) | running: all four workflows green on the Mac and on hosted runners at `0b6138c`; second review's fixes in progress | `79879b9..0b6138c` | first review: 9 findings, all fixed; second: 7 findings, see below |
+| CI | macOS jobs on the owner's self-hosted runner (label `self-hosted`) | done; pull request open, squash-merged once all checks pass | `79879b9..2d06b25` | two reviews, 16 findings, all fixed |
 | M4 Windows | | not started: paused by the owner for testing on a real Mac | | |
 
 ## Paused
@@ -119,7 +119,8 @@ Marked `KNOWN_ISSUE` in `Tests/zen`, not fixed (upstream code):
 - The Mac UI has only been seen through CI screenshots. To check on a real Mac: main window layout (fonts and sizes were set for GTK), dark mode, Dock icon, tray item, the application menu, opening files from Finder, drag and drop, folder picker, sounds, "Show in Finder". Dock progress (`wx+/taskbar_mac.cpp`, `dock_tile_mac.mm`) is implemented but has never been seen. Not testable in CI: Finder opens, the modal-dialog guards, starting a batch process from a running app. The app icon is upscaled from a 128 px image.
 - Crash capture for x86_64 is tested on a real Intel runner only on manual dispatch (`sentry_dry_run`); under Rosetta 2 on the arm64 runners Crashpad catches no crashes, so those scenarios are skipped there with a printed reason.
 - The first-start crash-report notice may not render its explanatory text on macOS (a blank area in the CI screenshot). To check on a real Mac.
-- Flaky Sentry test on hosted macOS runners: `f-kept-then-sent`/`f-kept-then-deleted` sometimes find two dumps for one crash (seen on arm64 and Intel hosted runners, never on the owner's Mac). Under investigation with the second runner review.
+- FreeFileSync can crash by itself when it gets SIGTERM right after starting (seen on hosted macOS runners as "Illegal instruction" or "Killed"): upstream's SIGTERM handler is not async-signal-safe. This was the cause of the flaky Sentry scenarios (a second dump from that crash, not a duplicate upload); the tests now stop those runs with SIGKILL. The crash itself is open; its exact frame was never captured.
+- On macOS 27, a file named `._X` beside `X` on an APFS side cannot be mirrored to FAT/exFAT by a downloaded (provenance-tracked) FreeFileSync: macOS keeps `X`'s attributes under that name there. It fails or shows as a difference on each run; the exclude filter `*/._*` is the remedy.
 - The dSYM path for the Mac apps is exercised by the dry run, but a real upload to Sentry has never happened (no secrets).
 - The DMGs (`FreeFileSync-14.13-macos-<arch>.dmg`, about 19 MB, both apps plus an Applications link) have no background picture; their window layout has only been checked by the script, not by eye.
 
@@ -294,10 +295,10 @@ Result: everything builds and passes on the owner's Mac (macOS 27.2, Xcode 27.2;
 
 | # | Finding | Severity | Outcome |
 |---|---|---|---|
-| 1 | A second `mac-runner.sh cleanup` in a job fails, so the diagnostics workflow ends red and skips cleanup stages | important | sent for fixing |
-| 2 | Any `._X` next to `X` is hidden on FAT/exFAT/network volumes, also an ordinary user file of that name | important | sent for fixing (hide only real AppleDouble files) |
-| 3 | A failed local cache restore is reported as a hit | important | sent for fixing |
-| 4 | The diagnostics FAT probe mounts an image outside the runner's temp folder | nit | sent for fixing (probes removed) |
-| 5 | The start check can pass on hosted runners without testing the window title | nit | sent for fixing |
-| 6 | `check-binaries` can report a binary clean when the home path contains special characters | nit | sent for fixing |
-| 7 | Usage text omits `self-test` | nit | sent for fixing |
+| 1 | A second `mac-runner.sh cleanup` in a job fails, so the diagnostics workflow ends red and skips cleanup stages | important | fixed in `3a44fa9`: eight independent stages, no dependence on `TMPDIR`, self-tested twice. Also found: a failed preferences read made cleanup delete the owner's real preferences domain; fixed |
+| 2 | Any `._X` next to `X` is hidden on FAT/exFAT/network volumes, also an ordinary user file of that name | important | fixed in `c07e4e8`: only regular files with the AppleDouble header are hidden (about 14 µs per candidate); new test on FAT and exFAT |
+| 3 | A failed local cache restore is reported as a hit | important | fixed in `3a44fa9`: a failed restore removes the partial folder and reports a miss |
+| 4 | The diagnostics FAT probe mounts an image outside the runner's temp folder | nit | fixed in `c0518e9`: probes removed; DMGs on the Mac are built with `hdiutil` inside the work folder (create-dmg mounted under `/Volumes`) |
+| 5 | The start check can pass on hosted runners without testing the window title | nit | fixed in `b240e6d` |
+| 6 | `check-binaries` can report a binary clean when the home path contains special characters | nit | fixed in `3a44fa9` |
+| 7 | Usage text omits `self-test` | nit | fixed |
