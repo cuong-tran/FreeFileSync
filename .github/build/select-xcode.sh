@@ -9,8 +9,19 @@
 # the caller sets DEVELOPER_DIR for its own job only.
 #
 # usage: select-xcode.sh [--github-env]   (--github-env: also append DEVELOPER_DIR=... to $GITHUB_ENV)
+#        select-xcode.sh --newer-than <Developer folder>
+#            the Developer folder of the newest usable Xcode with a higher version than the given one, or nothing (exit code 0)
+#            if there is none (for check-newest-xcode.sh: same candidates and checks)
 # Runs with macOS's bash 3.2 (it may run before Homebrew's bash is known to exist).
 set -euo pipefail
+
+mode=select githubEnv=no newerThan=""
+case "${1:-}" in
+    (--github-env) githubEnv=yes ;;
+    (--newer-than) mode=newer; newerThan="${2:?usage: select-xcode.sh --newer-than <Developer folder>}" ;;
+    ("") ;;
+    (*) echo "usage: select-xcode.sh [--github-env] | --newer-than <Developer folder>" >&2; exit 2 ;;
+esac
 
 apps=()
 for app in /Applications/Xcode*.app; do
@@ -32,9 +43,17 @@ list="$(for app in ${apps[@]+"${apps[@]}"}; do
     IFS=. read -r major minor patch <<< "$v.0.0"
     echo "${major:-0} ${minor:-0} ${patch:-0} $app"
 done)"
-# 26.x newest first, then later versions newest first; older ones are listed only to say why they were not taken
-ordered="$( { grep -E '^26 ' <<< "$list" | sort -k2,2nr -k3,3nr || true; } ;
-            { awk '$1 > 26' <<< "$list" | sort -k1,1nr -k2,2nr -k3,3nr || true; } )"
+if [ "$mode" = select ]; then
+    # 26.x newest first, then later versions newest first; older ones are listed only to say why they were not taken
+    ordered="$( { grep -E '^26 ' <<< "$list" | sort -k2,2nr -k3,3nr || true; } ;
+                { awk '$1 > 26' <<< "$list" | sort -k1,1nr -k2,2nr -k3,3nr || true; } )"
+else
+    # every version above the given Xcode's, newest first
+    v="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${newerThan%/Contents/Developer}/Contents/Info.plist" 2>/dev/null || echo 0)"
+    IFS=. read -r bMajor bMinor bPatch <<< "$v.0.0"
+    ordered="$(awk -v a="${bMajor:-0}" -v b="${bMinor:-0}" -v c="${bPatch:-0}" \
+                   '$1 > a || ($1 == a && ($2 > b || ($2 == b && $3 > c)))' <<< "$list" | sort -k1,1nr -k2,2nr -k3,3nr || true)"
+fi
 
 rejected=()
 while read -r _ _ _ app <&3; do # fd 3: xcodebuild and xcrun must not eat the list
@@ -55,11 +74,15 @@ while read -r _ _ _ app <&3; do # fd 3: xcodebuild and xcrun must not eat the li
         continue
     fi
     echo "using $name: $(tr '\n' ' ' <<< "$version"); $(DEVELOPER_DIR="$dev" xcrun clang++ --version | sed -n 1p); SDK $(DEVELOPER_DIR="$dev" xcrun --show-sdk-version); libc++ $libcxx" >&2
-    if [ "${1:-}" = --github-env ]; then echo "DEVELOPER_DIR=$dev" >> "$GITHUB_ENV"; fi
+    if [ "$githubEnv" = yes ]; then echo "DEVELOPER_DIR=$dev" >> "$GITHUB_ENV"; fi
     echo "$dev"
     exit 0
 done 3<<< "$ordered"
 
+if [ "$mode" = newer ]; then # none newer that works: nothing to print
+    [ ${#rejected[@]} -eq 0 ] || { echo "newer Xcode(s) not usable:" >&2; printf '    %s\n' "${rejected[@]}" >&2; }
+    exit 0
+fi
 while read -r major minor patch app; do
     if [ -n "$app" ] && [ "$major" -lt 26 ]; then rejected+=("$(basename "$app"): version $major.$minor.$patch, older than 26"); fi
 done <<< "$list"

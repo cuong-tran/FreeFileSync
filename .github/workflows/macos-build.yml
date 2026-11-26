@@ -661,9 +661,11 @@ jobs:
           fi
           Tests/sentry/run.sh "FreeFileSync/Build/Bin/macos-${{ matrix.arch }}"
 
-      # informational: the apps are built with the Xcode select-xcode.sh picks (the newest 26.x); an Xcode newer than that on the
-      # runner gets a syntax-only compile of both apps, so an SDK change that breaks the build (as Xcode 27's did:
-      # docs/MAC_TEST_REPORT.md, F1) shows up as warnings before the selection moves on
+      # informational: the apps are built with the Xcode select-xcode.sh picks (the newest 26.x); a newer usable Xcode on the runner
+      # (select-xcode.sh --newer-than) gets a syntax-only compile of both apps, so an SDK change that breaks the build (as Xcode 27's
+      # did: docs/MAC_TEST_REPORT.md, F1) shows up as warnings before the selection moves on. Usually "nothing to check". It installs
+      # and uploads nothing; its compiler output goes to the job log only, which the "Mask private names" step covers on the
+      # self-hosted Mac
       - name: Newest Xcode (syntax check)
         if: ${{ !cancelled() && matrix.arch == 'arm64' && steps.apps.outcome == 'success' }}
         continue-on-error: true

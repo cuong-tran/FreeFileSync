@@ -3,7 +3,9 @@
 # image may bring an SDK that breaks the build (Xcode 27's SDK no longer includes <sys/types.h> through other headers:
 # docs/MAC_TEST_REPORT.md, F1). If an Xcode newer than the selected one (DEVELOPER_DIR, else xcode-select) is installed, every
 # compile command of FreeFileSync and RealTimeSync runs with it as -fsyntax-only, against the libraries of the selected one
-# (FFS_DEPS_PREFIX of the makefiles), and each failing file is reported as a GitHub warning.
+# (FFS_DEPS_PREFIX of the makefiles), and each failing file is reported as a GitHub warning. Which Xcode counts as newer and
+# usable is decided by select-xcode.sh --newer-than. The compiler output goes to the job log only (on the self-hosted Mac covered by
+# the job's "Mask private names" step), never to a file that is uploaded.
 #   check-newest-xcode.sh          exit code 0 unless the check itself fails; CHECK_XCODE=<Xcode.app>: check with that one
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -11,32 +13,27 @@ cd "$(dirname "$0")/../.."
     { echo "error: needs bash 4.4 or newer (Homebrew's bash), not $BASH_VERSION" >&2; exit 2; }
 
 xcodeVersion() { /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$1/Contents/Info.plist" 2>/dev/null || echo 0; }
-newerThan() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" = "$1" ]; } # newerThan <v1> <v2>
 
 selected="${DEVELOPER_DIR:-$(xcode-select -p)}"
-selected="${selected%/Contents/Developer}"
-selectedVersion="$(xcodeVersion "$selected")"
-
-newest="${CHECK_XCODE:-}" newestVersion=0
-if [ -n "$newest" ]; then
-    newestVersion="$(xcodeVersion "$newest")"
+if [ -n "${CHECK_XCODE:-}" ]; then
+    newestDev="${CHECK_XCODE%/}/Contents/Developer"
 else
-    for app in /Applications/Xcode*.app; do
-        [ -d "$app" ] || continue
-        version="$(xcodeVersion "$app")"
-        if newerThan "$version" "$newestVersion"; then newest="$app" newestVersion="$version"; fi
-    done
+    # the newest *usable* Xcode above the selected one, by select-xcode.sh's own candidates and checks (license, first launch,
+    # -std=c++26, libc++ 20): nothing printed if there is none
+    newestDev="$(.github/build/select-xcode.sh --newer-than "$selected")"
 fi
-echo "selected Xcode: $selected ($selectedVersion); newest installed: ${newest:-none} ($newestVersion)"
-if [ -z "${CHECK_XCODE:-}" ] && { [ -z "$newest" ] || ! newerThan "$newestVersion" "$selectedVersion"; }; then
+echo "selected Xcode: ${selected%/Contents/Developer} ($(xcodeVersion "${selected%/Contents/Developer}")); newer usable one: ${newestDev:-none}"
+if [ -z "$newestDev" ]; then
     echo "no newer Xcode on this machine: nothing to check"
     exit 0
 fi
+newest="${newestDev%/Contents/Developer}"
+newestVersion="$(xcodeVersion "$newest")"
 
 export DEVELOPER_DIR="$newest/Contents/Developer"
 echo "checking with $(clang++ --version | head -n 1), macOS SDK $(xcrun --show-sdk-version)"
 
-work="$(mktemp -d)"
+work="$(mktemp -d "$(t="${TMPDIR:-/tmp}"; echo "${t%/}")/newest-xcode.XXXXXX")" # explicit template: macOS 27's mktemp -d ignores TMPDIR
 trap 'rm -rf "$work"' EXIT
 jobs="$(sysctl -n hw.ncpu)"
 count=0 failed=0
