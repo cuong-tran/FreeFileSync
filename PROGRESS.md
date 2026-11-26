@@ -21,7 +21,7 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | done | `83f890e..bf0ef72`, fixes `d284031..8420f50` | 7 findings: all fixed |
 | M3 macOS | Pull request | merged as [#13](https://github.com/cuong-tran/FreeFileSync/pull/13) (squash, `5b2dbe1`) after all checks passed | | no review threads |
 | CI | macOS jobs on the owner's self-hosted runner (label `self-hosted`) | done, merged as [#15](https://github.com/cuong-tran/FreeFileSync/pull/15) (squash, `b4617dc`) after all checks passed | `79879b9..2d06b25` | two reviews, 16 findings, all fixed |
-| Review | [#14](https://github.com/cuong-tran/FreeFileSync/pull/14) `mac-test-fixes` (fixed by another session of the owner's) | review loop finished at `363f03d`: 3 rounds, 12 findings (11 fixed, 1 withdrawn), all checks green, no conflicts. GitHub refused the approval (same account as the author); a comment on the PR stands in for it. Not merged by this session | | |
+| Review | [#14](https://github.com/cuong-tran/FreeFileSync/pull/14) `mac-test-fixes` (fixed by another session of the owner's) | review loop finished at `c06fbaf` (after a second pass for fixes from testing on a real Mac): 5 rounds, 14 findings (13 fixed, 1 withdrawn), all checks green, no conflicts. GitHub refused the approval (same account as the author); a comment on the PR stands in for it. Not merged by this session | | |
 | M4 Windows | | not started: paused by the owner for testing on a real Mac | | |
 
 ## Paused
