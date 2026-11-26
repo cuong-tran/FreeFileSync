@@ -12,6 +12,7 @@
 #include <wx+/popup_dlg.h>
 #include <wx+/image_resources.h>
 #include <wx+/edit_menu.h>
+#include <wx+/darkmode.h>
 #include <zen/file_access.h>
 #include <zen/build_info.h>
 #include <zen/shutdown.h>
@@ -131,6 +132,8 @@ MainDialog::MainDialog(const Zstring& cfgFilePath) :
         event.Skip();
         CallAfter([this] //after wxWidgets' own handlers
         {
+            //enhanced-contrast gray, gray labels of the generated code (the theme argument only matters to FreeFileSync's theme option)
+            updateDerivedSystemColors(ColorTheme::System);
             setButtonLabel(*m_buttonStart, loadImage("start_rts"), m_buttonStart->GetLabelText());
             m_buttonStart->Refresh();
         });

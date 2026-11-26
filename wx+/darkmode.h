@@ -24,6 +24,7 @@ DEFINE_NEW_FILE_ERROR(ErrorRestartRequired)
 void changeColorTheme(ColorTheme colTheme); //throw ErrorRestartRequired, FileError
 
 //the system appearance changed while the app runs (macOS: wxEVT_SYS_COLOUR_CHANGED; compiled everywhere, called only on macOS):
-//recompute the colors derived from it; currentTheme: the app's color theme setting
+//recompute the colors derived from it, and give controls still colored with the old gray text color the new one (all top-level
+//windows); currentTheme: the app's color theme setting
 void updateDerivedSystemColors(ColorTheme currentTheme);
 }

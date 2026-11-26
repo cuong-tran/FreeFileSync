@@ -70,6 +70,7 @@ private:
 
 
 std::optional<bool> globalDefaultThemeIsDark;
+wxColor globalGrayTextColor; //the wxSYS_COLOUR_GRAYTEXT the windows were made with: see updateDerivedSystemColors()
 }
 
 
@@ -79,7 +80,8 @@ void zen::colorThemeInit(wxApp& app, ColorTheme colTheme) //throw FileError
     assert(wxTopLevelWindows.empty());
 
     globalDefaultThemeIsDark = wxSystemSettings::GetAppearance().AreAppsDark();
-    ZEN_ON_SCOPE_EXIT(if (!refGlobalColorHook()) refGlobalColorHook() = std::make_unique<SysColorsHook>()); //*after* SetAppearance()
+    ZEN_ON_SCOPE_EXIT(if (!refGlobalColorHook()) refGlobalColorHook() = std::make_unique<SysColorsHook>(); //*after* SetAppearance()
+                      globalGrayTextColor = wxSystemSettings::GetColour(wxSYS_COLOUR_GRAYTEXT));
 
     //caveat: on macOS there are more themes than light/dark: https://developer.apple.com/documentation/appkit/nsappearance/name-swift.struct
     if (colTheme != ColorTheme::System && //"System" is already the default for macOS/Linux(GTK3)
@@ -105,6 +107,28 @@ void zen::updateDerivedSystemColors(ColorTheme currentTheme)
 
     if (refGlobalColorHook()) //SysColorsHook keeps the enhanced gray text color of the appearance it was created for
         refGlobalColorHook() = std::make_unique<SysColorsHook>();
+
+    /*  the generated dialog code sets SetForegroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_GRAYTEXT)) once: a fixed color,
+        which a new appearance doesn't change => windows still showing the old gray get the new one (all top-level windows)  */
+    if (const wxColor grayNew = wxSystemSettings::GetColour(wxSYS_COLOUR_GRAYTEXT);
+        grayNew != globalGrayTextColor)
+    {
+        const wxColor grayOld = globalGrayTextColor;
+        globalGrayTextColor = grayNew;
+
+        auto updateGray = [&](wxWindow& win, auto& updateGrayRef) -> void
+        {
+            if (win.GetForegroundColour() == grayOld)
+            {
+                win.SetForegroundColour(grayNew);
+                win.Refresh();
+            }
+            for (wxWindow* child : win.GetChildren())
+                updateGrayRef(*child, updateGrayRef);
+        };
+        for (wxWindow* tlw : wxTopLevelWindows)
+            updateGray(*tlw, updateGray);
+    }
 }
 
 
