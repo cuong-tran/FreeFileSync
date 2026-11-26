@@ -14,7 +14,9 @@
 # with the screen recording permission, which GitHub's runners grant; the check uses titles once the window list shows one for
 # a window of the app ("window titles: readable" in the log), else (the owner's self-hosted Mac, unless they granted it) it
 # counts the app's windows: EXPECT_WINDOWS=<n> (also checked when titles are readable, so GitHub's runners keep the counts
-# honest), otherwise at least one.
+# honest), otherwise at least one. On GitHub's runners (RUNNER_ENVIRONMENT=github-hosted) titles must be readable: if the app
+# shows windows for 10 s and none has a title in the list, the check fails instead of falling back to the count, so that the
+# title regex is always tested somewhere.
 # Screenshots: only on GitHub's runners (RUNNER_ENVIRONMENT=github-hosted), of the whole screen; anywhere else (the self-hosted
 # runner, a local run on someone's Mac) none is taken and <screenshot.png> is not created. SCREENSHOT_TO_LOG=1: also print a
 # small JPEG of the screenshot as base64 into the log (between "-----BEGIN SCREENSHOT <name>-----" and "-----END
@@ -51,6 +53,7 @@ pid=$!
 hosted=no
 [ "${RUNNER_ENVIRONMENT:-}" = github-hosted ] && hosted=yes
 titles=unknown # "readable" once a window of the app shows a title in the window list; decided from what the list returns
+unreadableSince="" # GitHub's runners: the poll since which the app shows windows, none with a title
 
 windowList() # on-screen windows (layer 0: normal windows) of $pid, one per line: "<window id> <width>x<height> <title or <no title>>"
 {
@@ -91,12 +94,25 @@ for ((i = 0; i < timeout; ++i)); do
     fi
     windowList > "$work/windows.txt"
     noteTitles "$work/windows.txt"
-    # (with titles unreadable, wait a moment after the first window: a title may still turn up, or the expected count)
-    if shown "$work/windows.txt" && { [ "$titles" = readable ] || [ "$i" -ge 2 ]; }; then shown=yes; break; fi
+    # (with titles unreadable, wait a moment after the first window: a title may still turn up, or the expected count; on
+    # GitHub's runners the count alone never passes: see the header)
+    if [ "$titles" = readable ]; then
+        if shown "$work/windows.txt"; then shown=yes; break; fi
+    elif [ "$hosted" = yes ]; then
+        if [ "$(windowCount "$work/windows.txt")" -ge 1 ]; then
+            unreadableSince="${unreadableSince:-$i}"
+            [ $((i - unreadableSince)) -lt 10 ] || break
+        fi
+    elif shown "$work/windows.txt" && [ "$i" -ge 2 ]; then
+        shown=yes; break
+    fi
     sleep 1
 done
 echo "windows of $name (id, size, title):"
 sed 's/^/    /' "$work/windows.txt"
+if [ "$titles" != readable ] && [ "$hosted" = yes ] && [ -n "$unreadableSince" ]; then
+    fail "window titles not readable on a GitHub-hosted runner (they grant the screen recording permission; has the image changed?): the title regex /$titleRegex/ was not tested"
+fi
 [ "$titles" = readable ] || echo "window titles: not readable (no screen recording permission): the app's windows are counted (EXPECT_WINDOWS=${EXPECT_WINDOWS:-at least 1})"
 if [ "$shown" != yes ]; then
     if [ "$titles" = readable ]; then
