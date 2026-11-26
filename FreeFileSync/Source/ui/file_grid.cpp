@@ -395,23 +395,21 @@ public:
     //improve readability (while lacking cell borders)
     const wxColor& getDefaultBackgroundColorAlternating(bool wantStandardColor)
     {
-#if defined ZEN_MAC //light/dark switch while the app runs (docs/MAC_TEST_REPORT.md, F5): the colors of the current appearance
-        if (const bool dark = wxSystemSettings::GetAppearance().IsDark();
-            dark != gridColorsDark_)
-        {
-            gridColorsDark_         = dark;
-            gridBackgroundColor_    = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
-            gridBackgroundColorAlt_ = getGridAlternateBackgroundColor();
-        }
-#endif
         return wantStandardColor ? gridBackgroundColor_ : gridBackgroundColorAlt_;
     }
+
+#if defined ZEN_MAC //light/dark switch while the app runs (docs/MAC_TEST_REPORT.md, F5): the colors of the new appearance
+    void updateSystemColors()
+    {
+        gridBackgroundColor_    = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
+        gridBackgroundColorAlt_ = getGridAlternateBackgroundColor();
+    }
+#endif
 
 private:
     size_t getRowCount() const override { return getDataView().rowsOnView(); }
 
 #if defined ZEN_MAC
-    bool    gridColorsDark_         = wxSystemSettings::GetAppearance().IsDark();
     wxColor gridBackgroundColor_    = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
     wxColor gridBackgroundColorAlt_ = getGridAlternateBackgroundColor();
 #else
@@ -2235,6 +2233,17 @@ void filegrid::refresh(Grid& gridLeft, Grid& gridCenter, Grid& gridRight)
     gridCenter.Refresh();
     gridRight .Refresh();
 }
+
+
+#if defined ZEN_MAC
+void filegrid::updateSystemColors(Grid& gridLeft, Grid& gridCenter, Grid& gridRight)
+{
+    for (Grid* grid : {&gridLeft, &gridCenter, &gridRight})
+        if (auto prov = dynamic_cast<GridDataBase*>(grid->getDataProvider()))
+            prov->updateSystemColors();
+    refresh(gridLeft, gridCenter, gridRight);
+}
+#endif
 
 
 void filegrid::setScrollMaster(Grid& grid)

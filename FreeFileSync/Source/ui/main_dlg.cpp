@@ -944,6 +944,7 @@ imgFileManagerSmall_([]
                 setAuiCaptionColors();
                 setViewTypeButtonImages();
                 buttonLabelItemCount_.clear(); //regenerate the item count images of the view filter buttons
+                filegrid::updateSystemColors(*m_gridMainL, *m_gridMainC, *m_gridMainR); //row background colors
                 if (!operationInProgress_) //else: updateGui() follows when the comparison or synchronization ends
                     updateGui(); //Compare/Synchronize buttons, item counts of the view filter buttons
                 auiMgr_.Update();
