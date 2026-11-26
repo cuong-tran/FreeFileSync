@@ -7,6 +7,7 @@
 #include "sync_cfg.h"
 #include <memory>
 #include <zen/http.h>
+#include <zen/build_info.h>
 #include <wx/wupdlock.h>
 #include <wx/valtext.h>
 #include <wx+/rtl.h>
@@ -667,7 +668,11 @@ globalLogFolderPhrase_(globalLogFolderPhrase)
 
     //m_staticTextPostSync->SetMinSize({dipToWxsize(180), -1});
 
+#if defined ZEN_MAC //(docs/MAC_TEST_REPORT.md, F8)
+    m_comboBoxPostSyncCommand->SetHint(_("Example:") + L" osascript -e 'tell app \"System Events\" to shut down'");
+#else
     m_comboBoxPostSyncCommand->SetHint(_("Example:") + L" systemctl poweroff");
+#endif
 
     m_comboBoxPostSyncCommand->setHistory(commandHistory, commandHistoryMax);
 

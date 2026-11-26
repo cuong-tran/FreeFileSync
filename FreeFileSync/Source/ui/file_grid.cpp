@@ -398,11 +398,24 @@ public:
         return wantStandardColor ? gridBackgroundColor_ : gridBackgroundColorAlt_;
     }
 
+#if defined ZEN_MAC //light/dark switch while the app runs (docs/MAC_TEST_REPORT.md, F5): the colors of the new appearance
+    void updateSystemColors()
+    {
+        gridBackgroundColor_    = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
+        gridBackgroundColorAlt_ = getGridAlternateBackgroundColor();
+    }
+#endif
+
 private:
     size_t getRowCount() const override { return getDataView().rowsOnView(); }
 
+#if defined ZEN_MAC
+    wxColor gridBackgroundColor_    = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
+    wxColor gridBackgroundColorAlt_ = getGridAlternateBackgroundColor();
+#else
     const wxColor gridBackgroundColor_    = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
     const wxColor gridBackgroundColorAlt_ = getGridAlternateBackgroundColor();
+#endif
 
     Grid& grid_;
     SharedRef<SharedComponents> sharedComp_;
@@ -1327,8 +1340,12 @@ private:
     const int gapSize_     = dipToWxsize(FILE_GRID_GAP_SIZE_DIP);
     const int gapSizeWide_ = dipToWxsize(FILE_GRID_GAP_SIZE_WIDE_DIP);
 
+#if defined ZEN_MAC //light/dark switch while the app runs: against the current colors
+    const LiveColor mouseHighlightColor_{[] { return enhanceContrast(*wxBLUE, wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW), 5 /*contrastRatioMin*/); }};
+#else
     const wxColor mouseHighlightColor_ = enhanceContrast(*wxBLUE, //primarily needed for dark mode!
                                                          wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW), 5 /*contrastRatioMin*/); //W3C recommends >= 4.5
+#endif
 
     const int charHeight_ = refGrid().getMainWin().GetCharHeight();
 
@@ -2220,6 +2237,17 @@ void filegrid::refresh(Grid& gridLeft, Grid& gridCenter, Grid& gridRight)
     gridCenter.Refresh();
     gridRight .Refresh();
 }
+
+
+#if defined ZEN_MAC
+void filegrid::updateSystemColors(Grid& gridLeft, Grid& gridCenter, Grid& gridRight)
+{
+    for (Grid* grid : {&gridLeft, &gridCenter, &gridRight})
+        if (auto prov = dynamic_cast<GridDataBase*>(grid->getDataProvider()))
+            prov->updateSystemColors();
+    refresh(gridLeft, gridCenter, gridRight);
+}
+#endif
 
 
 void filegrid::setScrollMaster(Grid& grid)

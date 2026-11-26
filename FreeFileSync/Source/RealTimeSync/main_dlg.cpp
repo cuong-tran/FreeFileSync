@@ -11,6 +11,8 @@
 #include <wx+/window_tools.h>
 #include <wx+/popup_dlg.h>
 #include <wx+/image_resources.h>
+#include <wx+/edit_menu.h>
+#include <wx+/darkmode.h>
 #include <zen/file_access.h>
 #include <zen/build_info.h>
 #include <zen/shutdown.h>
@@ -123,6 +125,21 @@ MainDialog::MainDialog(const Zstring& cfgFilePath) :
     setButtonLabel(*m_bpButtonRemoveTopFolder, loadImage("item_remove"), 0 /*pad*/);
     setButtonLabel(*m_buttonStart,             loadImage("start_rts"), m_buttonStart->GetLabelText());
 
+#if defined ZEN_MAC
+    //light/dark switch while the app runs (docs/MAC_TEST_REPORT.md, F5): the Start label is an image drawn in the old text color
+    Bind(wxEVT_SYS_COLOUR_CHANGED, [this](wxSysColourChangedEvent& event)
+    {
+        event.Skip();
+        CallAfter([this] //after wxWidgets' own handlers
+        {
+            //enhanced-contrast gray, gray labels of the generated code (the theme argument only matters to FreeFileSync's theme option)
+            updateDerivedSystemColors(ColorTheme::System);
+            setButtonLabel(*m_buttonStart, loadImage("start_rts"), m_buttonStart->GetLabelText());
+            m_buttonStart->Refresh();
+        });
+    });
+#endif
+
     Bind(wxEVT_CHAR_HOOK, [this](wxKeyEvent& event) { onLocalKeyEvent(event); });
 
 #if defined ZEN_MAC
@@ -132,6 +149,8 @@ MainDialog::MainDialog(const Zstring& cfgFilePath) :
     auto appMenuAllowed = [this] { return IsShown() && IsEnabled() && !wxDialog::OSXHasModalDialogsOpen(); };
     Bind(wxEVT_MENU, [this, appMenuAllowed](wxCommandEvent& event) { if (appMenuAllowed()) onMenuAbout(event); else wxBell(); }, wxID_ABOUT);
     Bind(wxEVT_MENU, [this, appMenuAllowed](wxCommandEvent& event) { if (appMenuAllowed()) onMenuQuit (event); else wxBell(); }, wxID_EXIT);
+
+    addEditMenu(*m_menubar1, 1 /*after "File"*/); //Cmd+V, Cmd+Z, ... in text fields, also in dialogs
 #endif
 
     //notify about (logical) application main window => program won't quit, but stay on this dialog

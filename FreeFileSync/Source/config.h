@@ -6,6 +6,7 @@
 #pragma once
 
 #include <zen/file_access.h>
+#include <zen/build_info.h>
 #include <wx/gdicmn.h>
 #include <wx+/darkmode.h>
 #include "localization.h"
@@ -221,6 +222,15 @@ struct GlobalConfig
         FilterConfig def;
         assert(def.excludeFilter.empty());
         def.excludeFilter =
+#if defined ZEN_MAC //metadata macOS keeps next to the files: Finder (.DS_Store), per-volume trash, FSEvents log, Spotlight index,
+            //document versions, temporary items (AppleDouble "._<name>" companions: hidden by afs/native.cpp)
+        "*/.DS_Store" "\n"
+        "*/.Trashes/" "\n"
+        "*/.fseventsd/" "\n"
+        "*/.Spotlight-V100/" "\n"
+        "*/.DocumentRevisions-V100/" "\n"
+        "*/.TemporaryItems/" "\n"
+#endif
         "*/.Trash-*/" "\n"
         "*/.recycle/";
         return def;

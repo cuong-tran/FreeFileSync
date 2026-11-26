@@ -6,6 +6,7 @@
 
 #include "batch_config.h"
 #include <wx/wupdlock.h>
+#include <zen/build_info.h>
 #include <wx+/image_resources.h>
 #include <wx+/image_tools.h>
 #include <wx+/choice_enum.h>
@@ -72,7 +73,11 @@ BatchDialog::BatchDialog(wxWindow* parent, BatchDialogConfig& dlgCfg) :
 {
     setStandardButtonLayout(*bSizerStdButtons, StdButtons().setAffirmative(m_buttonSaveAs).setCancel(m_buttonCancel));
 
+#if defined ZEN_MAC //the executable inside the bundle, not upstream's Windows name (docs/MAC_TEST_REPORT.md, F8)
+    m_staticTextHeader->SetLabelText(replaceCpy(m_staticTextHeader->GetLabelText(), L"%x", L"/Applications/FreeFileSync.app/Contents/MacOS/FreeFileSync <" + _("configuration file") + L">.ffs_batch"));
+#else
     m_staticTextHeader->SetLabelText(replaceCpy(m_staticTextHeader->GetLabelText(), L"%x", L"FreeFileSync.exe <" + _("configuration file") + L">.ffs_batch"));
+#endif
     m_staticTextHeader->Wrap(dipToWxsize(520));
 
     setImage(*m_bitmapBatchJob, loadImage("cfg_batch"));

@@ -29,6 +29,8 @@
 #include <wx+/window_tools.h>
 #include <wx+/popup_dlg.h>
 #include <wx+/image_resources.h>
+#include <wx+/darkmode.h>
+#include <wx+/edit_menu.h>
 #include "cfg_grid.h"
 #include "folder_selector.h"
 #include "tree_grid.h"
@@ -361,6 +363,9 @@ void MainDialog::UiInputDisabler::disableGuiElementsImpl(bool enableAbort)
 
 
     for (size_t pos = 0; pos < mainDlg_.m_menubar->GetMenuCount(); ++pos)
+#if defined ZEN_MAC //the Edit menu stays usable in dialogs shown during an operation (password prompts, error popups: Cmd+V, Cmd+C)
+        if (mainDlg_.m_menubar->GetMenu(pos) != mainDlg_.menuEdit_)
+#endif
         mainDlg_.m_menubar->EnableTop(pos, false);
 
     if (enableAbort)
@@ -402,6 +407,9 @@ void MainDialog::UiInputDisabler::enableGuiElementsImpl()
     mainDlg_.EnableCloseButton(true);
 
     for (size_t pos = 0; pos < mainDlg_.m_menubar->GetMenuCount(); ++pos)
+#if defined ZEN_MAC //the Edit menu stays usable in dialogs shown during an operation (password prompts, error popups: Cmd+V, Cmd+C)
+        if (mainDlg_.m_menubar->GetMenu(pos) != mainDlg_.menuEdit_)
+#endif
         mainDlg_.m_menubar->EnableTop(pos, true);
 
     mainDlg_.m_buttonCancel->Disable();
@@ -735,16 +743,20 @@ imgFileManagerSmall_([]
     m_textCtrlSearchTxt->SetMinSize({dipToWxsize(220), -1});
 
     //----------------------------------------------------------------------------------------
-    wxImage labelImage = createImageFromText(_("Select view:"), m_bpButtonViewType->GetFont(), wxSystemSettings::GetColour(wxSYS_COLOUR_BTNTEXT));
-
-    labelImage = resizeCanvas(labelImage, labelImage.GetSize() + wxSize(dipToScreen(10), 0), wxALIGN_CENTER); //add border space
-
-    auto generateViewTypeImage = [&](const char* imgName)
+    const auto setViewTypeButtonImages = [this] //text drawn in the system's text color: again after a light/dark switch (macOS)
     {
-        return stackImages(labelImage, mirrorIfRtl(loadImage(imgName)), ImageStackLayout::vertical, ImageStackAlignment::center);
+        wxImage labelImage = createImageFromText(_("Select view:"), m_bpButtonViewType->GetFont(), wxSystemSettings::GetColour(wxSYS_COLOUR_BTNTEXT));
+
+        labelImage = resizeCanvas(labelImage, labelImage.GetSize() + wxSize(dipToScreen(10), 0), wxALIGN_CENTER); //add border space
+
+        auto generateViewTypeImage = [&](const char* imgName)
+        {
+            return stackImages(labelImage, mirrorIfRtl(loadImage(imgName)), ImageStackLayout::vertical, ImageStackAlignment::center);
+        };
+        m_bpButtonViewType->init(generateViewTypeImage("viewtype_sync_action"),
+                                 generateViewTypeImage("viewtype_cmp_result"), dipToWxsize(1) /*pad*/);
     };
-    m_bpButtonViewType->init(generateViewTypeImage("viewtype_sync_action"),
-                             generateViewTypeImage("viewtype_cmp_result"), dipToWxsize(1) /*pad*/);
+    setViewTypeButtonImages();
     //tooltip is updated dynamically in setViewTypeSyncAction()
     //----------------------------------------------------------------------------------------
     m_bpButtonShowExcluded  ->SetToolTip(_("Show filtered or temporarily excluded files"));
@@ -896,6 +908,14 @@ imgFileManagerSmall_([]
                     wxAuiPaneInfo().Name(L"OverviewPanel").Layer(3).Left().Position(2).Caption(_("Overview")).
                     MinSize (dipToWxsize(100), dipToWxsize(100)).
                     BestSize(dipToWxsize(300), -1));
+    const auto setAuiCaptionColors = [this]
+    {
+        wxAuiDockArt* artProvider = auiMgr_.GetArtProvider();
+        //- fix wxWidgets 3.1.0 insane color scheme
+        artProvider->SetColor(wxAUI_DOCKART_INACTIVE_CAPTION_TEXT_COLOUR,     getColorAuiPanelCaptionText()); //accessibility: always set both foreground AND background colors!
+        artProvider->SetColor(wxAUI_DOCKART_INACTIVE_CAPTION_COLOUR,          getColorAuiPanelCaptionBack());
+        artProvider->SetColor(wxAUI_DOCKART_INACTIVE_CAPTION_GRADIENT_COLOUR, getColorAuiPanelCaptionBackGradient());
+    };
     {
         wxAuiDockArt* artProvider = auiMgr_.GetArtProvider();
 
@@ -905,11 +925,34 @@ imgFileManagerSmall_([]
         artProvider->SetFont(wxAUI_DOCKART_CAPTION_FONT, font);
         artProvider->SetMetric(wxAUI_DOCKART_CAPTION_SIZE, font.GetPixelSize().GetHeight() + dipToWxsize(2 + 2));
 
-        //- fix wxWidgets 3.1.0 insane color scheme
-        artProvider->SetColor(wxAUI_DOCKART_INACTIVE_CAPTION_TEXT_COLOUR,     getColorAuiPanelCaptionText()); //accessibility: always set both foreground AND background colors!
-        artProvider->SetColor(wxAUI_DOCKART_INACTIVE_CAPTION_COLOUR,          getColorAuiPanelCaptionBack());
-        artProvider->SetColor(wxAUI_DOCKART_INACTIVE_CAPTION_GRADIENT_COLOUR, getColorAuiPanelCaptionBackGradient());
+        setAuiCaptionColors();
     }
+#if defined ZEN_MAC
+    /*  light/dark switch while the app runs (e.g. Appearance "Auto" in the evening, docs/MAC_TEST_REPORT.md, F5): native controls follow
+        by themselves, but not the images with text drawn in the old colors (Compare/Synchronize, "Select view:", item counts), and
+        wxAuiManager's own handler resets the panel captions to the system colors => redo them after all handlers of the event ran  */
+    Bind(wxEVT_SYS_COLOUR_CHANGED, [this, setViewTypeButtonImages, setAuiCaptionColors, pending = std::make_shared<bool>(false)](wxSysColourChangedEvent& event)
+    {
+        event.Skip(); //wxAuiManager::OnSysColourChanged()
+        if (!*pending) //sent to each window: once is enough
+        {
+            *pending = true;
+            CallAfter([this, setViewTypeButtonImages, setAuiCaptionColors, pending]
+            {
+                *pending = false;
+                updateDerivedSystemColors(globalCfg_.appColorTheme); //"System" for the theme option, enhanced-contrast wxSYS_COLOUR_GRAYTEXT
+                setAuiCaptionColors();
+                setViewTypeButtonImages();
+                buttonLabelItemCount_.clear(); //regenerate the item count images of the view filter buttons
+                filegrid::updateSystemColors(*m_gridMainL, *m_gridMainC, *m_gridMainR); //row background colors
+                if (!operationInProgress_) //else: updateGui() follows when the comparison or synchronization ends
+                    updateGui(); //Compare/Synchronize buttons, item counts of the view filter buttons
+                auiMgr_.Update();
+                Refresh();
+            });
+        }
+    });
+#endif
     //auiMgr_.Update(); -> redundant; called by setGlobalCfgOnInit() below
 
     defaultPerspective_ = auiMgr_.SavePerspective(); //does not need wxAuiManager::Update()!
@@ -1089,6 +1132,8 @@ imgFileManagerSmall_([]
     Bind(wxEVT_MENU, [this](wxCommandEvent& event) { if (!operationInProgress_ && !isBlockedForAppMenu()) onMenuAbout  (event); else wxBell(); }, wxID_ABOUT);
     Bind(wxEVT_MENU, [this](wxCommandEvent& event) { if (!operationInProgress_ && !isBlockedForAppMenu()) onMenuOptions(event); else wxBell(); }, wxID_PREFERENCES);
     Bind(wxEVT_MENU, [this](wxCommandEvent& event) { if (!isBlockedForAppMenu()) onMenuQuit(event); /*onClose() vetoes during comparison/sync*/ else wxBell(); }, wxID_EXIT);
+
+    menuEdit_ = &addEditMenu(*m_menubar, 1 /*after "File"*/); //Cmd+V, Cmd+Z, ... in text fields, also in dialogs
 #endif
 
     //calculate witdh of folder pair manually (if scrollbars are visible)
@@ -6300,6 +6345,17 @@ void MainDialog::onMenuOptions(wxCommandEvent& event)
         try { writeCrashReportSetting(globalCfg_, globalCfgFilePath_); } //throw FileError
         catch (const FileError& e) { showNotificationDialog(this, DialogInfoType::error, PopupDialogCfg().setDetailInstructions(e.toString())); }
 
+#if defined ZEN_MAC
+    /*  macOS: the theme applies at once, as a system switch does (docs/MAC_TEST_REPORT.md, F5): wxApp::SetAppearance() changes the
+        windows' appearance, and the wxEVT_SYS_COLOUR_CHANGED handler redraws what doesn't follow by itself; no restart, no new window,
+        the comparison result stays. Compared as settings: after a live switch "System" may not equal the appearance seen at start  */
+    if (globalCfg_.appColorTheme != colorThemeOld)
+        try
+        {
+            changeColorTheme(globalCfg_.appColorTheme); //throw ErrorRestartRequired, FileError
+        }
+        catch (const FileError& e) { showNotificationDialog(this, DialogInfoType::error, PopupDialogCfg().setDetailInstructions(e.toString())); }
+#else
     if (!equalAppearance(globalCfg_.appColorTheme, colorThemeOld))
     {
         if (!folderCmp_.empty()) //otherwise: why bother the user?
@@ -6348,6 +6404,7 @@ void MainDialog::onMenuOptions(wxCommandEvent& event)
             showNotificationDialog(this, DialogInfoType::error, PopupDialogCfg().setDetailInstructions(e.toString()));
         }
     }
+#endif
 }
 
 

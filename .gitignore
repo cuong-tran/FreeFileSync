@@ -3,3 +3,9 @@ FreeFileSync/Build/Debug/
 FreeFileSync/Build/Obj/
 # Work area of the .github/build scripts (downloads, sources, installed libraries)
 /.build/
+
+# compiler dependency files of a single file compiled by hand with -MMD (the build writes its own under FreeFileSync/Build/Obj/)
+/FreeFileSync/Source/*.d
+/FreeFileSync/Source/*/*.d
+# disk images made locally with .github/build/wrap-mac-dmg.sh next to the build output
+/FreeFileSync/Build/*.dmg
