@@ -126,9 +126,10 @@ struct FsItem
     file for each file and folder FreeFileSync creates there, which the next comparison would show as target-only items. The
     process can't remove the attribute (removexattr() succeeds and changes nothing, macOS 27.2).
     Cost: one open() and an 8-byte read per candidate (a "._X" next to an X on such a volume), nothing for other entries.
-    Not solved: a real AppleDouble "._X" next to X on a volume with native attributes (e.g. unpacked from an archive made on a
-    Mac) is an ordinary file there, but on a FAT/exFAT target that name is X's attribute store: it can't be mirrored there
-    and shows as a difference on each comparison (CONTRIBUTING.md recommends an exclude filter entry for such pairs). */
+    Not solved: a "._X" next to X on a volume with native attributes (a real AppleDouble file unpacked from an archive made on
+    a Mac, or any file of that name) is an ordinary file there, but on a FAT/exFAT target that name is X's attribute store: a
+    provenance-tracked process (a downloaded FreeFileSync is one) can't put it there ("name already used", macOS 27.2), and
+    writing X there replaces it; it shows as a difference on each comparison (CONTRIBUTING.md: exclude filter entry). */
 bool isAppleDoubleFile(int dirFd, const char* itemName) //nothrow
 {
     struct stat itemInfo = {};
