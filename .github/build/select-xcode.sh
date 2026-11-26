@@ -49,7 +49,12 @@ if [ "$mode" = select ]; then
                 { awk '$1 > 26' <<< "$list" | sort -k1,1nr -k2,2nr -k3,3nr || true; } )"
 else
     # every version above the given Xcode's, newest first
-    v="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${newerThan%/Contents/Developer}/Contents/Info.plist" 2>/dev/null || echo 0)"
+    v="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${newerThan%/Contents/Developer}/Contents/Info.plist" 2>/dev/null || true)"
+    if ! [[ "$v" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then # not an Xcode (e.g. the Command Line Tools; PlistBuddy reports errors on stdout):
+        #no version to compare with, so nothing counts as newer
+        echo "select-xcode.sh: no Xcode version for $newerThan" >&2
+        exit 0
+    fi
     IFS=. read -r bMajor bMinor bPatch <<< "$v.0.0"
     ordered="$(awk -v a="${bMajor:-0}" -v b="${bMinor:-0}" -v c="${bPatch:-0}" \
                    '$1 > a || ($1 == a && ($2 > b || ($2 == b && $3 > c)))' <<< "$list" | sort -k1,1nr -k2,2nr -k3,3nr || true)"
