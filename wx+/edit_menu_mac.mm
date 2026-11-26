@@ -46,12 +46,16 @@ void zen::macos::giveTextFieldsEditShortcuts()
     {
         const NSEventModifierFlags mods = event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask &
                                           (NSEventModifierFlagCommand | NSEventModifierFlagShift | NSEventModifierFlagOption | NSEventModifierFlagControl);
-        NSString* key = event.charactersIgnoringModifiers.lowercaseString;
+        //with Command held, "characters" is the Latin letter also on non-Latin layouts (Russian, Greek, ...), as macOS matches menu
+        //shortcuts there; "charactersIgnoringModifiers" would be that layout's own letter
+        NSString* key = event.characters.length > 0 ? event.characters.lowercaseString : event.charactersIgnoringModifiers.lowercaseString;
         const bool editShortcut = (mods == NSEventModifierFlagCommand && [@[@"x", @"c", @"v", @"a", @"z"] containsObject:key]) ||
                                   (mods == (NSEventModifierFlagCommand | NSEventModifierFlagShift) && [key isEqualToString:@"z"]);
         if (editShortcut && [NSApp.keyWindow.firstResponder isKindOfClass:NSText.class])
-            if ([NSApp.mainMenu performKeyEquivalent:event])
-                return nil; //handled by the Edit menu
+        {
+            [NSApp.mainMenu performKeyEquivalent:event];
+            return nil; //handled by the Edit menu, or the item is disabled (nothing to paste or undo): never on to a button's mnemonic
+        }
         return event;
     }];
 }
