@@ -1,6 +1,8 @@
 # What the self-hosted macOS runner (the owner's own Mac, label "self-hosted") offers the macOS jobs: architecture, macOS and
 # Xcode versions, the tools the build scripts need, Rosetta 2, the window server session and the permissions the start checks
-# use, free disk space; and a test that mac-runner.sh cleanup ends a process started from the checkout by a relative path.
+# use, free disk space; a test that mac-runner.sh cleanup ends a process started from the checkout by a relative path, and that
+# a second cleanup in the same job (the last step) works. Like every job on the Mac it creates files and mounts only inside
+# $RUNNER_TEMP and the checkout.
 # It installs nothing and changes no setting; like every macOS job it masks private names before the checkout, starts with
 # mac-runner.sh setup and ends with mac-runner.sh cleanup, and prints nothing private (no listing of the home folder or of
 # /Applications beyond the Xcode bundles, no environment dump, no security settings). Manual runs only (workflow_dispatch).
@@ -46,10 +48,10 @@ jobs:
           probe="$RUNNER_TEMP/CaseProbe"; rm -f "$probe" "$RUNNER_TEMP/caseprobe"; touch "$probe"
           if [ -e "$RUNNER_TEMP/caseprobe" ]; then echo "case-insensitive file system"; else echo "case-SENSITIVE file system"; fi
           rm -f "$probe"
-          # mac-runner.sh setup points TMPDIR into $RUNNER_TEMP: does mktemp follow it here?
+          # mac-runner.sh setup points TMPDIR into $RUNNER_TEMP; the scripts give mktemp a template under it (macOS 27's
+          # "mktemp -d" without one ignores TMPDIR, so that form is not used here either: it would create outside $RUNNER_TEMP)
           echo "TMPDIR: $(sed "s#^$RUNNER_TEMP#<runner temp>#" <<< "${TMPDIR:-unset}"), exists: $([ -d "${TMPDIR:-/nonexistent}" ] && echo yes || echo no)"
-          t="$(mktemp -d)"; echo "mktemp -d: $(sed -e "s#^$RUNNER_TEMP#<runner temp>#" -e "s#^/private/var/folders/.*#<per-user temp folder>/...#" -e "s#^/var/folders/.*#<per-user temp folder>/...#" <<< "$t")"; rmdir "$t"
-          t="$(/usr/bin/env bash -c 'mktemp -d')"; echo "mktemp -d from bash on PATH: $(sed -e "s#^$RUNNER_TEMP#<runner temp>#" -e "s#^/private/var/folders/.*#<per-user temp folder>/...#" -e "s#^/var/folders/.*#<per-user temp folder>/...#" <<< "$t")"; rmdir "$t"
+          t="$(mktemp -d "${TMPDIR%/}/probe.XXXXXX")"; case "$t" in ("$RUNNER_TEMP"/*) echo "mktemp -d with a template: in \$RUNNER_TEMP";; (*) echo "::error::mktemp -d with a template: outside \$RUNNER_TEMP";; esac; rmdir "$t"
 
       - name: Xcode
         run: |
@@ -134,111 +136,19 @@ jobs:
           echo "~/Library/Logs/DiagnosticReports readable: $(ls "$HOME/Library/Logs/DiagnosticReports" >/dev/null 2>&1 && echo yes || echo no)"
           echo "mounted disk images: $(hdiutil info 2>/dev/null | grep -c '^image-path' || true)"
           echo "volumes named FreeFileSync*: $(ls -d /Volumes/FreeFileSync* 2>/dev/null | wc -l | tr -d ' ')"
-
-      # FAT volumes: does macOS report native extended attributes for them (VOL_CAP_INT_EXTENDED_ATTR, what zen's
-      # copyExtendedAttributes() asks), and does it put attributes (AppleDouble "._" files) on a file a process merely writes?
-      # (macOS 27 showed "._" files in the FAT tests of Tests/zen and Tests/sync.) A disk image in $RUNNER_TEMP, detached after.
-      - name: FAT volume and extended attributes
-        run: |
-          w="$RUNNER_TEMP/fat-probe"
-          mkdir -p "$w/mnt"
-          cat > "$w/caps.c" <<'EOF'
-          #include <stdio.h>
-          #include <stdint.h>
-          #include <sys/attr.h>
-          #include <sys/mount.h>
-          #include <unistd.h>
-          int main(int argc, char** argv)
-          {
-              struct { uint32_t length; vol_capabilities_attr_t caps; } __attribute__((aligned(4), packed)) buf;
-              struct attrlist al = { .bitmapcount = ATTR_BIT_MAP_COUNT, .volattr = ATTR_VOL_INFO | ATTR_VOL_CAPABILITIES };
-              struct statfs st;
-              if (statfs(argv[1], &st) != 0 || getattrlist(st.f_mntonname, &al, &buf, sizeof(buf), 0) != 0) { perror("statfs/getattrlist"); return 1; }
-              const uint32_t bit = VOL_CAP_INT_EXTENDED_ATTR;
-              printf("file system %s: VOL_CAP_INT_EXTENDED_ATTR valid %d, set %d\n", st.f_fstypename,
-                     !!(buf.caps.valid[VOL_CAPABILITIES_INTERFACES] & bit), !!(buf.caps.capabilities[VOL_CAPABILITIES_INTERFACES] & bit));
-              return 0;
-          }
-          EOF
-          xcrun clang -o "$w/caps" "$w/caps.c"
-          hdiutil create -quiet -size 32m -fs MS-DOS -volname PROBE "$w/fat.dmg"
-          hdiutil attach -quiet -nobrowse -noverify -noautoopen -mountpoint "$w/mnt" "$w/fat.dmg"
-          trap 'hdiutil detach -quiet -force "$w/mnt" || true' EXIT
-          "$w/caps" "$w/mnt"
-          "$w/caps" "$RUNNER_TEMP"
-          printf 'content\n' > "$w/mnt/written.txt"     # written by this process only, no attributes set
-          mkdir "$w/mnt/dir"
-          echo "after a plain write: $(ls -A "$w/mnt" | tr '\n' ' ')"
-          echo "attributes of the written file: $(xattr "$w/mnt/written.txt" | tr '\n' ' ')"
-          echo "attributes of a folder made on it: $(xattr "$w/mnt/dir" | tr '\n' ' ')"
-          printf 'x\n' > "$w/src.txt"
-          echo "attributes a new file in \$RUNNER_TEMP gets: $(xattr "$w/src.txt" | tr '\n' ' ')"
-          cat "$w/src.txt" > "$w/mnt/catcopy.txt"
-          echo "after cat to the volume: $(ls -A "$w/mnt" | tr '\n' ' '); attributes: $(xattr "$w/mnt/catcopy.txt" | tr '\n' ' ')"
-          # the same writes by a program built here (ad-hoc signed by the linker, like zen_test and sync_test), not by a system tool
-          printf '#include <stdio.h>\nint main(int c, char** v) { for (int i = 1; i < c; ++i) { FILE* f = fopen(v[i], "w"); if (!f) return 1; fputs("x\\n", f); fclose(f); } return 0; }\n' > "$w/writer.c"
-          xcrun clang -o "$w/writer" "$w/writer.c"
-          "$w/writer" "$w/mnt/by-built-program.txt" "$w/by-built-program.txt"
-          echo "file written by a program built here, on the volume: attributes: $(xattr "$w/mnt/by-built-program.txt" | tr '\n' ' '); now on the volume: $(ls -A "$w/mnt" | tr '\n' ' ')"
-          echo "file written by a program built here, on APFS: attributes: $(xattr "$w/by-built-program.txt" | tr '\n' ' ')"
-          echo "attributes of the program itself: $(xattr "$w/writer" | tr '\n' ' ')"
-          # the zen test's image was mounted under the per-user temp folder (/var/folders/...), not under $RUNNER_TEMP: the same there
-          v="$(env -u TMPDIR mktemp -d)"
-          mkdir -p "$v/mnt"
-          hdiutil create -quiet -size 32m -fs MS-DOS -volname PROBE2 "$v/fat.dmg"
-          hdiutil attach -quiet -nobrowse -noverify -noautoopen -mountpoint "$v/mnt" "$v/fat.dmg"
-          trap 'hdiutil detach -quiet -force "$w/mnt" || true; hdiutil detach -quiet -force "$v/mnt" || true; rm -rf "$v"' EXIT
-          "$w/caps" "$v/mnt"
-          "$w/writer" "$v/mnt/by-built-program.txt"
-          printf 'x\n' > "$v/src.txt"; xattr -w com.freefilesync.probe value "$v/src.txt"
-          cp -X "$v/src.txt" "$v/mnt/cp-X.txt" # cp without extended attributes
-          echo "under the per-user temp folder, on the volume: $(ls -A "$v/mnt" | tr '\n' ' '); attributes: $(xattr "$v/mnt/by-built-program.txt" "$v/mnt/cp-X.txt" 2>&1 | tr '\n' ' ')"
-
-      # bisection of the AppleDouble files the FAT tests of Tests/zen and Tests/sync find on macOS 27: zen's copy calls one at a
-      # time (.github/probes/fat-metadata.c) on FAT and exFAT images, then the real zen test, which prints the attribute names
-      - name: Which copy call leaves AppleDouble files on FAT
-        run: |
-          w="$(mktemp -d "$TMPDIR/fat-bisect.XXXXXX")"
-          xcrun clang -o "$w/probe" .github/probes/fat-metadata.c
-          printf 'content' > "$w/source.txt"
-          xattr -w com.freefilesync.small 'zen value' "$w/source.txt"
-          xattr -w com.freefilesync.big "$(head -c 200000 /dev/zero | tr '\0' a)" "$w/source.txt"
-          mkdir "$w/sourceDir"; xattr -w com.freefilesync.small 'folder value' "$w/sourceDir"
-          mounted=()
-          trap 'for m in "${mounted[@]}"; do hdiutil detach -quiet -force "$m" || true; done' EXIT
-          for fs in MS-DOS ExFAT; do
-            mkdir -p "$w/mnt-$fs"
-            hdiutil create -quiet -size 32m -fs "$fs" -volname "PROBE$fs" "$w/$fs.dmg"
-            hdiutil attach -quiet -nobrowse -noverify -noautoopen -mountpoint "$w/mnt-$fs" "$w/$fs.dmg"
-            mounted+=("$w/mnt-$fs")
-            echo "== $fs"
-            "$w/probe" "$w/source.txt" "$w/sourceDir" "$w/mnt-$fs"
+          # what macOS may keep per bundle id in the real home folder besides the preferences and saved state (which cleanup
+          # restores): only whether these exist, for the two test bundle ids (the owner's own copy of the apps shares them)
+          found=0
+          for id in io.github.cuong-tran.freefilesync io.github.cuong-tran.realtimesync; do
+            for d in Caches HTTPStorages WebKit Containers "Application Scripts"; do
+              if [ -e "$HOME/Library/$d/$id" ]; then echo "~/Library/$d/$id exists"; found=$((found + 1)); fi
+            done
           done
-          # com.apple.provenance: macOS tags items made by a process it tracks (launched from a tagged executable, e.g. from
-          # Homebrew); the same calls under Homebrew's bash, which runs the tests, and whether the tag can be removed again
-          echo "== attributes of the shells: /bin/bash [$(xattr /bin/bash | tr '\n' ' ')], bash on PATH [$(xattr "$(command -v bash)" | tr '\n' ' ')]"
-          for fs in MS-DOS; do
-            rm -rf "$w/mnt-$fs"/* "$w/mnt-$fs"/._* 2>/dev/null || true
-            echo "== $fs, probe started by the bash on PATH"
-            "$(command -v bash)" -c '"$0" "$1" "$2" "$3"' "$w/probe" "$w/source.txt" "$w/sourceDir" "$w/mnt-$fs"
-            xattr -d com.apple.provenance "$w/mnt-$fs/copy.txt" 2>&1 | sed 's/^/  xattr -d on the copy: /' || true
-            echo "  after xattr -d com.apple.provenance: $(ls -A "$w/mnt-$fs" | tr '\n' ' ')"
-          done
-          # does the kernel rename, move and remove companions together with their items? (for the engine: traversal hides them)
-          xcrun clang -o "$w/companions" .github/probes/fat-companions.c
-          for fs in MS-DOS ExFAT; do
-            rm -rf "$w/mnt-$fs"/* "$w/mnt-$fs"/._* 2>/dev/null || true
-            echo "== $fs: companions, started by the bash on PATH (tracked)"
-            "$(command -v bash)" -c '"$0" "$1"' "$w/companions" "$w/mnt-$fs"
-          done
-          "$(command -v bash)" -c 'printf x > "$0"' "$w/tracked-apfs.txt"
-          echo "== a file made by the bash on PATH on APFS: [$(xattr "$w/tracked-apfs.txt" | tr '\n' ' ')]"
-          echo "== Tests/zen fileAccessMacSecondVolume"
-          bash Tests/zen/run.sh fileAccessMacSecondVolume 2>&1 | grep -E 'extended attributes on|AppleDouble|FAILED|== |failure' | sed "s#$RUNNER_TEMP#<runner temp>#g" || true
+          echo "per-bundle-id folders of the test apps in ~/Library (Caches, HTTPStorages, WebKit, Containers, Application Scripts): $found"
 
       # finding of the review of the runner change: an app started by a relative path must still be found by cleanup (it matches
       # the resolved executable path from lsof, and the command path from ps). Last but one: it runs cleanup, which removes
-      # $RUNNER_TEMP's folders (TMPDIR among them)
+      # $RUNNER_TEMP's folders (it makes TMPDIR again, empty), and the last step runs it again: cleanup is idempotent
       - name: Cleanup ends a process started from the checkout by a relative path
         run: |
           printf '#include <unistd.h>\nint main(void) { for (;;) pause(); }\n' > "$RUNNER_TEMP/ffs-ci-dummy.c"

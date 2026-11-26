@@ -7,11 +7,13 @@
 #   bundle that contains them, so they would break the seal for the user.
 # - Layout: both apps and a link to /Applications, volume name "FreeFileSync <version>" (version from the app's Info.plist),
 #   volume icon from FreeFileSync.icns; no background picture.
-# - create-dmg (brew install create-dmg) lays out the Finder window. On a machine where Finder cannot be scripted (CI runners
-#   sometimes can't), it runs again with --skip-jenkins (no window layout), and without create-dmg at all, plain
-#   "hdiutil create -format UDZO" makes the image. The path taken is printed ("[wrap-mac-dmg] made with ...").
-#   WRAP_DMG_NO_FINDER=1 skips the Finder-scripted attempt (straight to --skip-jenkins): on a person's Mac, scripting Finder
-#   asks them for the Automation permission in a dialog that would hold up the job (the self-hosted CI runner sets it).
+# - create-dmg (brew install create-dmg) lays out the Finder window. Where Finder cannot be scripted (CI runners sometimes
+#   can't), or without create-dmg, the image is made with hdiutil alone: no window layout, but the volume icon
+#   (.VolumeIcon.icns and the custom icon flag of the volume root, set on a read-write copy that is mounted inside the work
+#   folder). The path taken is printed ("[wrap-mac-dmg] made with ...").
+#   WRAP_DMG_NO_FINDER=1 skips create-dmg (straight to hdiutil): on a person's Mac, scripting Finder asks them for the
+#   Automation permission in a dialog that would hold up the job, and create-dmg mounts its read-write image under /Volumes,
+#   outside the job's folders (the self-hosted CI runner sets it). The hdiutil path mounts nothing outside the work folder.
 # - Afterwards the image is mounted read-only: its content is listed and both apps must pass codesign --verify --strict.
 set -euo pipefail
 [ $# -eq 2 ] || { echo "usage: $0 <folder with FreeFileSync.app and RealTimeSync.app> <output.dmg>" >&2; exit 2; }
@@ -73,26 +75,37 @@ createDmg() # extra create-dmg options...
         --icon FreeFileSync.app 150 170 --icon RealTimeSync.app 330 170 --app-drop-link 510 170 \
         --hdiutil-retries 10 "$@" "$out" "$staging"
 }
+# without the Finder window layout: hdiutil alone, with the volume icon; the read-write copy is mounted inside the work folder
+hdiutilDmg()
+{
+    local rw="$work/rw.dmg" rwMount="$work/rw-mnt"
+    ln -s /Applications "$staging/Applications"
+    cp -X "$volIcon" "$staging/.VolumeIcon.icns"
+    hdiutil create -quiet -volname "$volName" -srcfolder "$staging" -fs HFS+ -format UDRW -ov "$rw"
+    mkdir -p "$rwMount"
+    mountPoint="$rwMount" # detached by cleanup() if a step below fails
+    hdiutil attach -quiet -readwrite -nobrowse -noautoopen -noverify -mountpoint "$rwMount" "$rw"
+    # kHasCustomIcon (0x0400) in the Finder flags of the volume root: bytes 8-9 of its 32-byte FinderInfo
+    xattr -wx com.apple.FinderInfo 0000000000000000040000000000000000000000000000000000000000000000 "$rwMount"
+    hdiutil detach -quiet "$rwMount"
+    mountPoint=""
+    hdiutil convert -quiet "$rw" -format UDZO -ov -o "$out"
+    rm -f "$rw"
+}
 method=""
-if command -v create-dmg >/dev/null; then
-    if [ "${WRAP_DMG_NO_FINDER:-0}" = 1 ]; then
-        echo "[wrap-mac-dmg] WRAP_DMG_NO_FINDER=1: without the Finder window layout (--skip-jenkins)" >&2
-        if createDmg --skip-jenkins; then method="create-dmg --skip-jenkins"; fi
-    elif createDmg; then
-        method="create-dmg"
-    else
-        echo "[wrap-mac-dmg] create-dmg failed (Finder not scriptable?): again without the window layout (--skip-jenkins)" >&2
-        rm -f "$out"; detachOurs
-        if createDmg --skip-jenkins; then method="create-dmg --skip-jenkins"; fi
-    fi
+if [ "${WRAP_DMG_NO_FINDER:-0}" = 1 ]; then
+    echo "[wrap-mac-dmg] WRAP_DMG_NO_FINDER=1: without create-dmg and the Finder window layout" >&2
+elif ! command -v create-dmg >/dev/null; then
+    echo "[wrap-mac-dmg] create-dmg not installed (brew install create-dmg): without the Finder window layout" >&2
+elif createDmg; then
+    method="create-dmg"
 else
-    echo "[wrap-mac-dmg] create-dmg not installed (brew install create-dmg)" >&2
+    echo "[wrap-mac-dmg] create-dmg failed (Finder not scriptable?): without the Finder window layout" >&2
+    rm -f "$out"; detachOurs
 fi
 if [ -z "$method" ]; then
-    rm -f "$out"; detachOurs
-    ln -s /Applications "$staging/Applications"
-    hdiutil create -volname "$volName" -srcfolder "$staging" -fs HFS+ -format UDZO -ov "$out"
-    method="hdiutil create -format UDZO (no window layout, no volume icon)"
+    hdiutilDmg
+    method="hdiutil (volume icon, no window layout)"
 fi
 echo "[wrap-mac-dmg] made with $method: $out"
 
