@@ -103,7 +103,7 @@ CXXFLAGS += -isystem/usr/include/gtk-3.0
 else ifeq ($(TARGET_OS),mac)
 #static libraries from FFS_DEPS_PREFIX (platform.mk) for ARCH and the deployment target; zlib (.github/build/pkgconfig-macos) and the
 #frameworks come from the SDK
-CXXFLAGS += $(macTargetFlags)
+CXXFLAGS += $(macTargetFlags) $(macPathFlags)
 LDFLAGS  += $(macTargetFlags)
 
 CXXFLAGS += $(shell $(macWxConfig) --cxxflags --debug=no)

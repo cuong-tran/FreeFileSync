@@ -69,7 +69,7 @@ CXXFLAGS += -isystem/usr/include/gtk-3.0
 
 else ifeq ($(TARGET_OS),mac)
 #wxWidgets from FFS_DEPS_PREFIX (../platform.mk) for ARCH and the deployment target
-CXXFLAGS += $(macTargetFlags)
+CXXFLAGS += $(macTargetFlags) $(macPathFlags)
 LDFLAGS  += $(macTargetFlags)
 
 CXXFLAGS += $(shell $(macWxConfig) --cxxflags --debug=no)

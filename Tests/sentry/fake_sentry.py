@@ -15,6 +15,7 @@ import gzip
 import http.server
 import json
 import os
+import socketserver
 import sys
 import threading
 import uuid
@@ -98,6 +99,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(answer)
 
 
-server = http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[2]) if len(sys.argv) > 2 else 0), Handler)
+class Server(http.server.ThreadingHTTPServer):
+    # not HTTPServer's server_bind(): it calls socket.getfqdn(), a reverse DNS lookup of 127.0.0.1, which took about 35 s on
+    # the owner's Mac and on GitHub's Intel runners (and made the endpoint start that late in every scenario)
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
+server = Server(("127.0.0.1", int(sys.argv[2]) if len(sys.argv) > 2 else 0), Handler)
 print(f"port {server.server_address[1]}", flush=True)
 server.serve_forever()

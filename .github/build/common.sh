@@ -89,11 +89,16 @@ if [ "$FFS_TARGET" != linux ]; then
     esac
     export MACOSX_DEPLOYMENT_TARGET="$FFS_MACOS_DEPLOYMENT_TARGET"
     export CC="${CC:-clang}" CXX="${CXX:-clang++}"
-    export CFLAGS="-O2 -arch $TARGET_ARCH${CFLAGS:+ $CFLAGS}"
-    export CXXFLAGS="-O2 -arch $TARGET_ARCH${CXXFLAGS:+ $CXXFLAGS}"
+    # source paths (__FILE__ of asserts, debug info) relative to the work area instead of absolute, so that no path of the build
+    # machine (e.g. its home folder) ends up in the libraries and the apps; build-openssl.sh leaves it out (see there)
+    # shellcheck disable=SC2034 # PATH_MAP_FLAG: used by build-openssl.sh
+    PATH_MAP_FLAG="-ffile-prefix-map=$BUILD_DIR=.build"
+    case "$INSTALL_DIR/" in ("$BUILD_DIR"/*) ;; (*) PATH_MAP_FLAG="$PATH_MAP_FLAG -ffile-prefix-map=$INSTALL_DIR=.build/deps/$FFS_TARGET" ;; esac
+    export CFLAGS="-O2 -arch $TARGET_ARCH $PATH_MAP_FLAG${CFLAGS:+ $CFLAGS}"
+    export CXXFLAGS="-O2 -arch $TARGET_ARCH $PATH_MAP_FLAG${CXXFLAGS:+ $CXXFLAGS}"
     # Objective-C(++) sources (wxOSX's *.mm files) are compiled with these, not with CFLAGS/CXXFLAGS
-    export OBJCFLAGS="-O2 -arch $TARGET_ARCH${OBJCFLAGS:+ $OBJCFLAGS}"
-    export OBJCXXFLAGS="-O2 -arch $TARGET_ARCH${OBJCXXFLAGS:+ $OBJCXXFLAGS}"
+    export OBJCFLAGS="-O2 -arch $TARGET_ARCH $PATH_MAP_FLAG${OBJCFLAGS:+ $OBJCFLAGS}"
+    export OBJCXXFLAGS="-O2 -arch $TARGET_ARCH $PATH_MAP_FLAG${OBJCXXFLAGS:+ $OBJCXXFLAGS}"
     export LDFLAGS="-arch $TARGET_ARCH $LDFLAGS"
     export PKG_CONFIG_LIBDIR="$INSTALL_DIR/lib/pkgconfig"
 fi
@@ -153,24 +158,25 @@ install_id() {
     return 0
 }
 
-# download_archive <archive file name> <url> [<fallback url>...]: downloads the archive to $ARCHIVE_DIR (unless it is there
-# already), trying the URLs in order (e.g. a mirror redirector that may send to a broken mirror, then the origin), and verifies
-# it against KNOWN_SHA256
+# download_archive <archive file name> <url>...: downloads the archive to $ARCHIVE_DIR (unless it is there already) from the
+# first URL that works (the others are fallbacks, e.g. for a mirror with an expired certificate) and verifies it against
+# KNOWN_SHA256
 download_archive() {
-    local file="$1"
+    local file="$1" url
     shift
     local archive="$ARCHIVE_DIR/$file"
     mkdir -p "$ARCHIVE_DIR" "$SOURCE_DIR"
     if [ ! -f "$archive" ]; then
-        local url ok=no
         for url in "$@"; do
             log "Downloading $url"
-            if curl -fL --retry 3 -o "$archive.part" "$url"; then ok=yes; break; fi
+            if curl -fL --retry 3 -o "$archive.part" "$url"; then
+                mv "$archive.part" "$archive"
+                break
+            fi
             rm -f "$archive.part"
             log "Download from $url failed"
         done
-        [ "$ok" = yes ] || die "cannot download $file"
-        mv "$archive.part" "$archive"
+        [ -f "$archive" ] || die "could not download $file from: $*"
     fi
 
     local expected="${KNOWN_SHA256[$file]:-}"
@@ -182,7 +188,8 @@ download_archive() {
     fi
 }
 
-# fetch_source <name-version> <archive file name> <url(s)> [nopatch]   (several URLs: separated by spaces, tried in order)
+# fetch_source <name-version> <archive file name> <url> [nopatch]
+# <url> may be several URLs separated by blanks, tried in order (see download_archive).
 # Downloads and verifies the archive, unpacks a fresh copy to $SOURCE_DIR/<name-version>
 # and applies patches/<name-version>.patch (the fixes listed in Bugs.txt).
 fetch_source() {
@@ -199,8 +206,9 @@ fetch_source() {
         die "no patch for $name in $PATCH_DIR: port the $name fixes from Bugs.txt first, or set FFS_SKIP_PATCHES=1 to build it unpatched"
     fi
 
-    # shellcheck disable=SC2086 # a list of URLs, which contain no spaces
-    download_archive "$file" $url
+    local urls
+    read -r -a urls <<<"$url"
+    download_archive "$file" "${urls[@]}"
 
     rm -rf "${SOURCE_DIR:?}/$name"
     tar xf "$archive" -C "$SOURCE_DIR"

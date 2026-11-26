@@ -222,10 +222,9 @@ struct GlobalConfig
         FilterConfig def;
         assert(def.excludeFilter.empty());
         def.excludeFilter =
-#if defined ZEN_MAC //metadata macOS keeps next to the files: Finder (.DS_Store), AppleDouble files on volumes without extended
-            //attributes (._*), per-volume trash, FSEvents log, Spotlight index, document versions, temporary items
+#if defined ZEN_MAC //metadata macOS keeps next to the files: Finder (.DS_Store), per-volume trash, FSEvents log, Spotlight index,
+            //document versions, temporary items (AppleDouble "._<name>" companions: hidden by afs/native.cpp)
         "*/.DS_Store" "\n"
-        "*/._*" "\n"
         "*/.Trashes/" "\n"
         "*/.fseventsd/" "\n"
         "*/.Spotlight-V100/" "\n"

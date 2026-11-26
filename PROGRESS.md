@@ -19,9 +19,24 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M3 macOS | 3. `afs/native`, `base/`, paths; engine builds, `Tests/sync` | done | `b4b35bb..3289e88`, fixes `f3e2601..bd9f1bf` | 7 findings: 6 fixed, 1 kept |
 | M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | done | `bd9f1bf..1152282`, fixes `1152282..83f890e` | 9 findings: all fixed |
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | done | `83f890e..bf0ef72`, fixes `d284031..8420f50` | 7 findings: all fixed |
-| M3 macOS | Pull request | merged as [#13](https://github.com/cuong-tran/FreeFileSync/pull/13) (squash, `5b2dbe1`) | | |
+| M3 macOS | Pull request | merged as [#13](https://github.com/cuong-tran/FreeFileSync/pull/13) (squash, `5b2dbe1`) after all checks passed | | no review threads |
+| CI | macOS jobs on the owner's self-hosted runner (label `self-hosted`) | done; pull request open, squash-merged once all checks pass | `79879b9..2d06b25` | two reviews, 16 findings, all fixed |
 | M3 macOS | Fixes from the first test on a real Mac (`docs/MAC_TEST_REPORT.md` on branch `mac-test-report`) | done, PR [#14](https://github.com/cuong-tran/FreeFileSync/pull/14) | `5b2dbe1..mac-test-fixes` | not reviewed by an agent; owner review on the PR |
-| M4 Windows | | | | |
+| M4 Windows | | not started: paused by the owner for testing on a real Mac | | |
+
+## Paused
+
+Paused on 2026-11-25 at the owner's request, after M3 was merged and before M4 (Windows). The owner tests the Mac apps on a real Mac first, with a local Claude Code session that writes its findings to `docs/MAC_TEST_REPORT.md` on a branch `mac-test-report`.
+
+To resume: read that report (or what the owner relays), fix what it found on `dev` with a coder session (review, record, PR, squash-merge as usual), then start M4 step 1 (toolchain and dependency cross builds with llvm-mingw, wxMSW) per `docs/PORTING_PLAN.md`.
+
+## Mac test report (2026-11-25/26)
+
+`docs/MAC_TEST_REPORT.md` and 47 screenshots are on branch `mac-test-report` (`89bf541`), from a manual test of `main` (`5b2dbe1`) on the owner's Mac (macOS 27.2, Xcode 27.2). Most of the checklist passed (batch from Finder, modal-dialog guards, Dock progress, real syncs, exFAT, RealTimeSync, Sentry tests). Findings F1 to F18. Another session of the owner's fixes them on branch `mac-test-fixes` ([#14](https://github.com/cuong-tran/FreeFileSync/pull/14), based on `main`): F1 to F8, F12, F15, F17. It overlaps with `dev` (self-hosted runner work) and a trial merge conflicts in 8 files: `build-libidn2.sh`, `common.sh`, `check-mac-app-starts.sh`, `macos-build.yml`, `base/db_file.cpp`, `CLAUDE.md`, `README.md`, `PROGRESS.md`. Whichever lands second merges `main` and resolves them (F1 and F12 are fixed on both). That branch also contains eight stray `FreeFileSync/Source/*.d` dependency files that should not be committed.
+
+- Blocker with Xcode 27: F1 `base/db_file.cpp` needs `<sys/types.h>` (fixed in the self-hosted runner work, since CI on the Mac needs it).
+- Major: F2 RealTimeSync cannot find FreeFileSync when macOS runs it translocated; F3 Gatekeeper (ad-hoc signing: "Open Anyway" in System Settings, right-click Open no longer works); F4 message boxes drop wrapped detail paragraphs (update notice, crash-report notice); F5 stale colors after a live light/dark switch; F6 no Edit menu, Cmd+V fails in dialogs.
+- Minor and cosmetic: F7 default exclude filter lacks macOS entries (`.DS_Store`); F8 Windows/Linux texts; F9 untranslated standard menu items; F10 small default window; F11 dark-mode details; F12 libidn2 mirror with an expired certificate (fixed with the runner work); F13 icon; F14 unsaved config lost after a language change; F15 to F18 tooling, release name, accessibility.
 
 ## How the work runs
 
@@ -68,15 +83,26 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | 2026-11-24 | macOS builds of this fork do not use upstream's online update check | It would report this fork's builds to upstream's server with values it does not expect and point users at upstream's package. Linux keeps upstream's behavior. |
 | 2026-11-25 | Work resumed after the pause of 2026-11-24 23:00 UTC | Owner said continue. |
 | 2026-11-25 | macOS crash reports while reporting is off: uploads are disabled and stored dumps are deleted at start and when "send" is given later | sentry-native has no hook on macOS to discard a crash; a dump made while the user had opted out must never be uploaded. |
+| 2026-11-25 | Pause before M4 so the owner can test the Mac apps on a real Mac | Asked by the owner. |
+| 2026-11-25 | The macOS CI jobs run on the owner's self-hosted runner (their own Mac, label `self-hosted`); hosted runners stay as fallback and for pull requests from forks | Asked by the owner; hosted macOS runners were short of capacity. Rules for that machine: no fork code, nothing from the screen or home folder in logs or artifacts, no software installs or `sudo`, tests clean up after themselves. |
+| 2026-11-25 | macOS: on volumes without native extended attributes (FAT, exFAT, some network shares), a `._X` file next to an existing `X` is not reported as an item by the native file system | On macOS 27 every file a provenance-tracked process creates (any downloaded app opened through Gatekeeper) gets `com.apple.provenance`, which such volumes store as `._X`; the app cannot remove it. Without this, each sync to a FAT or exFAT volume would show phantom target-only files. Finder treats these files the same way. Orphaned `._X` files stay visible. |
+| 2026-11-26 | Only real AppleDouble files (checked by their header) are hidden as companions on volumes without native extended attributes | A user's ordinary file named `._X` must stay visible. A real AppleDouble `._X` beside `X` on an APFS side still cannot be mirrored to FAT/exFAT (macOS owns that name there); the exclude filter `*/._*` is the remedy. |
 
 | 2026-11-26 | Message boxes lay out their `wxRichTextCtrl` detail text after the dialog has its final size (macOS only) | wxOSX laid it out inside the partial repaint caused by hiding the caret when the focus moved to the button, so wrapped paragraphs were never drawn (F4). Reproduced on a Mac with a test program around the real `wx+/popup_dlg.cpp`. |
 | 2026-11-26 | RealTimeSync looks for FreeFileSync next to its own bundle, then next to the untranslocated original (`SecTranslocate*`, looked up with `dlsym`), then through LaunchServices by bundle id | App Translocation runs a quarantined bundle alone from a read-only mount (F2); the Security functions have no public header, so a missing symbol only disables that step. |
 | 2026-11-26 | Live light/dark switches are handled on `wxEVT_SYS_COLOUR_CHANGED` (macOS only), after wxWidgets' own handlers (`CallAfter`) | `wxAuiManager` resets its art to system colors in its own handler, so the app's caption colors must be applied after it (F5). Linux keeps upstream's behavior. |
 | 2026-11-26 | Edit menu: stock ids for Cut/Copy/Paste/Select All, native `undo:`/`redo:` actions for Undo/Redo (`wx+/edit_menu_mac.mm`) | wxOSX maps only the former to first-responder actions; wx's Undo/Redo events go to the frame, not the text field, and are disabled during modal dialogs (F6). |
-| 2026-11-26 | The macOS default exclude filter adds Finder/Spotlight metadata (`.DS_Store`, `._*`, `.Trashes`, `.fseventsd`, `.Spotlight-V100`, `.DocumentRevisions-V100`, `.TemporaryItems`) | Only new configurations get it; saved ones keep their filter (F7). |
+| 2026-11-26 | The macOS default exclude filter adds Finder/Spotlight metadata (`.DS_Store`, `.Trashes`, `.fseventsd`, `.Spotlight-V100`, `.DocumentRevisions-V100`, `.TemporaryItems`), not `._*` | Only new configurations get it; saved ones keep their filter (F7). AppleDouble `._<name>` companions are already hidden by `afs/native.cpp` (PR #15), and `._*` would also hide users' own files of such names. |
 | 2026-11-26 | macOS UI checks on a Mac without a person at it: a library injected with `DYLD_INSERT_LIBRARIES` (the ad-hoc signed apps have no hardened runtime) switches the app's own `NSApp.appearance`, sends synthesized key events and renders windows with `cacheDisplayInRect:` | Works with a locked screen, never changes the system appearance. Synthesized Cmd+V pastes even without an Edit menu, so it cannot reproduce F6's paste failure with a real keyboard. A test that swaps the general pasteboard must restore it in the same block: one early return lost the owner's clipboard content once. |
 
 ## Needed from the repository owner
+
+- For the self-hosted Mac runner (a Mac mini, arm64, macOS 27.2, Xcode 27.2), before any build or test can run there:
+  1. `brew install bash coreutils flock pkgconf make cmake` (optional: `ccache create-dmg`).
+  2. Remove `SessionCreate` from `~/Library/LaunchAgents/actions.runner.*.plist` (or set it to false) and restart the runner service (`./svc.sh stop`, `./svc.sh start`): with it, jobs cannot open app windows.
+  3. Free disk space: 10 to 12 GB are free, and the jobs refuse to start below 10 GB.
+  4. Optional: Rosetta 2 (`softwareupdate --install-rosetta --agree-to-license`) so the x86_64 builds can be run, not only compiled.
+  5. Delete the logs of the four workflow runs for commit `5b0e321` (macOS build, zen tests, sync tests, ZIP AFS test): their checkout step shows the Mac's login name. Later runs mask it.
 
 - Repository secrets for Sentry (builds work without them, reporting stays off): `SENTRY_DSN`, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`.
 - Later, for notarized Mac builds: an Apple Developer ID certificate and app-specific password.
@@ -100,10 +126,11 @@ Marked `KNOWN_ISSUE` in `Tests/zen`, not fixed (upstream code):
 - `afs/gdrive.cpp` (upstream): the OAuth login loop never closes the accepted client socket. Left as is.
 - The Mac UI has only been seen through CI screenshots. To check on a real Mac: main window layout (fonts and sizes were set for GTK), dark mode, Dock icon, tray item, the application menu, opening files from Finder, drag and drop, folder picker, sounds, "Show in Finder". Dock progress (`wx+/taskbar_mac.cpp`, `dock_tile_mac.mm`) is implemented but has never been seen. Not testable in CI: Finder opens, the modal-dialog guards, starting a batch process from a running app. The app icon is upscaled from a 128 px image.
 - Crash capture for x86_64 is tested on a real Intel runner only on manual dispatch (`sentry_dry_run`); under Rosetta 2 on the arm64 runners Crashpad catches no crashes, so those scenarios are skipped there with a printed reason.
-- Fixed by PR #14 (2026-11-26), from `docs/MAC_TEST_REPORT.md`: Xcode 27 build (F1), RealTimeSync under App Translocation (F2), Gatekeeper steps in the README (F3), blank wrapped text in message boxes including the crash-report notice (F4), live light/dark switch (F5), Edit menu (F6), macOS default filter (F7), Windows/Linux texts (F8), libidn2 download fallback (F12), start check screenshots, modal windows and preferences (F15), Sentry release name (F17). To check on a real Mac: F2 with a quarantined install, F6 Cmd+V in the versioning folder box with a real keyboard, F5 with a real system appearance switch (tested only with the app's own appearance), the open dialogs during a switch (not handled: they keep their colors until reopened).
+- FreeFileSync can crash by itself when it gets SIGTERM right after starting (seen on hosted macOS runners as "Illegal instruction" or "Killed"): upstream's SIGTERM handler is not async-signal-safe. This was the cause of the flaky Sentry scenarios (a second dump from that crash, not a duplicate upload); the tests now stop those runs with SIGKILL. The crash itself is open; its exact frame was never captured.
+- On macOS 27, a file named `._X` beside `X` on an APFS side cannot be mirrored to FAT/exFAT by a downloaded (provenance-tracked) FreeFileSync: macOS keeps `X`'s attributes under that name there. It fails or shows as a difference on each run; the exclude filter `*/._*` is the remedy.
+- Fixed by PR #14 (2026-11-26), from `docs/MAC_TEST_REPORT.md` (F1 and F12 came to `main` first with the self-hosted runner work): Xcode 27 build (F1), RealTimeSync under App Translocation (F2), Gatekeeper steps in the README (F3), blank wrapped text in message boxes including the crash-report notice (F4), live light/dark switch (F5), Edit menu (F6), macOS default filter (F7), Windows/Linux texts (F8), libidn2 download fallback (F12), start check screenshots, modal windows and preferences (F15), Sentry release name (F17). To check on a real Mac: F2 with a quarantined install, F6 Cmd+V in the versioning folder box with a real keyboard, F5 with a real system appearance switch (tested only with the app's own appearance), the open dialogs during a switch (not handled: they keep their colors until reopened).
 - Left from the Mac test report: F9 (standard menu items stay English, Mac menu wording, F-keys), F10 (default window size), F11 (dark mode details: white percentage cells, light "[Last session]" row), F13 (blurry icon, gray plate), F14 (unsaved configuration lost after a language change, probably upstream), F16 (`hdiutil` deprecation warnings), F18 (accessibility of bitmap buttons, slow AX tree of big logs), the smaller remarks.
 - `fff::showCrashReportNotice()` passes a checkbox label without `&`, which fails an assertion in `wx+/popup_dlg.cpp` in debug builds (release builds are unaffected).
-- `f-kept-then-deleted` once found two dumps instead of one in a dry run; not reproduced since, and the test now prints the first run's log if it recurs.
 - The dSYM path for the Mac apps is exercised by the dry run, but a real upload to Sentry has never happened (no secrets).
 - The DMGs (`FreeFileSync-14.13-macos-<arch>.dmg`, about 19 MB, both apps plus an Applications link) have no background picture; their window layout has only been checked by the script, not by eye.
 
@@ -255,3 +282,33 @@ Result of the step: a `DMG` job wraps both apps into `FreeFileSync-<version>-mac
 | 5 | Crash capture for x86_64 is never tested (skipped under Rosetta) | nit | fixed in `be9d11c`, `8420f50`: a "Sentry tests (Intel)" job on `macos-15-intel` (on dispatch); every scenario passes there, crash capture included |
 | 6 | `Tests/sentry/run.sh` accepts bash older than 4.4 on macOS | nit | fixed in `e4c17e5` |
 | 7 | The "sentry-native not found" message gives Linux advice on macOS | nit | fixed in `94b5392` |
+
+### Self-hosted macOS runner (`79879b9..074c8df`, `/code-review medium`)
+
+Result so far: the macOS jobs of all four workflows choose the owner's Mac for pushes, manual runs and same-repository pull requests, and `macos-15` for fork pull requests, with `MACOS_RUNNER=hosted` or the `hosted` input; `.github/build/mac-runner.sh` checks tools without installing, masks private names, keeps a local cache and cleans up; screenshots are window-only there. Nothing has been built on the Mac yet (tools missing, no window session).
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | The toolchain report can be uploaded unscrubbed when its step fails | important | fixed in `3375ed1`: scrubbing is its own `if: always()` step before every upload |
+| 2 | Window screenshots from the Mac can show the owner's login and are uploaded | important | fixed in `c3c6a65`, `3375ed1`: no screenshots at all off GitHub's runners |
+| 3 | Cleanup misses leftover apps that were started by relative path | important | fixed in `53af6bf`, `3375ed1`: matched by resolved executable; apps start by absolute path; verified on the Mac |
+| 4 | Crash-report filter misses reports when the bundle path contains a symlink | important | fixed: both path spellings are matched |
+| 5 | Title and error-popup checks may silently turn off on hosted runners | important | fixed: decided from the window list; hosted logs show "window titles: readable" |
+| 6 | Disk-image cleanup silently does nothing without a usable python3 | important | fixed: `PlistBuddy`; an unreadable list is a warning |
+| 7 | The local cache is never trimmed when the work folder path contains a blank | nit | fixed; self-test uses a path with blanks |
+| 8 | The trash cleanup's path check can be bypassed with `..` | nit | fixed: strict validation with 23 hostile and benign self-test cases |
+| 9 | The diagnostics job skips setup/cleanup and prints FileVault, SIP and admin status | nit | fixed: manual runs only, with setup and cleanup; the security-posture lines are gone |
+
+### Self-hosted macOS runner, second round (`074c8df..0b6138c`, `/code-review medium`)
+
+Result: everything builds and passes on the owner's Mac (macOS 27.2, Xcode 27.2; about 27 minutes for all four workflows, one job after another) and on GitHub's runners. Fixed on the way: F1 and F12 of the Mac test report, build-machine paths in the libraries and apps (`check-binaries` is now an error), `mktemp -d` ignoring `TMPDIR` on macOS 27, and the AppleDouble companions on FAT/exFAT (`e9ee443`). The kernel renames and removes a companion with its item, so the engine only has to hide it from listings.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | A second `mac-runner.sh cleanup` in a job fails, so the diagnostics workflow ends red and skips cleanup stages | important | fixed in `3a44fa9`: eight independent stages, no dependence on `TMPDIR`, self-tested twice. Also found: a failed preferences read made cleanup delete the owner's real preferences domain; fixed |
+| 2 | Any `._X` next to `X` is hidden on FAT/exFAT/network volumes, also an ordinary user file of that name | important | fixed in `c07e4e8`: only regular files with the AppleDouble header are hidden (about 14 µs per candidate); new test on FAT and exFAT |
+| 3 | A failed local cache restore is reported as a hit | important | fixed in `3a44fa9`: a failed restore removes the partial folder and reports a miss |
+| 4 | The diagnostics FAT probe mounts an image outside the runner's temp folder | nit | fixed in `c0518e9`: probes removed; DMGs on the Mac are built with `hdiutil` inside the work folder (create-dmg mounted under `/Volumes`) |
+| 5 | The start check can pass on hosted runners without testing the window title | nit | fixed in `b240e6d` |
+| 6 | `check-binaries` can report a binary clean when the home path contains special characters | nit | fixed in `3a44fa9` |
+| 7 | Usage text omits `self-test` | nit | fixed |
