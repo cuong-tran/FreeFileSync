@@ -23,6 +23,8 @@
     #include <sys/vfs.h> //statfs
 #elif defined ZEN_MAC
     #include <sys/mount.h> //statfs
+    #include <unistd.h> //pread
+    #include <cstring> //memcmp: isAppleDoubleFile()
 #endif
 
     #include <sys/stat.h>
@@ -112,17 +114,48 @@ struct FsItem
 /*  AppleDouble companions: a volume without native extended attributes (FAT, exFAT, many SMB/NFS shares) keeps the attributes of
     an item "X" in a file "._X" next to it. Such a "._X" is not an item but part of "X": the kernel shows its content as X's
     attributes and renames, moves and removes it together with X (measured on macOS 27.2 for files, folders and symlinks on FAT
-    and exFAT, also rmdir of a folder whose only entries are companions). So it is not reported where X exists in the same folder
-    (names compared byte-wise), like Finder does. Without X ("._X" orphans, "._" alone) it stays a normal item, visible and
-    deletable; volumes with native extended attributes (APFS, HFS+) or unknown capabilities show everything.
+    and exFAT, also rmdir of a folder whose only entries are companions). So it is not reported if
+        - X exists in the same folder (names compared byte-wise),
+        - the volume is known to keep extended attributes only so (unknown capabilities: everything is listed), and
+        - "._X" really is an AppleDouble file: a regular file (no symlink followed) whose header has the AppleDouble magic and
+          version 2 (00 05 16 07 00 02 00 00); one that can't be opened or read is listed.
+    Everything else stays a normal item, visible and deletable: orphans ("._X" without X, "._" alone), and a user's own file
+    named "._X" next to X that is no AppleDouble file. Volumes with native extended attributes (APFS, HFS+) show everything.
     Why it matters: macOS 13+ gives every item a provenance-tracked process creates (one started by a tagged program, e.g. a
     downloaded app the user opened, or Homebrew's programs) the attribute com.apple.provenance; on such a volume that is a "._X"
     file for each file and folder FreeFileSync creates there, which the next comparison would show as target-only items. The
-    process can't remove the attribute (removexattr() succeeds and changes nothing, macOS 27.2). A consequence by design: a real
-    file named "._X" next to an "X" is hidden as well (Finder does the same), and can't even be created while X has a companion. */
+    process can't remove the attribute (removexattr() succeeds and changes nothing, macOS 27.2).
+    Cost: one open() and an 8-byte read per candidate (a "._X" next to an X on such a volume), nothing for other entries.
+    Not solved: a real AppleDouble "._X" next to X on a volume with native attributes (e.g. unpacked from an archive made on a
+    Mac) is an ordinary file there, but on a FAT/exFAT target that name is X's attribute store: it can't be mirrored there
+    and shows as a difference on each comparison (CONTRIBUTING.md recommends an exclude filter entry for such pairs). */
+bool isAppleDoubleFile(int dirFd, const char* itemName) //nothrow
+{
+    struct stat itemInfo = {};
+    if (::fstatat(dirFd, itemName, &itemInfo, AT_SYMLINK_NOFOLLOW) != 0 || !S_ISREG(itemInfo.st_mode))
+        return false; //no device or FIFO is opened
+    //O_NOFOLLOW: no symlink put in place meanwhile is followed; O_NONBLOCK: nor does a FIFO put in place block the traversal
+    const int fd = ::openat(dirFd, itemName, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK);
+    if (fd == -1)
+        return false;
+    ZEN_ON_SCOPE_EXIT(::close(fd));
+    if (::fstat(fd, &itemInfo) != 0 || !S_ISREG(itemInfo.st_mode))
+        return false;
+
+    const unsigned char appleDoubleHeader[] = {0x00, 0x05, 0x16, 0x07, /*magic*/ 0x00, 0x02, 0x00, 0x00 /*version 2*/};
+    unsigned char header[sizeof(appleDoubleHeader)] = {};
+    ssize_t bytesRead = 0;
+    do
+        bytesRead = ::pread(fd, header, sizeof(header), 0);
+    while (bytesRead == -1 && errno == EINTR);
+    return bytesRead == static_cast<ssize_t>(sizeof(header)) && std::memcmp(header, appleDoubleHeader, sizeof(header)) == 0;
+}
+
+
 void hideAppleDoubleCompanions(std::vector<FsItem>& items, int dirFd) //nothrow
 {
-    if (std::none_of(items.begin(), items.end(), [](const FsItem& item) { return item.itemName.size() > 2 && startsWith(item.itemName, Zstr("._")); }))
+    const auto isCandidateName = [](const Zstring& itemName) { return itemName.size() > 2 && startsWith(itemName, Zstr("._")); };
+    if (std::none_of(items.begin(), items.end(), [&](const FsItem& item) { return isCandidateName(item.itemName); }))
         return;
     if (storesExtendedAttributesNatively(dirFd)) //nothrow
         return;
@@ -133,8 +166,9 @@ void hideAppleDoubleCompanions(std::vector<FsItem>& items, int dirFd) //nothrow
 
     std::erase_if(items, [&](const FsItem& item)
     {
-        return item.itemName.size() > 2 && startsWith(item.itemName, Zstr("._")) &&
-               names.contains(Zstring(item.itemName.c_str() + 2, item.itemName.size() - 2));
+        return isCandidateName(item.itemName) &&
+               names.contains(Zstring(item.itemName.c_str() + 2, item.itemName.size() - 2)) &&
+               isAppleDoubleFile(dirFd, item.itemName.c_str()); //nothrow
     });
 }
 #endif

@@ -1,9 +1,12 @@
 // macOS only: extended attributes are synchronized on APFS; on FAT and exFAT volumes (disk images, attached without admin rights)
 // the sync writes no attributes, AppleDouble "._name" companions that macOS itself adds there (com.apple.provenance, for a
 // provenance-tracked process) are not reported as items, and the volume compares equal after mirror, versioning, deletion and
-// two-way runs;
+// two-way runs; a "._X" of the user's own (no AppleDouble file) is listed and synchronized, real companions stay hidden;
 // the icon loader (base/icon_loader_mac.*) renders file icons and thumbnails off the main thread
 
+#include <chrono>
+#include <cstring>
+#include <fstream>
 #include <thread>
 #include <zen/base64.h>
 #include <zen/scope_guard.h>
@@ -11,6 +14,10 @@
 #include <FreeFileSync/Source/base/icon_loader.h>
 #include "sync_test.h"
 #if defined ZEN_MAC
+    #include <fcntl.h>
+    #include <unistd.h>
+    #include <sys/stat.h>
+    #include <sys/xattr.h>
     #include <FreeFileSync/Source/base/icon_loader_mac.h>
 #endif
 
@@ -235,6 +242,243 @@ TEST_CASE(syncMacFatVolume) //FAT and exFAT
         CHECK_NO_ERRORS(renamed);
         CHECK_EQUAL(renamed.opCount(SO_RENAME_RIGHT), 1);
         checkVolumeTree(__FILE__, __LINE__, right, readTree(left));
+    }
+}
+
+
+namespace
+{
+const char appleDoubleHeader[] = {0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00}; //magic, version 2
+
+bool hasAppleDoubleHeader(const std::filesystem::path& filePath)
+{
+    std::ifstream in(filePath, std::ios::binary);
+    char header[sizeof(appleDoubleHeader)] = {};
+    in.read(header, sizeof(header));
+    return in.gcount() == static_cast<std::streamsize>(sizeof(header)) && std::memcmp(header, appleDoubleHeader, sizeof(header)) == 0;
+}
+
+std::string describeOnDisk(const Zstring& filePath) //what a "._" file holds now, for the log
+{
+    if (!pathExists(filePath))
+        return "not there";
+    if (hasAppleDoubleHeader(toPath(filePath)))
+        return "an AppleDouble file (" + std::to_string(std::filesystem::file_size(toPath(filePath))) + " bytes)";
+    try { return "the content \"" + readFile(filePath) + '"'; }
+    catch (const std::exception& e) { return e.what(); }
+}
+
+//what the native AFS has to list on a volume without native extended attributes (afs/native.cpp, hideAppleDoubleCompanions()):
+//everything on disk, except "._X" next to an X that is a regular file with the AppleDouble header. Relative, '/'-separated
+std::set<std::string> expectedListing(const Zstring& folder)
+{
+    namespace fs = std::filesystem;
+    std::set<std::string> out;
+    for (auto it = fs::recursive_directory_iterator(toPath(folder)); it != fs::recursive_directory_iterator(); ++it) //does not follow symlinks
+    {
+        const fs::path& p = it->path();
+        const std::string name = p.filename().string();
+        std::error_code ec;
+        if (name.size() > 2 && name.starts_with("._") && fs::is_regular_file(fs::symlink_status(p)) &&
+            fs::exists(fs::symlink_status(p.parent_path() / name.substr(2), ec)) && hasAppleDoubleHeader(p))
+            continue;
+        out.insert(fs::relative(p, toPath(folder)).generic_string());
+    }
+    return out;
+}
+
+//what the native AFS lists: the right side of a comparison with an empty folder
+std::set<std::string> engineListing(const Zstring& folder, const Zstring& emptyFolder)
+{
+    const RunResult res = compareOnly({.left = emptyFolder, .right = folder});
+    CHECK_NO_ERRORS(res);
+    std::set<std::string> out;
+    for (const std::string& row : res.plan)
+        out.insert(row.substr(0, row.rfind(": ")));
+    return out;
+}
+
+void checkListing(const char* file, int line, const Zstring& folder, const Zstring& emptyFolder)
+{
+    const std::set<std::string> listed   = engineListing(folder, emptyFolder);
+    const std::set<std::string> expected = expectedListing(folder);
+    ++checkCount;
+    if (listed != expected)
+    {
+        std::string msg = "native AFS listing of " + utfTo<std::string>(folder) + ":";
+        for (const std::string& p : expected) if (!listed  .contains(p)) msg += "\n    missing: " + p;
+        for (const std::string& p : listed)   if (!expected.contains(p)) msg += "\n    not expected: " + p;
+        reportFailure(file, line, msg);
+    }
+}
+
+std::string errnoText(int ec) { return std::string(::strerror(ec)) + " (errno " + std::to_string(ec) + ')'; }
+}
+
+
+TEST_CASE(syncMacFatAppleDoubleNames) //FAT and exFAT
+{
+    //hideAppleDoubleCompanions() hides only real AppleDouble companions: a user's own "._X" next to X is an item like any other
+    const bool tracked = provenanceTracked(testDir);
+    std::cout << "   process provenance-tracked: " << (tracked ? "yes" : "no") << std::endl;
+
+    for (const std::string fsType : {"MS-DOS", "ExFAT"})
+    {
+        std::cout << "   " << fsType << std::endl;
+        const Zstring base  = appendPath(testDir, utfTo<Zstring>(fsType));
+        const Zstring empty = appendPath(base, "empty");
+        const Zstring left  = appendPath(base, "left");
+        makeFolder(empty, "");
+
+        const Zstring imagePath = appendPath(base, "volume.dmg");
+        const Zstring mountPath = appendPath(base, "mnt");
+        makeFolder(mountPath, "");
+        runShell("hdiutil create -quiet -size 128m -fs " + utfTo<Zstring>(fsType) + " -volname ADNAMES " + escapeCommandArg(imagePath)); //throw SysError
+        runShell("hdiutil attach -quiet -nobrowse -noverify -noautoopen -mountpoint " + escapeCommandArg(mountPath) + ' ' + escapeCommandArg(imagePath));
+        ZEN_ON_SCOPE_EXIT(try { runShell("hdiutil detach -quiet -force " + escapeCommandArg(mountPath)); }
+                          catch (const SysError& e) { reportFailure(__FILE__, __LINE__, "hdiutil detach: " + utfTo<std::string>(e.toString())); });
+
+        //1. what the kernel does when this process writes "._X" next to an X it created (a companion of X exists exactly when
+        //   the process is tracked: com.apple.provenance)
+        const Zstring names = appendPath(mountPath, "names");
+        makeFolder(names, "");
+        writeFile(itemPath(names, "user.txt"), "item");
+        const Zstring userAd = itemPath(names, "._user.txt");
+        const bool hasCompanion = pathExists(userAd);
+        std::cout << "      X written by this process: companion \"._X\" " << (hasCompanion ? "made by macOS: " + describeOnDisk(userAd) : std::string("none")) << std::endl;
+        const std::string userData = "the user's own file named like a companion";
+        int fd = ::open(userAd.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
+        const int createError = fd == -1 ? errno : 0;
+        if (fd != -1)
+        {
+            CHECK(::write(fd, userData.data(), userData.size()) == static_cast<ssize_t>(userData.size()));
+            ::close(fd);
+        }
+        std::cout << "      open(\"._X\", O_CREAT | O_EXCL): " << (fd != -1 ? std::string("created") : errnoText(createError)) << std::endl;
+        if (hasCompanion)
+        {
+            CHECK_EQUAL(createError, EEXIST); //the companion is that file
+            //overwrite the companion with ordinary content: then it is no AppleDouble file, and must be listed
+            fd = ::open(userAd.c_str(), O_WRONLY | O_TRUNC | O_CLOEXEC);
+            const int truncError = fd == -1 ? errno : 0;
+            if (fd != -1)
+            {
+                const ssize_t written = ::write(fd, userData.data(), userData.size());
+                std::cout << "      open(\"._X\", O_TRUNC) and write(): " << (written == static_cast<ssize_t>(userData.size()) ? std::string("written") : errnoText(errno)) << std::endl;
+                ::close(fd);
+            }
+            else
+                std::cout << "      open(\"._X\", O_TRUNC): " << errnoText(truncError) << std::endl;
+            const ssize_t attrSize = ::listxattr(itemPath(names, "user.txt").c_str(), nullptr, 0, XATTR_NOFOLLOW);
+            std::cout << "      afterwards \"._X\" holds " << describeOnDisk(userAd) << "; listxattr(X): " << (attrSize >= 0 ? std::to_string(attrSize) + " bytes" : errnoText(errno)) << std::endl;
+        }
+        else
+            CHECK_EQUAL(createError, 0); //no companion: an ordinary name
+        checkListing(__FILE__, __LINE__, names, empty);
+        if (pathExists(userAd) && !hasAppleDoubleHeader(toPath(userAd)))
+            CHECK(engineListing(names, empty).contains("._user.txt"));
+
+        //2. a real companion (an attribute set explicitly: macOS writes it as "._real.txt") stays hidden, tracked or not; an
+        //   AppleDouble file without its item and a folder named like a companion are listed
+        writeFile(itemPath(names, "real.txt"), "with an attribute");
+        CHECK(::setxattr(itemPath(names, "real.txt").c_str(), "com.freefilesync.synctest", "value", 5, 0, XATTR_NOFOLLOW) == 0);
+        CHECK(hasAppleDoubleHeader(toPath(itemPath(names, "._real.txt"))));
+        writeFile(itemPath(names, "._orphan.txt"), readFile(itemPath(names, "._real.txt"))); //AppleDouble content, no "orphan.txt"
+        makeFolder(names, "dir");
+        std::error_code ec;
+        std::filesystem::create_directory(toPath(itemPath(names, "._dir")), ec);
+        std::cout << "      folder \"._dir\" next to \"dir\": " << (ec ? "refused: " + ec.message() : std::string("created")) << std::endl;
+        checkListing(__FILE__, __LINE__, names, empty);
+        const std::set<std::string> listed = engineListing(names, empty);
+        CHECK(!listed.contains("._real.txt"));
+        CHECK(listed.contains("real.txt"));
+        CHECK(listed.contains("._orphan.txt"));
+        if (!ec)
+            CHECK(listed.contains("._dir"));
+
+        //3. a mirror of an APFS folder with "data.txt" and a "._data.txt" of its own (no AppleDouble file) to the volume
+        const time_t t0 = timeBase();
+        makeTree(left,
+        {
+            {"data.txt",   {Entry::Type::file, "data", t0}},
+            {"._data.txt", {Entry::Type::file, userData, t0}},
+        });
+        const Zstring right = appendPath(mountPath, "target");
+        makeFolder(right, "");
+        const SyncCfg cfg{.left = left, .right = right};
+        const RunResult res = runSync(cfg);
+        const RunResult again = compareOnly(cfg);
+        std::cout << "      mirror of X and a user's \"._X\": " << res.errors.size() << " error(s); on the volume \"._X\" holds "
+                  << describeOnDisk(itemPath(right, "._data.txt")) << "; next comparison: " << (again.allEqual ? "equal" : "differences") << std::endl;
+        if (!tracked)
+        {
+            //without companions the name is an ordinary one: the file syncs like any other
+            CHECK_NO_ERRORS(res);
+            CHECK_NO_ERRORS(again);
+            CHECK(again.allEqual);
+            CHECK_EQUAL(readFile(itemPath(right, "._data.txt")), userData);
+        }
+        else if (!again.allEqual || !res.errors.empty()) //the kernel keeps X's provenance in that name (measured, see the log)
+            std::cout << res.toString() << again.toString();
+        checkListing(__FILE__, __LINE__, right, empty);
+
+        //4. cost of the header check: n files with a companion each (an attribute set: the companion is there whether the process
+        //   is tracked or not). The listing opens every companion (a candidate); the same calls as isAppleDoubleFile() on their
+        //   own show what that part costs
+        const int n = 2000;
+        const Zstring many = appendPath(mountPath, "many");
+        makeFolder(many, "");
+        for (int i = 0; i < n; ++i)
+        {
+            const Zstring filePath = itemPath(many, "file " + std::to_string(i) + ".txt");
+            writeFile(filePath, "x");
+            if (::setxattr(filePath.c_str(), "com.freefilesync.synctest", "v", 1, 0, XATTR_NOFOLLOW) != 0)
+            {
+                reportFailure(__FILE__, __LINE__, "setxattr: " + errnoText(errno));
+                break;
+            }
+        }
+        using Clock = std::chrono::steady_clock;
+        const auto msSince = [](Clock::time_point start) { return std::chrono::duration<double, std::milli>(Clock::now() - start).count(); };
+        double listingFirst = 0, listingBest = 1e9, checkFirst = 0, checkBest = 1e9;
+        for (int run = 0; run < 3; ++run)
+        {
+            Clock::time_point start = Clock::now();
+            CHECK_EQUAL(engineListing(many, empty).size(), static_cast<size_t>(n)); //the companions hidden
+            const double listing = msSince(start);
+
+            start = Clock::now();
+            const int dirFd = ::open(many.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+            CHECK(dirFd != -1);
+            int adFiles = 0;
+            for (int i = 0; i < n && dirFd != -1; ++i)
+            {
+                const std::string name = "._file " + std::to_string(i) + ".txt";
+                struct stat st = {};
+                if (::fstatat(dirFd, name.c_str(), &st, AT_SYMLINK_NOFOLLOW) != 0 || !S_ISREG(st.st_mode))
+                    continue;
+                const int fd2 = ::openat(dirFd, name.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK);
+                if (fd2 == -1)
+                    continue;
+                char header[sizeof(appleDoubleHeader)] = {};
+                if (::fstat(fd2, &st) == 0 && ::pread(fd2, header, sizeof(header), 0) == static_cast<ssize_t>(sizeof(header)) &&
+                    std::memcmp(header, appleDoubleHeader, sizeof(header)) == 0)
+                    ++adFiles;
+                ::close(fd2);
+            }
+            if (dirFd != -1)
+                ::close(dirFd);
+            const double check = msSince(start);
+            CHECK_EQUAL(adFiles, n);
+
+            if (run == 0) { listingFirst = listing; checkFirst = check; }
+            listingBest = std::min(listingBest, listing);
+            checkBest   = std::min(checkBest,   check);
+        }
+        std::cout << "      " << n << " files with a companion each: comparison " << static_cast<int>(listingFirst) << " ms first, "
+                  << static_cast<int>(listingBest) << " ms best of 3; header checks of the " << n << " companions "
+                  << static_cast<int>(checkFirst) << " ms first, " << static_cast<int>(checkBest) << " ms best (about "
+                  << static_cast<int>(checkBest * 1000 / n) << " µs per candidate)" << std::endl;
     }
 }
 
