@@ -20,7 +20,7 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M3 macOS | 4. `wx+/`, `ui/` without GTK; app bundles | done | `bd9f1bf..1152282`, fixes `1152282..83f890e` | 9 findings: all fixed |
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | done | `83f890e..bf0ef72`, fixes `d284031..8420f50` | 7 findings: all fixed |
 | M3 macOS | Pull request | merged as [#13](https://github.com/cuong-tran/FreeFileSync/pull/13) (squash, `5b2dbe1`) after all checks passed | | no review threads |
-| CI | macOS jobs on the owner's self-hosted runner (label `self-hosted`) | workflows switched (`79879b9..074c8df`); blocked on the Mac's setup, see "Needed from the repository owner"; review fixes in progress | `79879b9..074c8df` | 9 findings, see below |
+| CI | macOS jobs on the owner's self-hosted runner (label `self-hosted`) | running: all four workflows green on the Mac and on hosted runners at `0b6138c`; second review's fixes in progress | `79879b9..0b6138c` | first review: 9 findings, all fixed; second: 7 findings, see below |
 | M4 Windows | | not started: paused by the owner for testing on a real Mac | | |
 
 ## Paused
@@ -85,6 +85,7 @@ To resume: read that report (or what the owner relays), fix what it found on `de
 | 2026-11-25 | Pause before M4 so the owner can test the Mac apps on a real Mac | Asked by the owner. |
 | 2026-11-25 | The macOS CI jobs run on the owner's self-hosted runner (their own Mac, label `self-hosted`); hosted runners stay as fallback and for pull requests from forks | Asked by the owner; hosted macOS runners were short of capacity. Rules for that machine: no fork code, nothing from the screen or home folder in logs or artifacts, no software installs or `sudo`, tests clean up after themselves. |
 | 2026-11-25 | macOS: on volumes without native extended attributes (FAT, exFAT, some network shares), a `._X` file next to an existing `X` is not reported as an item by the native file system | On macOS 27 every file a provenance-tracked process creates (any downloaded app opened through Gatekeeper) gets `com.apple.provenance`, which such volumes store as `._X`; the app cannot remove it. Without this, each sync to a FAT or exFAT volume would show phantom target-only files. Finder treats these files the same way. Orphaned `._X` files stay visible. |
+| 2026-11-26 | Only real AppleDouble files (checked by their header) are hidden as companions on volumes without native extended attributes | A user's ordinary file named `._X` must stay visible. A real AppleDouble `._X` beside `X` on an APFS side still cannot be mirrored to FAT/exFAT (macOS owns that name there); the exclude filter `*/._*` is the remedy. |
 
 ## Needed from the repository owner
 
@@ -118,7 +119,7 @@ Marked `KNOWN_ISSUE` in `Tests/zen`, not fixed (upstream code):
 - The Mac UI has only been seen through CI screenshots. To check on a real Mac: main window layout (fonts and sizes were set for GTK), dark mode, Dock icon, tray item, the application menu, opening files from Finder, drag and drop, folder picker, sounds, "Show in Finder". Dock progress (`wx+/taskbar_mac.cpp`, `dock_tile_mac.mm`) is implemented but has never been seen. Not testable in CI: Finder opens, the modal-dialog guards, starting a batch process from a running app. The app icon is upscaled from a 128 px image.
 - Crash capture for x86_64 is tested on a real Intel runner only on manual dispatch (`sentry_dry_run`); under Rosetta 2 on the arm64 runners Crashpad catches no crashes, so those scenarios are skipped there with a printed reason.
 - The first-start crash-report notice may not render its explanatory text on macOS (a blank area in the CI screenshot). To check on a real Mac.
-- `f-kept-then-deleted` once found two dumps instead of one in a dry run; not reproduced since, and the test now prints the first run's log if it recurs.
+- Flaky Sentry test on hosted macOS runners: `f-kept-then-sent`/`f-kept-then-deleted` sometimes find two dumps for one crash (seen on arm64 and Intel hosted runners, never on the owner's Mac). Under investigation with the second runner review.
 - The dSYM path for the Mac apps is exercised by the dry run, but a real upload to Sentry has never happened (no secrets).
 - The DMGs (`FreeFileSync-14.13-macos-<arch>.dmg`, about 19 MB, both apps plus an Applications link) have no background picture; their window layout has only been checked by the script, not by eye.
 
@@ -277,12 +278,26 @@ Result so far: the macOS jobs of all four workflows choose the owner's Mac for p
 
 | # | Finding | Severity | Outcome |
 |---|---|---|---|
-| 1 | The toolchain report can be uploaded unscrubbed when its step fails | important | sent for fixing |
-| 2 | Window screenshots from the Mac can show the owner's login and are uploaded | important | sent for fixing (no screenshots on self-hosted) |
-| 3 | Cleanup misses leftover apps that were started by relative path | important | sent for fixing |
-| 4 | Crash-report filter misses reports when the bundle path contains a symlink | important | sent for fixing |
-| 5 | Title and error-popup checks may silently turn off on hosted runners | important | sent for fixing |
-| 6 | Disk-image cleanup silently does nothing without a usable python3 | important | sent for fixing |
-| 7 | The local cache is never trimmed when the work folder path contains a blank | nit | sent for fixing |
-| 8 | The trash cleanup's path check can be bypassed with `..` | nit | sent for fixing |
-| 9 | The diagnostics job skips setup/cleanup and prints FileVault, SIP and admin status | nit | sent for fixing |
+| 1 | The toolchain report can be uploaded unscrubbed when its step fails | important | fixed in `3375ed1`: scrubbing is its own `if: always()` step before every upload |
+| 2 | Window screenshots from the Mac can show the owner's login and are uploaded | important | fixed in `c3c6a65`, `3375ed1`: no screenshots at all off GitHub's runners |
+| 3 | Cleanup misses leftover apps that were started by relative path | important | fixed in `53af6bf`, `3375ed1`: matched by resolved executable; apps start by absolute path; verified on the Mac |
+| 4 | Crash-report filter misses reports when the bundle path contains a symlink | important | fixed: both path spellings are matched |
+| 5 | Title and error-popup checks may silently turn off on hosted runners | important | fixed: decided from the window list; hosted logs show "window titles: readable" |
+| 6 | Disk-image cleanup silently does nothing without a usable python3 | important | fixed: `PlistBuddy`; an unreadable list is a warning |
+| 7 | The local cache is never trimmed when the work folder path contains a blank | nit | fixed; self-test uses a path with blanks |
+| 8 | The trash cleanup's path check can be bypassed with `..` | nit | fixed: strict validation with 23 hostile and benign self-test cases |
+| 9 | The diagnostics job skips setup/cleanup and prints FileVault, SIP and admin status | nit | fixed: manual runs only, with setup and cleanup; the security-posture lines are gone |
+
+### Self-hosted macOS runner, second round (`074c8df..0b6138c`, `/code-review medium`)
+
+Result: everything builds and passes on the owner's Mac (macOS 27.2, Xcode 27.2; about 27 minutes for all four workflows, one job after another) and on GitHub's runners. Fixed on the way: F1 and F12 of the Mac test report, build-machine paths in the libraries and apps (`check-binaries` is now an error), `mktemp -d` ignoring `TMPDIR` on macOS 27, and the AppleDouble companions on FAT/exFAT (`e9ee443`). The kernel renames and removes a companion with its item, so the engine only has to hide it from listings.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | A second `mac-runner.sh cleanup` in a job fails, so the diagnostics workflow ends red and skips cleanup stages | important | sent for fixing |
+| 2 | Any `._X` next to `X` is hidden on FAT/exFAT/network volumes, also an ordinary user file of that name | important | sent for fixing (hide only real AppleDouble files) |
+| 3 | A failed local cache restore is reported as a hit | important | sent for fixing |
+| 4 | The diagnostics FAT probe mounts an image outside the runner's temp folder | nit | sent for fixing (probes removed) |
+| 5 | The start check can pass on hosted runners without testing the window title | nit | sent for fixing |
+| 6 | `check-binaries` can report a binary clean when the home path contains special characters | nit | sent for fixing |
+| 7 | Usage text omits `self-test` | nit | sent for fixing |
