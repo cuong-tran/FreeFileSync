@@ -6,10 +6,21 @@
 #pragma once
 
 #include <zen/basic_math.h>
+#include <zen/build_info.h>
 #include <wx/colour.h>
 
 namespace zen
 {
+#if defined ZEN_MAC
+//a color computed from the system colors each time it is used, for members that would otherwise keep the colors of the appearance
+//at construction: follows a light/dark switch while the app runs (macOS)
+struct LiveColor
+{
+    operator wxColor() const { return calc(); }
+    wxColor (*calc)();
+};
+#endif
+
 inline
 double srgbDecode(unsigned char c) //https://en.wikipedia.org/wiki/SRGB
 {

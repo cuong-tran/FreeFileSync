@@ -1171,8 +1171,12 @@ private:
     const int widthNodeStatus_;
 
     const wxImage rootIcon_;
+#if defined ZEN_MAC //light/dark switch while the app runs: against the current colors
+    const LiveColor mouseHighlightColor_{[] { return enhanceContrast(*wxBLUE, wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW), 5 /*contrastRatioMin*/); }};
+#else
     const wxColor mouseHighlightColor_ = enhanceContrast(*wxBLUE, //primarily needed for dark mode!
                                                          wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW), 5 /*contrastRatioMin*/); //W3C recommends >= 4.5
+#endif
 
     Grid& grid_;
     bool showPercentBar_ = true;

@@ -13,6 +13,8 @@
 #include "color_tools.h"
 #if defined ZEN_LINUX
     #include <gtk/gtk.h>
+#elif defined ZEN_MAC
+    #include "darkmode_mac.h"
 #endif
 
 using namespace zen;
@@ -68,6 +70,7 @@ private:
 
 
 std::optional<bool> globalDefaultThemeIsDark;
+wxColor globalGrayTextColor; //the wxSYS_COLOUR_GRAYTEXT the windows were made with: see updateDerivedSystemColors()
 }
 
 
@@ -77,7 +80,8 @@ void zen::colorThemeInit(wxApp& app, ColorTheme colTheme) //throw FileError
     assert(wxTopLevelWindows.empty());
 
     globalDefaultThemeIsDark = wxSystemSettings::GetAppearance().AreAppsDark();
-    ZEN_ON_SCOPE_EXIT(if (!refGlobalColorHook()) refGlobalColorHook() = std::make_unique<SysColorsHook>()); //*after* SetAppearance()
+    ZEN_ON_SCOPE_EXIT(if (!refGlobalColorHook()) refGlobalColorHook() = std::make_unique<SysColorsHook>(); //*after* SetAppearance()
+                      globalGrayTextColor = wxSystemSettings::GetColour(wxSYS_COLOUR_GRAYTEXT));
 
     //caveat: on macOS there are more themes than light/dark: https://developer.apple.com/documentation/appkit/nsappearance/name-swift.struct
     if (colTheme != ColorTheme::System && //"System" is already the default for macOS/Linux(GTK3)
@@ -93,6 +97,41 @@ void zen::colorThemeCleanup()
 }
 
 
+void zen::updateDerivedSystemColors(ColorTheme currentTheme)
+{
+    /*  "System" in equalAppearance() means the system's appearance: follow it while the app itself follows the system. With an
+        explicit Light/Dark theme the app's appearance no longer tells what the system has, and wxOSX reports no switch then; on
+        macOS that value is not needed then: changeColorTheme(System) hands the appearance back to the system  */
+    if (currentTheme == ColorTheme::System)
+        globalDefaultThemeIsDark = wxSystemSettings::GetAppearance().AreAppsDark();
+
+    if (refGlobalColorHook()) //SysColorsHook keeps the enhanced gray text color of the appearance it was created for
+        refGlobalColorHook() = std::make_unique<SysColorsHook>();
+
+    /*  the generated dialog code sets SetForegroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_GRAYTEXT)) once: a fixed color,
+        which a new appearance doesn't change => windows still showing the old gray get the new one (all top-level windows)  */
+    if (const wxColor grayNew = wxSystemSettings::GetColour(wxSYS_COLOUR_GRAYTEXT);
+        grayNew != globalGrayTextColor)
+    {
+        const wxColor grayOld = globalGrayTextColor;
+        globalGrayTextColor = grayNew;
+
+        auto updateGray = [&](wxWindow& win, auto& updateGrayRef) -> void
+        {
+            if (win.GetForegroundColour() == grayOld)
+            {
+                win.SetForegroundColour(grayNew);
+                win.Refresh();
+            }
+            for (wxWindow* child : win.GetChildren())
+                updateGrayRef(*child, updateGrayRef);
+        };
+        for (wxWindow* tlw : wxTopLevelWindows)
+            updateGray(*tlw, updateGray);
+    }
+}
+
+
 bool zen::equalAppearance(ColorTheme colTheme1, ColorTheme colTheme2)
 {
     if (colTheme1 == ColorTheme::System) colTheme1 = *globalDefaultThemeIsDark ? ColorTheme::Dark : ColorTheme::Light;
@@ -103,6 +142,15 @@ bool zen::equalAppearance(ColorTheme colTheme1, ColorTheme colTheme2)
 
 void zen::changeColorTheme(ColorTheme colTheme) //throw ErrorRestartRequired, FileError
 {
+#if defined ZEN_MAC //"System": really follow the system again, also through later switches (wxEVT_SYS_COLOUR_CHANGED redraws the rest)
+    if (colTheme == ColorTheme::System)
+    {
+        macos::followSystemAppearance();
+        globalDefaultThemeIsDark = wxSystemSettings::GetAppearance().AreAppsDark();
+        refGlobalColorHook() = std::make_unique<SysColorsHook>();
+        return;
+    }
+#endif
     if (colTheme == ColorTheme::System) //SetAppearance(System) isn't working reliably! surprise!?
         colTheme = *globalDefaultThemeIsDark ? ColorTheme::Dark : ColorTheme::Light;
 

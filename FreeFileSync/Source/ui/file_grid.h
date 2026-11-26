@@ -5,6 +5,7 @@
 // *****************************************************************************
 #pragma once
 
+#include <zen/build_info.h>
 #include <wx+/grid.h>
 #include "file_view.h"
 #include "../icon_buffer.h"
@@ -26,6 +27,9 @@ void setupIcons(zen::Grid& gridLeft, zen::Grid& gridCenter, zen::Grid& gridRight
 void setItemPathForm(zen::Grid& grid, ItemPathFormat fmt); //only for left/right grid
 
 void refresh(zen::Grid& gridLeft, zen::Grid& gridCenter, zen::Grid& gridRight);
+#if defined ZEN_MAC
+void updateSystemColors(zen::Grid& gridLeft, zen::Grid& gridCenter, zen::Grid& gridRight); //light/dark switch while the app runs
+#endif
 
 void setScrollMaster(zen::Grid& grid);
 

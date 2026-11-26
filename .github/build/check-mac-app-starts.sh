@@ -10,17 +10,22 @@
 #     ReportCrash a few seconds to write it).
 #   check-mac-app-starts.sh <bundle.app> <title regex> <screenshot.png> [<app argument>...]
 #     e.g. check-mac-app-starts.sh FreeFileSync.app '^FreeFileSync [0-9.]+ ' FreeFileSync.png
-# Windows come from CGWindowListCopyWindowInfo through JavaScript for Automation. Their titles (kCGWindowName) are readable only
+# Windows come from CGWindowListCopyWindowInfo through JavaScript for Automation: layers 0 to 8, i.e. normal (0), floating (3) and
+# modal panel windows (8: a modal dialog such as About or an error popup can be there, seen on macOS 27.2), not the menu bar status
+# item (25). Their titles (kCGWindowName) are readable only
 # with the screen recording permission, which GitHub's runners grant; the check uses titles once the window list shows one for
 # a window of the app ("window titles: readable" in the log), else (the owner's self-hosted Mac, unless they granted it) it
 # counts the app's windows: EXPECT_WINDOWS=<n> (also checked when titles are readable, so GitHub's runners keep the counts
 # honest), otherwise at least one. On GitHub's runners (RUNNER_ENVIRONMENT=github-hosted) titles must be readable: if the app
 # shows windows for 10 s and none has a title in the list, the check fails instead of falling back to the count, so that the
 # title regex is always tested somewhere.
-# Screenshots: only on GitHub's runners (RUNNER_ENVIRONMENT=github-hosted), of the whole screen; anywhere else (the self-hosted
-# runner, a local run on someone's Mac) none is taken and <screenshot.png> is not created. SCREENSHOT_TO_LOG=1: also print a
-# small JPEG of the screenshot as base64 into the log (between "-----BEGIN SCREENSHOT <name>-----" and "-----END
-# SCREENSHOT-----"); GitHub's runners only, too.
+# Screenshots: only on GitHub's runners (RUNNER_ENVIRONMENT=github-hosted), of the app's own windows one by one: <screenshot.png>
+# is the window whose title matched (the frontmost one if none did), every other window of the app goes next to it as
+# <screenshot>-window<n>.png; anywhere else (the self-hosted runner, a local run on someone's Mac) none is taken and
+# <screenshot.png> is not created. SCREENSHOT_TO_LOG=1: also print a small JPEG of each screenshot as base64 into the log (between
+# "-----BEGIN SCREENSHOT <name>-----" and "-----END SCREENSHOT-----"); GitHub's runners only, too.
+# NSUserDefaults ignores HOME, so the app's preferences plist lands in the real ~/Library/Preferences; outside CI it is removed
+# afterwards unless it existed before the run (in CI, mac-runner.sh setup/cleanup take care of it).
 set -euo pipefail
 [ $# -ge 3 ] || { echo "usage: $0 <bundle.app> <title regex> <screenshot.png> [<app argument>...]" >&2; exit 2; }
 titleRegex="$2" shot="$3"
@@ -37,10 +42,17 @@ exe="$app/Contents/MacOS/$name"
 
 work="$(mktemp -d "$(t="${TMPDIR:-/tmp}"; echo "${t%/}")/start-check.XXXXXX")" # explicit template (TMPDIR without its trailing slash): macOS 27's mktemp -d ignores TMPDIR
 pid=""
+bundleId="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist" 2>/dev/null || true)"
+prefsPlist="$HOME/Library/Preferences/$bundleId.plist"
+prefsExisted=yes # also when unknown: never delete then
+# outside CI only: in CI, mac-runner.sh setup/cleanup save and restore both apps' preferences (self-hosted), and GitHub's runners
+# are thrown away
+[ -n "${GITHUB_ACTIONS:-}" ] || [ -z "$bundleId" ] || [ -e "$prefsPlist" ] || prefsExisted=no
 cleanup()
 {
     if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; fi
     rm -rf "$work"
+    if [ "$prefsExisted" = no ]; then defaults delete "$bundleId" >/dev/null 2>&1 || true; rm -f "$prefsPlist"; fi
 }
 trap cleanup EXIT
 mkdir -p "$work/home"
@@ -55,11 +67,11 @@ hosted=no
 titles=unknown # "readable" once a window of the app shows a title in the window list; decided from what the list returns
 unreadableSince="" # GitHub's runners: the poll since which the app shows windows, none with a title
 
-windowList() # on-screen windows (layer 0: normal windows) of $pid, one per line: "<window id> <width>x<height> <title or <no title>>"
+windowList() # on-screen windows (layers 0 to 8, see the header) of $pid, front to back, one per line: "<window id> <width>x<height> <title or <no title>>"
 {
     osascript -l JavaScript -e "ObjC.import('CoreGraphics');
         var list = ObjC.deepUnwrap(ObjC.castRefToObject(\$.CGWindowListCopyWindowInfo(\$.kCGWindowListOptionOnScreenOnly, 0))) || [];
-        list.filter(function (w) { return w.kCGWindowOwnerPID == $pid && w.kCGWindowLayer == 0; })
+        list.filter(function (w) { return w.kCGWindowOwnerPID == $pid && w.kCGWindowLayer >= 0 && w.kCGWindowLayer <= 8; })
             .map(function (w) { return w.kCGWindowNumber + ' ' + Math.round(w.kCGWindowBounds.Width) + 'x' + Math.round(w.kCGWindowBounds.Height) + ' ' +
                                        (typeof w.kCGWindowName === 'string' && w.kCGWindowName !== '' ? w.kCGWindowName : '<no title>'); }).join('\n')" 2>/dev/null || true
 }
@@ -130,16 +142,27 @@ sed 's/^/    /' "$work/windows.txt"
 countAfter="$(windowCount "$work/windows.txt")"
 
 if [ "$hosted" = yes ]; then # (never on a person's Mac: see the header)
-    screencapture -x "$shot" || echo "::warning::screencapture failed"
+    # the app's windows one by one (-l: that window only, -o: without its shadow); the matched one (else the frontmost) first
+    shots=() matchedId="" n=1
+    while read -r id _ title; do
+        if [ -z "$matchedId" ] && [[ "$title" =~ $titleRegex ]]; then matchedId="$id"; fi
+    done < "$work/windows.txt"
+    [ -n "$matchedId" ] || matchedId="$(head -n 1 "$work/windows.txt" | cut -d' ' -f1)"
+    while read -r id _; do
+        [ -n "$id" ] || continue
+        if [ "$id" = "$matchedId" ]; then target="$shot"; else n=$((n + 1)); target="${shot%.*}-window$n.png"; fi
+        if screencapture -x -o -l"$id" "$target"; then shots+=("$target"); else echo "::warning::screencapture of window $id failed"; fi
+    done < "$work/windows.txt"
 fi
-if [ "${SCREENSHOT_TO_LOG:-0}" = 1 ] && [ "$hosted" = yes ] && [ -f "$shot" ]; then
-    if sips -Z 900 -s format jpeg -s formatOptions 55 "$shot" --out "$work/small.jpg" >/dev/null; then
-        echo "::group::screenshot $(basename "$shot") (base64 JPEG)"
-        echo "-----BEGIN SCREENSHOT $(basename "$shot")-----"
+if [ "${SCREENSHOT_TO_LOG:-0}" = 1 ] && [ "$hosted" = yes ]; then
+    for f in ${shots[@]+"${shots[@]}"}; do
+        if ! [ -f "$f" ] || ! sips -Z 900 -s format jpeg -s formatOptions 55 "$f" --out "$work/small.jpg" >/dev/null; then continue; fi
+        echo "::group::screenshot $(basename "$f") (base64 JPEG)"
+        echo "-----BEGIN SCREENSHOT $(basename "$f")-----"
         base64 -i "$work/small.jpg" | fold -w 120
         echo "-----END SCREENSHOT-----"
         echo "::endgroup::"
-    fi
+    done
 fi
 
 kill -0 "$pid" 2>/dev/null || { wait "$pid" && rc=0 || rc=$?; pid=""; fail "ended by itself after showing its window (exit code $rc)"; }

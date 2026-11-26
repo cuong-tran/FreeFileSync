@@ -296,6 +296,17 @@ public:
 #endif
         Center(); //apply *after* dialog size change!
 
+#if defined ZEN_MAC
+        /*  wxOSX: wxRichTextCtrl lays out its text lazily, inside the next paint. Setting the focus below hides the control's caret,
+            which repaints only the caret's rectangle, and when that paint is the one doing the layout, wrapped paragraphs are not
+            drawn: blank space where the detail text belongs (docs/MAC_TEST_REPORT.md, F4). => lay out at the final size now  */
+        if (m_richTextDetail->IsShown())
+        {
+            m_richTextDetail->LayoutContent();
+            m_richTextDetail->Refresh();
+        }
+#endif
+
 
         Raise(); //[!] popup may be triggered by ffs_batch job running in the background!
 

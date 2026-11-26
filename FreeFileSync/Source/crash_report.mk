@@ -5,7 +5,8 @@
 #sentry-native comes from pkg-config (sentry-native.pc, written by .github/build/build-sentry-native.sh). Build variables:
 #   SENTRY_DSN          required; compiled in through a generated header, so it is on no command line (keep it out of logs)
 #   SENTRY_ENVIRONMENT  "dev" (default), "ci" or "release"
-#   FFS_GIT_SHA         short commit hash for the release name freefilesync@<version>+<sha> (default: none => "+dev")
+#   FFS_GIT_SHA         short commit hash for the release name freefilesync@<version>+<sha> (default: the short hash of HEAD;
+#                       outside a git checkout none => "+dev")
 
 crashReportDir := $(dir $(lastword $(MAKEFILE_LIST)))
 

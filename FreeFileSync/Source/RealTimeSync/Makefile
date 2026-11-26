@@ -75,7 +75,7 @@ LDFLAGS  += $(macTargetFlags)
 CXXFLAGS += $(shell $(macWxConfig) --cxxflags --debug=no)
 LDFLAGS  += $(call macWxLibs,std aui richtext)
 
-#CoreServices: FSEvents (zen/dir_watcher_mac.cpp); Foundation: NSError; AppKit, ImageIO, UniformTypeIdentifiers: base/icon_loader_mac.mm
+#CoreServices: FSEvents (zen/dir_watcher_mac.cpp), LaunchServices (../ffs_paths_mac.cpp); Foundation: NSError; AppKit, ImageIO, UniformTypeIdentifiers: base/icon_loader_mac.mm
 LDFLAGS  += -framework CoreFoundation -framework CoreServices -framework Foundation -framework AppKit -framework ImageIO -framework UniformTypeIdentifiers
 endif
 
@@ -137,6 +137,9 @@ cppFiles += ../../../zen/dir_watcher_mac.cpp
 cppFiles += ../../../zen/sys_error_mac.mm
 cppFiles += ../base/icon_loader_mac.cpp
 cppFiles += ../base/icon_loader_mac.mm
+cppFiles += ../ffs_paths_mac.cpp
+cppFiles += ../../../wx+/edit_menu_mac.mm
+cppFiles += ../../../wx+/darkmode_mac.mm
 endif
 
 #object files stay inside this checkout instead of a fixed folder in the shared temp directory:
@@ -186,7 +189,7 @@ $(objPath)/ffs/src/rts/%.o : %
 #Objective-C++ (macOS *_mac.mm files) with automatic reference counting
 $(filter %.mm.o,$(objFiles)): CXXFLAGS += -fobjc-arc
 #AppKit/CoreGraphics headers of the macOS 26 SDK are no valid C++26: see ../Makefile
-$(filter %/icon_loader_mac.mm.o,$(objFiles)): CXXFLAGS += -std=c++23
+$(filter %/icon_loader_mac.mm.o %/edit_menu_mac.mm.o %/darkmode_mac.mm.o,$(objFiles)): CXXFLAGS += -std=c++23
 
 #recompile wx+/darkmode.cpp when the wxColorHook check above changes its result (e.g. after switching between a patched and a stock wxWidgets):
 #make doesn't track compiler flags, so keep the result in a stamp file that is rewritten only when the result changes

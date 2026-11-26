@@ -363,6 +363,7 @@ private:
     bool operationInProgress_  = false; //see SingleOperationBlocker; e.g. do NOT allow dialog exit while sync is running => crash!!!
 
 #if defined ZEN_MAC
+    wxMenu* menuEdit_ = nullptr; //stays enabled during comparison/synchronization (UiInputDisabler): its items go to the first responder
     bool isBlockedForAppMenu() const; //a modal dialog is open or the window is disabled: About/Preferences/Quit and Finder opens must wait
     void onFinderFilesPendingIdle(wxIdleEvent& event);
     std::vector<Zstring> finderFilesPending_; //see openConfigFilesFromFinder()
