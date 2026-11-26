@@ -40,7 +40,7 @@ wxMenu& addEditMenu(wxMenuBar& menuBar, size_t pos) //returns the Edit menu, own
         menuEdit->Bind(wxEVT_MENU, [id, keyCode](wxCommandEvent& event)
         {
             wxWindow* focus = wxWindow::FindFocus();
-            if (!focus)
+            if (!focus || !focus->IsEnabled()) //a disabled window (e.g. the main window during comparison/synchronization) gets no input
                 return;
 
             wxCommandEvent cmdEvent(wxEVT_MENU, id);
