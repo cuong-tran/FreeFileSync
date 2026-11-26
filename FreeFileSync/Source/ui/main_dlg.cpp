@@ -363,6 +363,9 @@ void MainDialog::UiInputDisabler::disableGuiElementsImpl(bool enableAbort)
 
 
     for (size_t pos = 0; pos < mainDlg_.m_menubar->GetMenuCount(); ++pos)
+#if defined ZEN_MAC //the Edit menu stays usable in dialogs shown during an operation (password prompts, error popups: Cmd+V, Cmd+C)
+        if (mainDlg_.m_menubar->GetMenu(pos) != mainDlg_.menuEdit_)
+#endif
         mainDlg_.m_menubar->EnableTop(pos, false);
 
     if (enableAbort)
@@ -404,6 +407,9 @@ void MainDialog::UiInputDisabler::enableGuiElementsImpl()
     mainDlg_.EnableCloseButton(true);
 
     for (size_t pos = 0; pos < mainDlg_.m_menubar->GetMenuCount(); ++pos)
+#if defined ZEN_MAC //the Edit menu stays usable in dialogs shown during an operation (password prompts, error popups: Cmd+V, Cmd+C)
+        if (mainDlg_.m_menubar->GetMenu(pos) != mainDlg_.menuEdit_)
+#endif
         mainDlg_.m_menubar->EnableTop(pos, true);
 
     mainDlg_.m_buttonCancel->Disable();
@@ -1126,7 +1132,7 @@ imgFileManagerSmall_([]
     Bind(wxEVT_MENU, [this](wxCommandEvent& event) { if (!operationInProgress_ && !isBlockedForAppMenu()) onMenuOptions(event); else wxBell(); }, wxID_PREFERENCES);
     Bind(wxEVT_MENU, [this](wxCommandEvent& event) { if (!isBlockedForAppMenu()) onMenuQuit(event); /*onClose() vetoes during comparison/sync*/ else wxBell(); }, wxID_EXIT);
 
-    addEditMenu(*m_menubar, 1 /*after "File"*/); //Cmd+V, Cmd+Z, ... in text fields, also in dialogs
+    menuEdit_ = &addEditMenu(*m_menubar, 1 /*after "File"*/); //Cmd+V, Cmd+Z, ... in text fields, also in dialogs
 #endif
 
     //calculate witdh of folder pair manually (if scrollbars are visible)

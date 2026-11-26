@@ -18,7 +18,7 @@ namespace zen
 /*  macOS: text fields get Undo, Cut, Copy, Paste and Select All (and their Cmd shortcuts) from the Edit menu of the menu bar: without
     one, Cmd+V and Cmd+Z do nothing in dialogs (docs/MAC_TEST_REPORT.md, F6). Added in code, not in the wxFormBuilder-generated files  */
 inline
-void addEditMenu(wxMenuBar& menuBar, size_t pos)
+wxMenu& addEditMenu(wxMenuBar& menuBar, size_t pos) //returns the Edit menu, owned by the menu bar
 {
     auto menuEdit = new wxMenu;
     menuEdit->Append(wxID_UNDO, _("&Undo") + L"\tCtrl+Z"); //wxOSX: Ctrl = Cmd
@@ -32,6 +32,7 @@ void addEditMenu(wxMenuBar& menuBar, size_t pos)
     menuBar.Insert(pos, menuEdit, _("&Edit"));
 
     macos::setNativeUndoRedoActions(menuEdit->GetHMenu(), 0 /*posUndo*/, 1 /*posRedo*/);
+    return *menuEdit;
 }
 #endif
 }
