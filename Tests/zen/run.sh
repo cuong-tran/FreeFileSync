@@ -23,7 +23,7 @@ if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4) ))
 fi
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "$(t="${TMPDIR:-/tmp}"; echo "${t%/}")/zen-test.XXXXXX")" # explicit template (TMPDIR without its trailing slash): macOS 27's mktemp -d ignores TMPDIR
 trap 'wait; rm -rf "$WORK"' EXIT # wait: compile jobs still running after a failed one
 BIN="${ZEN_TEST_BIN:-$WORK/bin}"
 mkdir -p "$BIN"
@@ -130,8 +130,9 @@ echo "== test"
 SANDBOX="$WORK/sandbox"
 mkdir -p "$SANDBOX/home/.local/share" "$SANDBOX/tests"
 # ZEN_TEST_SANDBOX: tells zen_test that HOME etc. point into a sandbox, see main.cpp; ZEN_TEST_*: expected by test_paths.cpp
-# (zen reads the environment once at startup, so the tests can't set them themselves)
-HOME="$SANDBOX/home" XDG_DATA_HOME="$SANDBOX/home/.local/share" XDG_CONFIG_HOME="$SANDBOX/home/.config" \
+# (zen reads the environment once at startup, so the tests can't set them themselves); ZEN_TEST_REAL_HOME: the macOS trash is
+# in the real home (test_recycler.cpp)
+ZEN_TEST_REAL_HOME="${HOME:-}" HOME="$SANDBOX/home" XDG_DATA_HOME="$SANDBOX/home/.local/share" XDG_CONFIG_HOME="$SANDBOX/home/.config" \
 ZEN_TEST_SANDBOX="$SANDBOX" ZEN_TEST_VAR="zen test value" ZEN_TEST_EMPTY="" \
     "$BIN/zen_test" --root "$SANDBOX/tests" "$@"
 

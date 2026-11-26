@@ -203,6 +203,9 @@ SANDBOX_TEST_CASE(syncRecycleBin)
         }
     };
     ZEN_ON_SCOPE_EXIT(cleanUpTrash());
+    for (const Zstring& trashFolder : trashFolders) //for the CI cleanup, should this run be cancelled before cleanUpTrash()
+        for (const std::string& name : {goneFile, goneFolder, changedFile})
+            noteTrashPath(appendPath(trashFolder, utfTo<Zstring>(name)));
 #else
     #error which trash?
 #endif

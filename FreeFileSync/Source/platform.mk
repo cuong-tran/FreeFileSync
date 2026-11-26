@@ -45,6 +45,9 @@ else ifeq ($(TARGET_OS),mac)
         $(error no FFS_MACOS_DEPLOYMENT_TARGET in .github/build/common.sh)
     endif
     macTargetFlags := -arch $(ARCH) -mmacosx-version-min=$(macDeploymentTarget)
+    #source paths in the apps (__FILE__ of asserts in the library headers under FFS_DEPS_PREFIX, debug info) relative to the
+    #repository instead of absolute: no path of the build machine (e.g. its home folder) ends up in the shipped executables
+    macPathFlags := -ffile-prefix-map=$(abspath $(platformMkDir)../..)=.
 
     FFS_DEPS_PREFIX ?= $(abspath $(platformMkDir)../../.build/deps/macos-$(ARCH))
     ifeq ($(wildcard $(FFS_DEPS_PREFIX)/bin/wx-config),)

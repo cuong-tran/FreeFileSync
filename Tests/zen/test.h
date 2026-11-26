@@ -17,6 +17,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdlib> //getenv
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -147,6 +148,19 @@ inline Zstring nativeRelPath(Zstring relPath)
         if (c == Zstr('/'))
             c = zen::FILE_NAME_SEPARATOR;
     return relPath;
+}
+
+//macOS: a test that moves items into the user's real trash (it can't be redirected) calls this with each path an item may end up
+//at, before moving it. With FFS_TEST_TRASH_LOG set (the self-hosted CI runner: .github/build/mac-runner.sh), the path is appended
+//to that file, so that the job's cleanup can delete what a cancelled or crashed run left in the trash. Names must start with
+//"zen_test " or "sync_test ": the cleanup deletes nothing else.
+inline void noteTrashPath(const Zstring& trashPath)
+{
+    if (const char* log = std::getenv("FFS_TEST_TRASH_LOG"); log && *log)
+    {
+        std::ofstream out(log, std::ios::app);
+        out << zen::utfTo<std::string>(trashPath) << '\n';
+    }
 }
 }
 

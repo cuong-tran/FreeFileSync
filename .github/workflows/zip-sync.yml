@@ -1,7 +1,8 @@
 name: ZIP AFS test
 
 #builds the read-only ZIP AbstractFileSystem (FreeFileSync/Source/afs/zip.cpp) with its zen dependencies and runs Tests/zip_afs against archives made by Python zipfile and Info-ZIP
-#matrix: g++ and clang + libc++ on Ubuntu; Xcode's clang on macOS for arm64 and x86_64 (cross-compiled on the arm64 runner, run under Rosetta 2)
+#matrix: g++ and clang + libc++ on Ubuntu; Xcode's clang on macOS for arm64 and x86_64 (cross-compiled on the arm64 runner, run under Rosetta 2);
+#the macOS entries run on the owner's self-hosted Mac, except for pull requests from forks (see runs-on and CONTRIBUTING.md)
 on:
   push:
     branches: [dev, main] #other branches: through their pull request (or run by hand), so a PR push doesn't test the same commit twice
@@ -10,6 +11,8 @@ on:
       - 'zen/**'
       - 'Tests/zip_afs/**'
       - '.github/build/common.sh' #FFS_MACOS_DEPLOYMENT_TARGET
+      - '.github/build/mac-runner.sh' #macOS runner setup and cleanup
+      - '.github/build/select-xcode.sh'
       - '.github/workflows/zip-sync.yml'
   pull_request:
     paths:
@@ -17,8 +20,15 @@ on:
       - 'zen/**'
       - 'Tests/zip_afs/**'
       - '.github/build/common.sh' #FFS_MACOS_DEPLOYMENT_TARGET
+      - '.github/build/mac-runner.sh' #macOS runner setup and cleanup
+      - '.github/build/select-xcode.sh'
       - '.github/workflows/zip-sync.yml'
   workflow_dispatch:
+    inputs:
+      hosted:
+        description: "Run the macOS jobs on GitHub's macos-15 instead of the self-hosted Mac (like the repository variable MACOS_RUNNER=hosted, for this run)"
+        type: boolean
+        default: false
 
 concurrency: #like the Linux build workflows: a newer push cancels the run it supersedes
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -60,15 +70,29 @@ jobs:
             cxx: clang++
             stdlib: ''
             arch: x86_64
-    runs-on: ${{ matrix.runner }}
+    #macOS entries: the owner's self-hosted Mac for trusted events (push, manual run, pull request from this repository) unless the
+    #repository variable MACOS_RUNNER is "hosted"; GitHub's macos-15 (matrix.runner) for pull requests from forks. See
+    #"Self-hosted macOS runner" in CONTRIBUTING.md
+    runs-on: ${{ matrix.platform == 'macos' && ((vars.MACOS_RUNNER != 'hosted' && !inputs.hosted && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'))) && fromJSON('["self-hosted","macOS"]') || matrix.runner) || matrix.runner }}
     #entries without a container run directly on the runner; the g++ entry runs as root in its container, the clang entry as the
     #unprivileged runner user, so both are covered
     container: ${{ matrix.container }}
+    timeout-minutes: 30
     env:
       CXX: ${{ matrix.cxx }}
       STDLIB: ${{ matrix.stdlib }}
       ARCH: ${{ matrix.arch }} #macOS only
     steps:
+      #self-hosted: the user, host and computer names are masked in the log before anything prints a path (actions/checkout
+      #prints the work folder, which is in the home folder); a copy of mac-runner.sh's list, which can't run before the checkout
+      - name: Mask private names (self-hosted)
+        if: matrix.platform == 'macos' && runner.environment == 'self-hosted'
+        shell: /bin/bash --noprofile --norc -eo pipefail {0}
+        run: |
+          for v in "$(id -un)" "$(id -F 2>/dev/null || true)" "$(hostname -s 2>/dev/null || true)" "$(hostname 2>/dev/null || true)" \
+                   "$(scutil --get ComputerName 2>/dev/null || true)" "$(scutil --get LocalHostName 2>/dev/null || true)"; do
+            if [ "${#v}" -ge 3 ]; then echo "::add-mask::$v"; fi
+          done
       - uses: actions/checkout@v4
       - name: Install dependencies (gcc container)
         if: matrix.platform == 'ubuntu' && matrix.container != ''
@@ -76,29 +100,34 @@ jobs:
       - name: Install dependencies (runner)
         if: matrix.platform == 'ubuntu' && matrix.container == ''
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-20 libc++-20-dev libc++abi-20-dev zlib1g-dev libglib2.0-dev pkg-config zip python3
+      #self-hosted: masks private names, checks the tools (installs nothing), TMPDIR into $RUNNER_TEMP
+      - name: Prepare the runner (macOS)
+        if: matrix.platform == 'macos'
+        run: .github/build/mac-runner.sh setup bash python3
       - name: Select Xcode
-        if: matrix.platform == 'macos'
-        run: |
-          xcode="$(ls -d /Applications/Xcode_26.*.app 2>/dev/null | sort -V | tail -n 1)"
-          if [ -z "$xcode" ]; then
-            echo "::error::no Xcode 26.x on this runner image; installed: $(ls -d /Applications/Xcode*.app | tr '\n' ' ')"
-            exit 1
-          fi
-          echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
-          echo "using $xcode"
+        if: ${{ !cancelled() && matrix.platform == 'macos' }} #also after a failed setup: one run lists everything missing
+        run: .github/build/select-xcode.sh --github-env
       - name: Install dependencies (macOS)
-        if: matrix.platform == 'macos'
+        if: matrix.platform == 'macos' && runner.environment == 'github-hosted'
         run: brew list bash >/dev/null 2>&1 || brew install bash #run.sh needs bash 4.4+ (macOS ships 3.2); zip and python3 are preinstalled
-      #x86_64 test binaries run under Rosetta 2; without it (and if it can't be installed), the entry only compiles
+      #x86_64 test binaries run under Rosetta 2 (installed on GitHub's runners if missing; never on the self-hosted Mac), arm64 ones
+      #only on Apple silicon; otherwise the entry only compiles
       - name: Rosetta 2
-        if: matrix.platform == 'macos' && matrix.arch == 'x86_64'
+        if: matrix.platform == 'macos'
         run: |
-          if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+          if ! arch -"$ARCH" /usr/bin/true 2>/dev/null && [ "$ARCH" = x86_64 ] && [ "${{ runner.environment }}" = github-hosted ]; then
             sudo softwareupdate --install-rosetta --agree-to-license || true
           fi
-          if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
-            echo "::warning::Rosetta 2 not available on this runner: x86_64 ZIP tests are compiled only"
+          if arch -"$ARCH" /usr/bin/true 2>/dev/null; then
+            echo "$ARCH binaries run on this Mac"
+          else
+            echo "::warning::$ARCH binaries do not run on this Mac ($(uname -m)$([ "$ARCH" = x86_64 ] && echo ', no Rosetta 2')): the ZIP tests are compiled only"
             echo "ZIP_TEST_COMPILE_ONLY=1" >> "$GITHUB_ENV"
           fi
       - name: Build and run ZIP tests
         run: bash Tests/zip_afs/run.sh
+
+      #self-hosted: what the tests left (disk images, trash items, crash reports, processes), build output, old cache entries
+      - name: Clean up the self-hosted Mac
+        if: always() && matrix.platform == 'macos' && runner.environment == 'self-hosted'
+        run: .github/build/mac-runner.sh cleanup

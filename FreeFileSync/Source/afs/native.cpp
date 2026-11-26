@@ -14,6 +14,7 @@
 #include <zen/thread.h>
 #include <zen/guid.h>
 #include <zen/crc.h>
+#include <set> //hideAppleDoubleCompanions()
 #include "abstract_impl.h"
 #include "../base/icon_loader.h"
 
@@ -22,6 +23,8 @@
     #include <sys/vfs.h> //statfs
 #elif defined ZEN_MAC
     #include <sys/mount.h> //statfs
+    #include <unistd.h> //pread
+    #include <cstring> //memcmp: isAppleDoubleFile()
 #endif
 
     #include <sys/stat.h>
@@ -105,6 +108,73 @@ struct FsItem
 {
     Zstring itemName;
 };
+
+
+#if defined ZEN_MAC
+/*  AppleDouble companions: a volume without native extended attributes (FAT, exFAT, many SMB/NFS shares) keeps the attributes of
+    an item "X" in a file "._X" next to it. Such a "._X" is not an item but part of "X": the kernel shows its content as X's
+    attributes and renames, moves and removes it together with X (measured on macOS 27.2 for files, folders and symlinks on FAT
+    and exFAT, also rmdir of a folder whose only entries are companions). So it is not reported if
+        - X exists in the same folder (names compared byte-wise),
+        - the volume is known to keep extended attributes only so (unknown capabilities: everything is listed), and
+        - "._X" really is an AppleDouble file: a regular file (no symlink followed) whose header has the AppleDouble magic and
+          version 2 (00 05 16 07 00 02 00 00); one that can't be opened or read is listed.
+    Everything else stays a normal item, visible and deletable: orphans ("._X" without X, "._" alone), and a user's own file
+    named "._X" next to X that is no AppleDouble file. Volumes with native extended attributes (APFS, HFS+) show everything.
+    Why it matters: macOS 13+ gives every item a provenance-tracked process creates (one started by a tagged program, e.g. a
+    downloaded app the user opened, or Homebrew's programs) the attribute com.apple.provenance; on such a volume that is a "._X"
+    file for each file and folder FreeFileSync creates there, which the next comparison would show as target-only items. The
+    process can't remove the attribute (removexattr() succeeds and changes nothing, macOS 27.2).
+    Cost: one open() and an 8-byte read per candidate (a "._X" next to an X on such a volume), nothing for other entries.
+    Not solved: a "._X" next to X on a volume with native attributes (a real AppleDouble file unpacked from an archive made on
+    a Mac, or any file of that name) is an ordinary file there, but on a FAT/exFAT target that name is X's attribute store: a
+    provenance-tracked process (a downloaded FreeFileSync is one) can't put it there ("name already used", macOS 27.2), and
+    writing X there replaces it; it shows as a difference on each comparison (CONTRIBUTING.md: exclude filter entry). */
+bool isAppleDoubleFile(int dirFd, const char* itemName) //nothrow
+{
+    struct stat itemInfo = {};
+    if (::fstatat(dirFd, itemName, &itemInfo, AT_SYMLINK_NOFOLLOW) != 0 || !S_ISREG(itemInfo.st_mode))
+        return false; //no device or FIFO is opened
+    //O_NOFOLLOW: no symlink put in place meanwhile is followed; O_NONBLOCK: nor does a FIFO put in place block the traversal
+    const int fd = ::openat(dirFd, itemName, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK);
+    if (fd == -1)
+        return false;
+    ZEN_ON_SCOPE_EXIT(::close(fd));
+    if (::fstat(fd, &itemInfo) != 0 || !S_ISREG(itemInfo.st_mode))
+        return false;
+
+    const unsigned char appleDoubleHeader[] = {0x00, 0x05, 0x16, 0x07, /*magic*/ 0x00, 0x02, 0x00, 0x00 /*version 2*/};
+    unsigned char header[sizeof(appleDoubleHeader)] = {};
+    ssize_t bytesRead = 0;
+    do
+        bytesRead = ::pread(fd, header, sizeof(header), 0);
+    while (bytesRead == -1 && errno == EINTR);
+    return bytesRead == static_cast<ssize_t>(sizeof(header)) && std::memcmp(header, appleDoubleHeader, sizeof(header)) == 0;
+}
+
+
+void hideAppleDoubleCompanions(std::vector<FsItem>& items, int dirFd) //nothrow
+{
+    const auto isCandidateName = [](const Zstring& itemName) { return itemName.size() > 2 && startsWith(itemName, Zstr("._")); };
+    if (std::none_of(items.begin(), items.end(), [&](const FsItem& item) { return isCandidateName(item.itemName); }))
+        return;
+    if (storesExtendedAttributesNatively(dirFd)) //nothrow
+        return;
+
+    std::set<Zstring> names;
+    for (const FsItem& item : items)
+        names.insert(item.itemName);
+
+    std::erase_if(items, [&](const FsItem& item)
+    {
+        return isCandidateName(item.itemName) &&
+               names.contains(Zstring(item.itemName.c_str() + 2, item.itemName.size() - 2)) &&
+               isAppleDoubleFile(dirFd, item.itemName.c_str()); //nothrow
+    });
+}
+#endif
+
+
 std::vector<FsItem> getDirContentFlat(const Zstring& dirPath) //throw FileError
 {
     //no need to check for endless recursion:
@@ -130,7 +200,12 @@ std::vector<FsItem> getDirContentFlat(const Zstring& dirPath) //throw FileError
         if (!dirEntry)
         {
             if (errno == 0) //errno left unchanged => no more items
+            {
+#if defined ZEN_MAC
+                hideAppleDoubleCompanions(output, ::dirfd(folder)); //nothrow
+#endif
                 return output;
+            }
 
             THROW_LAST_FILE_ERROR(replaceCpy(_("Cannot read directory %x."), L"%x", fmtPath(dirPath)), "readdir");
             //don't retry but restart dir traversal on error! https://devblogs.microsoft.com/oldnewthing/20140612-00/?p=753

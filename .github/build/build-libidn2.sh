@@ -20,7 +20,8 @@ if is_installed "$NAME"; then
 fi
 
 # not in Bugs.txt, so built unpatched
-fetch_source "$NAME" "$NAME.tar.gz" "https://ftpmirror.gnu.org/libidn/$NAME.tar.gz" nopatch
+# ftpmirror.gnu.org redirects to a mirror nearby, which may be broken (one had an expired certificate): then GNU's own server
+fetch_source "$NAME" "$NAME.tar.gz" "https://ftpmirror.gnu.org/libidn/$NAME.tar.gz https://ftp.gnu.org/gnu/libidn/$NAME.tar.gz" nopatch
 
 cd "$(fresh_build_dir libidn2)"
 "$SOURCE_DIR/$NAME/configure" \

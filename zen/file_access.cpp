@@ -502,7 +502,7 @@ enum class VolumeFeature
     acl,
 };
 //capabilities of the volume a statfs() result belongs to; looked up once per volume (getattrlist() on the mount point)
-bool volumeSupports(const struct statfs& volInfo, VolumeFeature feature) //nothrow: false if unknown
+std::optional<bool> volumeHas(const struct statfs& volInfo, VolumeFeature feature) //nothrow: nullopt if unknown
 {
     struct VolCapBuf
     {
@@ -532,13 +532,26 @@ bool volumeSupports(const struct statfs& volInfo, VolumeFeature feature) //nothr
             caps = buf.caps;
         volCapCache.access([&](auto& cache) { cache.emplace(key, caps); });
     }
-    if (!caps)
-        return false;
-
     const uint32_t bit = feature == VolumeFeature::nativeXattr ? VOL_CAP_INT_EXTENDED_ATTR : VOL_CAP_INT_EXTENDED_SECURITY;
-    return (caps->valid       [VOL_CAPABILITIES_INTERFACES] & bit) &&
-           (caps->capabilities[VOL_CAPABILITIES_INTERFACES] & bit);
+    if (!caps || !(caps->valid[VOL_CAPABILITIES_INTERFACES] & bit))
+        return std::nullopt;
+    return (caps->capabilities[VOL_CAPABILITIES_INTERFACES] & bit) != 0;
 }
+
+
+bool volumeSupports(const struct statfs& volInfo, VolumeFeature feature) { return volumeHas(volInfo, feature).value_or(false); } //nothrow: false if unknown
+}
+
+
+bool zen::storesExtendedAttributesNatively(int fd) //nothrow
+{
+    struct statfs volInfo = {};
+    return ::fstatfs(fd, &volInfo) != 0 || volumeHas(volInfo, VolumeFeature::nativeXattr) != false;
+}
+
+
+namespace
+{
 
 
 /*  extended attributes: best-effort metadata, never a reason to fail (and discard) a copy whose data is complete

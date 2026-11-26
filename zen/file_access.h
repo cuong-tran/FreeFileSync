@@ -92,4 +92,10 @@ struct FileCopyResult
 FileCopyResult copyNewFile(const Zstring& sourceFile, const Zstring& targetFile, //throw FileError, ErrorTargetExisting, ErrorFileLocked, X
                            //accummulated delta != file size! consider ADS, sparse, compressed files
                            const IoCallback& notifyUnbufferedIO /*throw X*/);
+
+#if defined ZEN_MAC
+//macOS: false if the volume of the open file or folder is known to keep extended attributes only in AppleDouble "._<name>"
+//companion files (FAT, exFAT, many SMB/NFS shares); true if it stores them natively, or if that is unknown
+bool storesExtendedAttributesNatively(int fd); //nothrow
+#endif
 }
