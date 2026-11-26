@@ -23,6 +23,7 @@ bool equalAppearance(ColorTheme colTheme1, ColorTheme colTheme2);
 DEFINE_NEW_FILE_ERROR(ErrorRestartRequired)
 void changeColorTheme(ColorTheme colTheme); //throw ErrorRestartRequired, FileError
 
-//the system appearance changed while the app runs (macOS: wxEVT_SYS_COLOUR_CHANGED): recompute the colors derived from it
-void updateDerivedSystemColors();
+//the system appearance changed while the app runs (macOS: wxEVT_SYS_COLOUR_CHANGED; compiled everywhere, called only on macOS):
+//recompute the colors derived from it; currentTheme: the app's color theme setting
+void updateDerivedSystemColors(ColorTheme currentTheme);
 }

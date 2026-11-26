@@ -940,7 +940,7 @@ imgFileManagerSmall_([]
             CallAfter([this, setViewTypeButtonImages, setAuiCaptionColors, pending]
             {
                 *pending = false;
-                updateDerivedSystemColors(); //wxSYS_COLOUR_GRAYTEXT with enhanced contrast
+                updateDerivedSystemColors(globalCfg_.appColorTheme); //"System" for the theme option, enhanced-contrast wxSYS_COLOUR_GRAYTEXT
                 setAuiCaptionColors();
                 setViewTypeButtonImages();
                 buttonLabelItemCount_.clear(); //regenerate the item count images of the view filter buttons

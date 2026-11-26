@@ -93,8 +93,14 @@ void zen::colorThemeCleanup()
 }
 
 
-void zen::updateDerivedSystemColors()
+void zen::updateDerivedSystemColors(ColorTheme currentTheme)
 {
+    /*  "System" in equalAppearance()/changeColorTheme() means the system's appearance: follow it while the app itself follows the
+        system. With an explicit Light/Dark theme (wxApp::SetAppearance()) the app's appearance no longer tells what the system has,
+        and wxOSX reports no switch then: "System" keeps the last value seen (PROGRESS.md, open issues)  */
+    if (currentTheme == ColorTheme::System)
+        globalDefaultThemeIsDark = wxSystemSettings::GetAppearance().AreAppsDark();
+
     if (refGlobalColorHook()) //SysColorsHook keeps the enhanced gray text color of the appearance it was created for
         refGlobalColorHook() = std::make_unique<SysColorsHook>();
 }
