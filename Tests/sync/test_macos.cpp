@@ -377,6 +377,15 @@ TEST_CASE(syncMacFatAppleDoubleNames) //FAT and exFAT
         checkListing(__FILE__, __LINE__, names, empty);
         if (pathExists(userAd) && !hasAppleDoubleHeader(toPath(userAd)))
             CHECK(engineListing(names, empty).contains("._user.txt"));
+        //replacing X by rename() (as FreeFileSync's fail-safe copy does: "<X>.ffs_tmp", then renamed): macOS moves the companion
+        //of the renamed file to "._X", and without one it removes "._X" (seen on macOS 15 on GitHub's runners: "not there")
+        if (pathExists(userAd))
+        {
+            writeFile(itemPath(names, "user.txt.tmp"), "replacement");
+            CHECK(::rename(itemPath(names, "user.txt.tmp").c_str(), itemPath(names, "user.txt").c_str()) == 0);
+            std::cout << "      after rename() of another file onto X, \"._X\" holds " << describeOnDisk(userAd) << std::endl;
+            checkListing(__FILE__, __LINE__, names, empty);
+        }
 
         //2. a real companion (an attribute set explicitly: macOS writes it as "._real.txt") stays hidden, tracked or not; an
         //   AppleDouble file without its item and a folder named like a companion are listed
@@ -396,7 +405,10 @@ TEST_CASE(syncMacFatAppleDoubleNames) //FAT and exFAT
         if (!ec)
             CHECK(listed.contains("._dir"));
 
-        //3. a mirror of an APFS folder with "data.txt" and a "._data.txt" of its own (no AppleDouble file) to the volume
+        //3. a mirror of an APFS folder with "data.txt" and a "._data.txt" of its own (no AppleDouble file) to the volume. The
+        //   engine lists and copies "._data.txt" like any file; what stays on the volume is up to macOS: data.txt is created by
+        //   rename (fail-safe copy), and that removes a "._data.txt" copied before it (see 1.), so the first mirror can leave it
+        //   out and the next one copies it again; an update of data.txt, again by rename, removes it again
         const time_t t0 = timeBase();
         makeTree(left,
         {
@@ -406,21 +418,29 @@ TEST_CASE(syncMacFatAppleDoubleNames) //FAT and exFAT
         const Zstring right = appendPath(mountPath, "target");
         makeFolder(right, "");
         const SyncCfg cfg{.left = left, .right = right};
-        const RunResult res = runSync(cfg);
-        const RunResult again = compareOnly(cfg);
-        std::cout << "      mirror of X and a user's \"._X\": " << res.errors.size() << " error(s); on the volume \"._X\" holds "
-                  << describeOnDisk(itemPath(right, "._data.txt")) << "; next comparison: " << (again.allEqual ? "equal" : "differences") << std::endl;
-        if (!tracked)
+        const auto mirror = [&](const char* what)
         {
-            //without companions the name is an ordinary one: the file syncs like any other
-            CHECK_NO_ERRORS(res);
-            CHECK_NO_ERRORS(again);
-            CHECK(again.allEqual);
+            const RunResult res = runSync(cfg);
+            const RunResult again = compareOnly(cfg);
+            std::cout << "      " << what << ": " << res.errors.size() << " error(s); on the volume \"._X\" holds "
+                      << describeOnDisk(itemPath(right, "._data.txt")) << "; next comparison: " << (again.allEqual ? "equal" : "differences") << std::endl;
+            if (!tracked) //(tracked: X's companion takes that name, see 1.)
+            {
+                CHECK_NO_ERRORS(res);
+                CHECK_NO_ERRORS(again);
+            }
+            else if (!res.errors.empty())
+                std::cout << res.toString();
+            checkListing(__FILE__, __LINE__, right, empty);
+            return again.allEqual;
+        };
+        if (!mirror("first mirror of X and a user's \"._X\"") && !mirror("second mirror") && !tracked)
+            reportFailure(__FILE__, __LINE__, "the user's \"._X\" did not arrive on the volume after two mirrors");
+        else if (!tracked)
             CHECK_EQUAL(readFile(itemPath(right, "._data.txt")), userData);
-        }
-        else if (!again.allEqual || !res.errors.empty()) //the kernel keeps X's provenance in that name (measured, see the log)
-            std::cout << res.toString() << again.toString();
-        checkListing(__FILE__, __LINE__, right, empty);
+        makeFile(left, "data.txt", "data, changed", t0 + TIME_STEP);
+        if (!mirror("mirror of an update of X") && !mirror("mirror after it") && !tracked)
+            reportFailure(__FILE__, __LINE__, "the user's \"._X\" did not arrive on the volume again after the update of X");
 
         //4. cost of the header check: n files with a companion each (an attribute set: the companion is there whether the process
         //   is tracked or not). The listing opens every companion (a candidate); the same calls as isAppleDoubleFile() on their
