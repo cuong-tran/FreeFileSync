@@ -21,7 +21,7 @@ Running log for the multi-platform port. The plan is in [`docs/PORTING_PLAN.md`]
 | M3 macOS | 5. DMG job, Sentry on macOS, UI smoke test | done | `83f890e..bf0ef72`, fixes `d284031..8420f50` | 7 findings: all fixed |
 | M3 macOS | Pull request | merged as [#13](https://github.com/cuong-tran/FreeFileSync/pull/13) (squash, `5b2dbe1`) after all checks passed | | no review threads |
 | CI | macOS jobs on the owner's self-hosted runner (label `self-hosted`) | done, merged as [#15](https://github.com/cuong-tran/FreeFileSync/pull/15) (squash, `b4617dc`) after all checks passed | `79879b9..2d06b25` | two reviews, 16 findings, all fixed |
-| Review | [#14](https://github.com/cuong-tran/FreeFileSync/pull/14) `mac-test-fixes` (fixed by another session of the owner's) | a reviewer sub-session reviews it with `/code-review medium` after every push until clean and green; then an approval | | |
+| Review | [#14](https://github.com/cuong-tran/FreeFileSync/pull/14) `mac-test-fixes` (fixed by another session of the owner's) | review loop finished at `363f03d`: 3 rounds, 12 findings (11 fixed, 1 withdrawn), all checks green, no conflicts. GitHub refused the approval (same account as the author); a comment on the PR stands in for it. Not merged by this session | | |
 | M4 Windows | | not started: paused by the owner for testing on a real Mac | | |
 
 ## Paused
@@ -86,6 +86,7 @@ M4 (Windows) is paused by the owner (2026-11-25) until the Mac test findings are
 | 2026-11-25 | macOS: on volumes without native extended attributes (FAT, exFAT, some network shares), a `._X` file next to an existing `X` is not reported as an item by the native file system | On macOS 27 every file a provenance-tracked process creates (any downloaded app opened through Gatekeeper) gets `com.apple.provenance`, which such volumes store as `._X`; the app cannot remove it. Without this, each sync to a FAT or exFAT volume would show phantom target-only files. Finder treats these files the same way. Orphaned `._X` files stay visible. |
 | 2026-11-26 | Only real AppleDouble files (checked by their header) are hidden as companions on volumes without native extended attributes | A user's ordinary file named `._X` must stay visible. A real AppleDouble `._X` beside `X` on an APFS side still cannot be mirrored to FAT/exFAT (macOS owns that name there); the exclude filter `*/._*` is the remedy. |
 | 2026-11-26 | This session's reviewer sub-session reviews #14 and never pushes to its branch or merges it; an approval is given when the loop ends clean and green | Asked by the owner. GitHub may refuse the approval, since this session acts as the PR's author; a comment then states the result. |
+| 2026-11-26 | `*/._*` is not in the macOS default exclude filter | It would silently skip users' own `._` files in every sync, including APFS to APFS; the APFS-to-FAT/exFAT limitation is documented with the filter as the remedy. |
 
 ## Needed from the repository owner
 
