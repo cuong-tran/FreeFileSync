@@ -953,8 +953,12 @@ private:
     int colLabelHeight_ = 0;
     const wxFont labelFont_;
 
+#if defined ZEN_MAC //light/dark switch while the app runs: against the current colors
+    const LiveColor colDropMarkerColor_{[] { return enhanceContrast(*wxBLUE, getColorLabelGradientTo(), 5 /*contrastRatioMin*/); }};
+#else
     const wxColor colDropMarkerColor_ = enhanceContrast(*wxBLUE, //primarily needed for dark mode!
                                                         getColorLabelGradientTo(), 5 /*contrastRatioMin*/); //W3C recommends >= 4.5 for text
+#endif
 };
 
 //----------------------------------------------------------------------------------------------------------------
